@@ -176,7 +176,7 @@ If you want to display details for specific Spotify playlist URL (i.e. its name,
 ```
 
 <p align="center">
-   <img src="./assets/spotify_profile_monitor_playlist.png" alt="spotify_profile_monitor_playlist" width="95%"/>
+   <img src="./assets/spotify_profile_monitor_playlist.png" alt="spotify_profile_monitor_playlist" width="100%"/>
 </p>
 
 If you want to display details for specific Spotify user profile URL (i.e. user URI ID, list & number of followers and followings, recently played artists, list & number of user's playlists with basic statistics like when created, last updated, description, number of tracks and likes), then use **-i** parameter:
@@ -186,7 +186,7 @@ If you want to display details for specific Spotify user profile URL (i.e. user 
 ```
 
 <p align="center">
-   <img src="./assets/spotify_profile_monitor_user_details.png" alt="spotify_profile_monitor_user_details" width="70%"/>
+   <img src="./assets/spotify_profile_monitor_user_details.png" alt="spotify_profile_monitor_user_details" width="80%"/>
 </p>
 
 If you only want to display list of followings & followers for the user (**-f** parameter):
@@ -224,7 +224,7 @@ Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-sett
 Example email:
 
 <p align="center">
-   <img src="./assets/spotify_profile_monitor_email_notifications.png" alt="spotify_profile_monitor_email_notifications" width="80%"/>
+   <img src="./assets/spotify_profile_monitor_email_notifications.png" alt="spotify_profile_monitor_email_notifications" width="90%"/>
 </p>
 
 ### Saving profile changes to the CSV file
