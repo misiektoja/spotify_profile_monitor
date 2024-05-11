@@ -19,7 +19,7 @@ NOTE: If you want to monitor Spotify friends music activity check out the other 
 - Possibility to control the running copy of the script via signals
 
 <p align="center">
-   <img src="./assets/spotify_profile_monitor.png" alt="spotify_profile_monitor_screenshot" width="80%"/>
+   <img src="./assets/spotify_profile_monitor.png" alt="spotify_profile_monitor_screenshot" width="85%"/>
 </p>
 
 ## Change Log
@@ -176,7 +176,7 @@ If you want to display details for specific Spotify playlist URL (i.e. its name,
 ```
 
 <p align="center">
-   <img src="./assets/spotify_profile_monitor_playlist.png" alt="spotify_profile_monitor_playlist" width="90%"/>
+   <img src="./assets/spotify_profile_monitor_playlist.png" alt="spotify_profile_monitor_playlist" width="95%"/>
 </p>
 
 If you want to display details for specific Spotify user profile URL (i.e. user URI ID, list & number of followers and followings, recently played artists, list & number of user's playlists with basic statistics like when created, last updated, description, number of tracks and likes), then use **-i** parameter:
@@ -224,7 +224,7 @@ Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-sett
 Example email:
 
 <p align="center">
-   <img src="./assets/spotify_profile_monitor_email_notifications.png" alt="spotify_profile_monitor_email_notifications" width="70%"/>
+   <img src="./assets/spotify_profile_monitor_email_notifications.png" alt="spotify_profile_monitor_email_notifications" width="75%"/>
 </p>
 
 ### Saving profile changes to the CSV file
