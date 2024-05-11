@@ -19,7 +19,7 @@ NOTE: If you want to monitor Spotify friends music activity check out the other 
 - Possibility to control the running copy of the script via signals
 
 <p align="center">
-   <img src="./assets/spotify_profile_monitor.png" alt="spotify_profile_monitor_screenshot" width="90%"/>
+   <img src="./assets/spotify_profile_monitor.png" alt="spotify_profile_monitor_screenshot" width="100%"/>
 </p>
 
 ## Change Log
