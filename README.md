@@ -78,7 +78,7 @@ It is suggested to create a new Spotify account for usage with the tool since we
 
 ### Timezone
 
-You can specify your local time zone so the tool converts Spotify timestamps to your time:
+It is recommended to specify your local time zone so the tool converts Spotify timestamps to your time:
 
 ```
 LOCAL_TIMEZONE='Europe/Warsaw'
