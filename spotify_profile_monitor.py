@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.0
+v1.1
 
 Script implementing real-time monitoring of Spotify users profile information:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -14,7 +14,7 @@ requests
 urllib3
 """
 
-VERSION=1.0
+VERSION=1.1
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -69,9 +69,6 @@ RECENTLY_PLAYED_ARTISTS_LIMIT=15
 # How often do we perform alive check by printing "alive check" message in the output; in seconds
 TOOL_ALIVE_INTERVAL=21600 # 6 hours
 
-# Default value for network-related timeouts in functions + alarm signal handler; in seconds
-FUNCTION_TIMEOUT=15
-
 # URL we check in the beginning to make sure we have internet connectivity
 CHECK_INTERNET_URL='http://www.google.com/'
 
@@ -79,7 +76,7 @@ CHECK_INTERNET_URL='http://www.google.com/'
 CHECK_INTERNET_TIMEOUT=5
 
 # The name of the .log file; the tool by default will output its messages to spotify_profile_monitor_userid.log file
-sp_logfile="spotify_profile_monitor"
+SP_LOGFILE="spotify_profile_monitor"
 
 # Value used by signal handlers increasing/decreasing the profile check (SPOTIFY_CHECK_INTERVAL); in seconds
 SPOTIFY_CHECK_SIGNAL_VALUE=300 # 5 minutes
@@ -91,6 +88,9 @@ SPOTIFY_CHECK_SIGNAL_VALUE=300 # 5 minutes
 # Strings removed from track names for generating proper Genius search URLs
 re_search_str=r'remaster|extended|original mix|remix|original soundtrack|radio( |-)edit|\(feat\.|( \(.*version\))|( - .*version)'
 re_replace_str=r'( - (\d*)( )*remaster$)|( - (\d*)( )*remastered( version)*( \d*)*.*$)|( \((\d*)( )*remaster\)$)|( - (\d+) - remaster$)|( - extended$)|( - extended mix$)|( - (.*); extended mix$)|( - extended version$)|( - (.*) remix$)|( - remix$)|( - remixed by .*$)|( - original mix$)|( - .*original soundtrack$)|( - .*radio( |-)edit$)|( \(feat\. .*\)$)|( \(\d+.*Remaster.*\)$)|( \(.*Version\))|( - .*version)'
+
+# Default value for network-related timeouts in functions + alarm signal handler; in seconds
+FUNCTION_TIMEOUT=15
 
 TOOL_ALIVE_COUNTER=TOOL_ALIVE_INTERVAL/SPOTIFY_CHECK_INTERVAL
 
@@ -117,6 +117,7 @@ import traceback
 import argparse
 import csv
 import pytz
+import platform
 import html
 import urllib
 import re
@@ -126,7 +127,7 @@ import ipaddress
 class Logger(object):
     def __init__(self, filename):
         self.terminal=sys.stdout
-        self.logfile=open(filename, "a", buffering=1)
+        self.logfile=open(filename, "a", buffering=1, encoding="utf-8")
 
     def write(self, message):
         self.terminal.write(message)
@@ -317,7 +318,7 @@ def send_email(subject,body,body_html,use_ssl):
 # Function to write CSV entry
 def write_csv_entry(csv_file_name, timestamp, object_type, object_name, old, new):
     try:
-        csv_file=open(csv_file_name, 'a', newline='', buffering=1)
+        csv_file=open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8")
         csvwriter=csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
         csvwriter.writerow({'Date': timestamp, 'Type': object_type, 'Name': object_name, 'Old': old, 'New': new})
         csv_file.close()
@@ -973,7 +974,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
             f_list_to_save=[]
             f_list_to_save.append(f_count)
             f_list_to_save.append(f_list)
-            with open(f_file, 'w') as f:
+            with open(f_file, 'w', encoding="utf-8") as f:
                 json.dump(f_list_to_save, f, indent=2)
 
             try:
@@ -1066,7 +1067,7 @@ def spotify_profile_monitor_uri(user_uri_id,error_notification,csv_file_name,csv
 
     try:
         if csv_file_name:
-            csv_file=open(csv_file_name, 'a', newline='', buffering=1)
+            csv_file=open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8")
             csvwriter=csv.DictWriter(csv_file, fieldnames=csvfieldnames, quoting=csv.QUOTE_NONNUMERIC)
             if not csv_exists:
                 csvwriter.writeheader()
@@ -1160,7 +1161,7 @@ def spotify_profile_monitor_uri(user_uri_id,error_notification,csv_file_name,csv
     # playlists
     if os.path.isfile(playlists_file):
         try:
-            with open(playlists_file, 'r') as f:
+            with open(playlists_file, 'r', encoding="utf-8") as f:
                 playlists_read=json.load(f)
         except Exception as e:
             print(f"* Cannot load entries from '{playlists_file}' file - {e}")        
@@ -1173,7 +1174,7 @@ def spotify_profile_monitor_uri(user_uri_id,error_notification,csv_file_name,csv
         playlists_to_save=[]
         playlists_to_save.append(playlists_count)
         playlists_to_save.append(playlists)
-        with open(playlists_file, 'w') as f:
+        with open(playlists_file, 'w', encoding="utf-8") as f:
             json.dump(playlists_to_save, f, indent=2)
         print(f"* Playlists ({playlists_count}) saved to file '{playlists_file}'") 
 
@@ -1185,7 +1186,7 @@ def spotify_profile_monitor_uri(user_uri_id,error_notification,csv_file_name,csv
     # followers
     if os.path.isfile(followers_file):
         try:
-            with open(followers_file, 'r') as f:
+            with open(followers_file, 'r', encoding="utf-8") as f:
                 followers_read=json.load(f)
         except Exception as e:
             print(f"* Cannot load entries from '{followers_file}' file - {e}")                   
@@ -1198,7 +1199,7 @@ def spotify_profile_monitor_uri(user_uri_id,error_notification,csv_file_name,csv
         followers_to_save=[]
         followers_to_save.append(followers_count)
         followers_to_save.append(followers)
-        with open(followers_file, 'w') as f:
+        with open(followers_file, 'w', encoding="utf-8") as f:
             json.dump(followers_to_save, f, indent=2)
         print(f"* Followers ({followers_count}) saved to file '{followers_file}'")       
 
@@ -1210,7 +1211,7 @@ def spotify_profile_monitor_uri(user_uri_id,error_notification,csv_file_name,csv
     # followings
     if os.path.isfile(followings_file):
         try:
-            with open(followings_file, 'r') as f:
+            with open(followings_file, 'r', encoding="utf-8") as f:
                 followings_read=json.load(f)
         except Exception as e:
             print(f"* Cannot load entries from '{followings_file}' file - {e}")                  
@@ -1223,7 +1224,7 @@ def spotify_profile_monitor_uri(user_uri_id,error_notification,csv_file_name,csv
         followings_to_save=[]
         followings_to_save.append(followings_count)
         followings_to_save.append(followings)
-        with open(followings_file, 'w') as f:
+        with open(followings_file, 'w', encoding="utf-8") as f:
             json.dump(followings_to_save, f, indent=2)
         print(f"* Followings ({followings_count}) saved to file '{followings_file}'") 
 
@@ -1501,14 +1502,17 @@ if __name__ == "__main__":
     signal.signal(signal.SIGTERM, signal_handler)
 
     try:
-        os.system('clear')
+        if platform.system() == 'Windows':
+            os.system('cls')
+        else:
+            os.system('clear')
     except:
         print("* Cannot clear the screen contents")
 
     print(f"Spotify Profile Monitoring Tool v{VERSION}\n")
 
     parser=argparse.ArgumentParser("spotify_profile_monitor")
-    parser.add_argument("spotify_user_uri_id", nargs="?", help="Spotify user URI ID", type=str)
+    parser.add_argument("SPOTIFY_USER_URI_ID", nargs="?", help="Spotify user URI ID", type=str)
     parser.add_argument("-u", "--spotify_dc_cookie", help="Spotify sp_dc cookie to override the value defined within the script (SP_DC_COOKIE)", type=str)
     parser.add_argument("-p","--profile_notification", help="Send email notification once user's profile changes", action='store_true')
     parser.add_argument("-e","--error_notification", help="Disable sending email notifications in case of errors like expired sp_dc", action='store_false')
@@ -1523,11 +1527,15 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--disable_logging", help="Disable logging to file 'spotify_profile_monitor_UserURIID.log' file", action='store_true')
     args=parser.parse_args()
 
+    if len(sys.argv)==1:
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+
     if args.spotify_dc_cookie:
         SP_DC_COOKIE=args.spotify_dc_cookie
 
     if not SP_DC_COOKIE or SP_DC_COOKIE=="your_sp_dc_cookie_value":
-        print("* SP_DC_COOKIE (-u / --spotify_dc_cookie) value is empty or incorrect\n")
+        print("* Error: SP_DC_COOKIE (-u / --spotify_dc_cookie) value is empty or incorrect\n")
         sys.exit(1)
 
     if args.check_interval:
@@ -1582,7 +1590,7 @@ if __name__ == "__main__":
 
     if args.search_username:
         if not SP_SHA256 or SP_SHA256=="your_spotify_client_sha256":
-            print("* Wrong SP_SHA256 value !")
+            print("* Error: wrong SP_SHA256 value !")
             sys.exit(1)
         try:
             sp_accessToken=spotify_get_access_token(SP_DC_COOKIE)
@@ -1593,8 +1601,8 @@ if __name__ == "__main__":
             sys.exit(1)
         sys.exit(0)
 
-    if not args.spotify_user_uri_id:
-        print("* spotify_user_uri_id argument is required\n")
+    if not args.SPOTIFY_USER_URI_ID:
+        print("* Error: SPOTIFY_USER_URI_ID argument is required !\n")
         parser.print_help()
         sys.exit(1)
 
@@ -1607,7 +1615,7 @@ if __name__ == "__main__":
         csv_enabled=True
         csv_exists=os.path.isfile(args.csv_file)
         try:
-            csv_file=open(args.csv_file, 'a', newline='', buffering=1)
+            csv_file=open(args.csv_file, 'a', newline='', buffering=1, encoding="utf-8")
         except Exception as e:
             print(f"\n* Error, CSV file cannot be opened for writing - {e}")
             sys.exit(1)
@@ -1618,8 +1626,8 @@ if __name__ == "__main__":
         csv_exists=False
 
     if not args.disable_logging:
-        sp_logfile=f"{sp_logfile}_{args.spotify_user_uri_id}.log"
-        sys.stdout=Logger(sp_logfile)
+        SP_LOGFILE=f"{SP_LOGFILE}_{args.SPOTIFY_USER_URI_ID}.log"
+        sys.stdout=Logger(SP_LOGFILE)
 
     profile_notification=args.profile_notification         
 
@@ -1631,15 +1639,17 @@ if __name__ == "__main__":
     else:
         print(f"* CSV logging enabled:\t\t{csv_enabled}\n")
 
-    signal.signal(signal.SIGUSR1, toggle_profile_changes_notifications_signal_handler)
-    signal.signal(signal.SIGTRAP, increase_check_signal_handler)
-    signal.signal(signal.SIGABRT, decrease_check_signal_handler)
+    # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported
+    if platform.system() != 'Windows':
+        signal.signal(signal.SIGUSR1, toggle_profile_changes_notifications_signal_handler)
+        signal.signal(signal.SIGTRAP, increase_check_signal_handler)
+        signal.signal(signal.SIGABRT, decrease_check_signal_handler)
 
-    out=f"Monitoring user {args.spotify_user_uri_id}"
+    out=f"Monitoring user {args.SPOTIFY_USER_URI_ID}"
     print(out)
     print("-" * len(out))
 
-    spotify_profile_monitor_uri(args.spotify_user_uri_id,args.error_notification,args.csv_file,csv_exists)
+    spotify_profile_monitor_uri(args.SPOTIFY_USER_URI_ID,args.error_notification,args.csv_file,csv_exists)
 
     sys.stdout=stdout_bck
     sys.exit(0)
