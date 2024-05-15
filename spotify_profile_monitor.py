@@ -10,6 +10,7 @@ Python pip3 requirements:
 
 python-dateutil
 pytz
+tzlocal
 requests
 urllib3
 """
@@ -46,8 +47,9 @@ SPOTIFY_CHECK_INTERVAL=1800 # 30 mins
 # How often do we retry in case of errors; in seconds
 SPOTIFY_ERROR_INTERVAL=180 # 3 mins
 
-# Specify your local time zone so we convert Spotify timestamps for added tracks to your time
-LOCAL_TIMEZONE='Europe/Warsaw'
+# Specify your local time zone so we convert Spotify timestamps to your time (for example: 'Europe/Warsaw')
+# If you leave it as 'Auto' we will try to automatically detect the local timezone
+LOCAL_TIMEZONE='Auto'
 
 # SP_SHA256 is only needed for functionality searching Spotify users (-s), otherwise you can leave it empty
 # You need to intercept your Spotify client's network traffic and get the sha256 value
@@ -117,6 +119,10 @@ import traceback
 import argparse
 import csv
 import pytz
+try:
+    from tzlocal import get_localzone
+except ImportError:
+    pass
 import platform
 import html
 import urllib
@@ -1531,6 +1537,18 @@ if __name__ == "__main__":
         parser.print_help(sys.stderr)
         sys.exit(1)
 
+    local_tz=None
+    if LOCAL_TIMEZONE=="Auto":
+        try:
+            local_tz = get_localzone()
+        except NameError:
+            pass
+        if local_tz:
+            LOCAL_TIMEZONE=str(local_tz)
+        else:
+            print("* Error: Cannot detect local timezone, consider setting LOCAL_TIMEZONE to your local timezone manually !")
+            sys.exit(1)
+
     if args.spotify_dc_cookie:
         SP_DC_COOKIE=args.spotify_dc_cookie
 
@@ -1635,9 +1653,10 @@ if __name__ == "__main__":
     print(f"* Email notifications:\t\t[profile changes = {profile_notification}] [errors = {args.error_notification}]")
     print(f"* Output logging disabled:\t{args.disable_logging}")
     if csv_enabled:
-        print(f"* CSV logging enabled:\t\t{csv_enabled} ({args.csv_file})\n")
+        print(f"* CSV logging enabled:\t\t{csv_enabled} ({args.csv_file})")
     else:
-        print(f"* CSV logging enabled:\t\t{csv_enabled}\n")
+        print(f"* CSV logging enabled:\t\t{csv_enabled}")
+    print(f"* Local timezone:\t\t{LOCAL_TIMEZONE}\n")
 
     # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported
     if platform.system() != 'Windows':
