@@ -41,10 +41,10 @@ SENDER_EMAIL="your_sender_email"
 #SENDER_EMAIL="your_sender_email"
 RECEIVER_EMAIL="your_receiver_email"
 
-# How often do we perform checks for user's profile changes; in seconds
+# How often do we perform checks for user's profile changes, you can also use -c parameter; in seconds
 SPOTIFY_CHECK_INTERVAL=1800 # 30 mins
 
-# How often do we retry in case of errors; in seconds
+# How often do we retry in case of errors, you can also use -m parameter; in seconds
 SPOTIFY_ERROR_INTERVAL=180 # 3 mins
 
 # Specify your local time zone so we convert Spotify timestamps to your time (for example: 'Europe/Warsaw')
