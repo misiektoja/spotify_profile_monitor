@@ -1553,7 +1553,7 @@ if __name__ == "__main__":
         SP_DC_COOKIE=args.spotify_dc_cookie
 
     if not SP_DC_COOKIE or SP_DC_COOKIE=="your_sp_dc_cookie_value":
-        print("* Error: SP_DC_COOKIE (-u / --spotify_dc_cookie) value is empty or incorrect\n")
+        print("* Error: SP_DC_COOKIE (-u / --spotify_dc_cookie) value is empty or incorrect")
         sys.exit(1)
 
     if args.check_interval:
@@ -1620,8 +1620,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if not args.SPOTIFY_USER_URI_ID:
-        print("* Error: SPOTIFY_USER_URI_ID argument is required !\n")
-        parser.print_help()
+        print("* Error: SPOTIFY_USER_URI_ID argument is required !")
         sys.exit(1)
 
     sys.stdout.write("* Checking internet connectivity ... ")
