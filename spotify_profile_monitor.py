@@ -980,8 +980,11 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
             f_list_to_save=[]
             f_list_to_save.append(f_count)
             f_list_to_save.append(f_list)
-            with open(f_file, 'w', encoding="utf-8") as f:
-                json.dump(f_list_to_save, f, indent=2)
+            try:
+                with open(f_file, 'w', encoding="utf-8") as f:
+                    json.dump(f_list_to_save, f, indent=2)
+            except Exception as e:
+                print(f"* Cannot save list of {str(f_str).lower()} to '{f_file}' file - {e}")
 
             try:
                 if csv_file_name:
@@ -1180,9 +1183,12 @@ def spotify_profile_monitor_uri(user_uri_id,error_notification,csv_file_name,csv
         playlists_to_save=[]
         playlists_to_save.append(playlists_count)
         playlists_to_save.append(playlists)
-        with open(playlists_file, 'w', encoding="utf-8") as f:
-            json.dump(playlists_to_save, f, indent=2)
-        print(f"* Playlists ({playlists_count}) saved to file '{playlists_file}'") 
+        try:
+            with open(playlists_file, 'w', encoding="utf-8") as f:
+                json.dump(playlists_to_save, f, indent=2)
+            print(f"* Playlists ({playlists_count}) saved to file '{playlists_file}'")
+        except Exception as e:
+            print(f"* Cannot save list of playlists to '{playlists_file}' file - {e}")            
 
     if playlists_count != playlists_old_count:
         spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count,"Playlists","for","Added playlists","Added Playlist","Removed playlists","Removed Playlist", playlists_file, csv_file_name, False, True, sp_accessToken)
@@ -1205,9 +1211,12 @@ def spotify_profile_monitor_uri(user_uri_id,error_notification,csv_file_name,csv
         followers_to_save=[]
         followers_to_save.append(followers_count)
         followers_to_save.append(followers)
-        with open(followers_file, 'w', encoding="utf-8") as f:
-            json.dump(followers_to_save, f, indent=2)
-        print(f"* Followers ({followers_count}) saved to file '{followers_file}'")       
+        try:
+            with open(followers_file, 'w', encoding="utf-8") as f:
+                json.dump(followers_to_save, f, indent=2)
+            print(f"* Followers ({followers_count}) saved to file '{followers_file}'")
+        except Exception as e:
+            print(f"* Cannot save list of followers to '{followers_file}' file - {e}")
 
     if followers_count != followers_old_count:
         spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count,"Followers","for","Added followers","Added Follower","Removed followers","Removed Follower", followers_file, csv_file_name, False, False)
@@ -1230,9 +1239,12 @@ def spotify_profile_monitor_uri(user_uri_id,error_notification,csv_file_name,csv
         followings_to_save=[]
         followings_to_save.append(followings_count)
         followings_to_save.append(followings)
-        with open(followings_file, 'w', encoding="utf-8") as f:
-            json.dump(followings_to_save, f, indent=2)
-        print(f"* Followings ({followings_count}) saved to file '{followings_file}'") 
+        try:
+            with open(followings_file, 'w', encoding="utf-8") as f:
+                json.dump(followings_to_save, f, indent=2)
+            print(f"* Followings ({followings_count}) saved to file '{followings_file}'")
+        except Exception as e:
+            print(f"* Cannot save list of followings to '{followings_file}' file - {e}")
 
     if followings_count != followings_old_count:
         spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count,"Followings","by","Added followings","Added Following","Removed followings","Removed Following", followings_file, csv_file_name, False, False)
