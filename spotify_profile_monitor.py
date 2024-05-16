@@ -1526,9 +1526,9 @@ if __name__ == "__main__":
     parser.add_argument("-m", "--error_interval", help="Time between error checks, in seconds", type=int)    
     parser.add_argument("-b", "--csv_file", help="Write every profile change to CSV file", type=str, metavar="CSV_FILENAME")
     parser.add_argument("-l","--list_tracks_for_playlist", help="List all tracks for specific Spotify playlist URL", type=str, metavar="SPOTIFY_PLAYLIST_URL")
-    parser.add_argument("-i","--user_profile_details", help="Show profile details for user with specific Spotify URI ID (playlists, followers, followings, recently played artists etc.)", type=str, metavar="SPOTIFY_USER_URI_ID")
-    parser.add_argument("-a","--recently_played_artists", help="List recently played artists for user with specific Spotify URI ID", type=str, metavar="SPOTIFY_USER_URI_ID")
-    parser.add_argument("-f","--followers_and_followings", help="List followers & followings for user with specific Spotify URI ID", type=str, metavar="SPOTIFY_USER_URI_ID")    
+    parser.add_argument("-i","--user_profile_details", help="Show profile details for user with specific Spotify URI ID (playlists, followers, followings, recently played artists etc.)", action='store_true')
+    parser.add_argument("-a","--recently_played_artists", help="List recently played artists for user with specific Spotify URI ID", action='store_true')
+    parser.add_argument("-f","--followers_and_followings", help="List followers & followings for user with specific Spotify URI ID", action='store_true')    
     parser.add_argument("-s","--search_username", help="Search for users with specific name to get their Spotify user URI ID", type=str, metavar="SPOTIFY_USERNAME")    
     parser.add_argument("-d", "--disable_logging", help="Disable logging to file 'spotify_profile_monitor_UserURIID.log' file", action='store_true')
     args=parser.parse_args()
@@ -1576,36 +1576,6 @@ if __name__ == "__main__":
             sys.exit(1)
         sys.exit(0)
 
-    if args.user_profile_details:
-        try:
-            sp_accessToken=spotify_get_access_token(SP_DC_COOKIE)
-            spotify_get_user_details(sp_accessToken, args.user_profile_details)
-        except Exception as e:
-            print(f"* Error - {e}")
-            traceback.print_exc()
-            sys.exit(1)
-        sys.exit(0)
-
-    if args.recently_played_artists:
-        try:
-            sp_accessToken=spotify_get_access_token(SP_DC_COOKIE)
-            spotify_get_recently_played_artists(sp_accessToken, args.recently_played_artists)
-        except Exception as e:
-            print(f"* Error - {e}")
-            traceback.print_exc()
-            sys.exit(1)
-        sys.exit(0)
-
-    if args.followers_and_followings:
-        try:
-            sp_accessToken=spotify_get_access_token(SP_DC_COOKIE)
-            spotify_get_followers_and_followings(sp_accessToken, args.followers_and_followings)
-        except Exception as e:
-            print(f"* Error - {e}")
-            traceback.print_exc()
-            sys.exit(1)
-        sys.exit(0)
-
     if args.search_username:
         if not SP_SHA256 or SP_SHA256=="your_spotify_client_sha256":
             print("* Error: wrong SP_SHA256 value !")
@@ -1622,6 +1592,36 @@ if __name__ == "__main__":
     if not args.SPOTIFY_USER_URI_ID:
         print("* Error: SPOTIFY_USER_URI_ID argument is required !")
         sys.exit(1)
+
+    if args.user_profile_details:
+        try:
+            sp_accessToken=spotify_get_access_token(SP_DC_COOKIE)
+            spotify_get_user_details(sp_accessToken, args.SPOTIFY_USER_URI_ID)
+        except Exception as e:
+            print(f"* Error - {e}")
+            traceback.print_exc()
+            sys.exit(1)
+        sys.exit(0)
+
+    if args.recently_played_artists:
+        try:
+            sp_accessToken=spotify_get_access_token(SP_DC_COOKIE)
+            spotify_get_recently_played_artists(sp_accessToken, args.SPOTIFY_USER_URI_ID)
+        except Exception as e:
+            print(f"* Error - {e}")
+            traceback.print_exc()
+            sys.exit(1)
+        sys.exit(0)
+
+    if args.followers_and_followings:
+        try:
+            sp_accessToken=spotify_get_access_token(SP_DC_COOKIE)
+            spotify_get_followers_and_followings(sp_accessToken, args.SPOTIFY_USER_URI_ID)
+        except Exception as e:
+            print(f"* Error - {e}")
+            traceback.print_exc()
+            sys.exit(1)
+        sys.exit(0)
 
     sys.stdout.write("* Checking internet connectivity ... ")
     sys.stdout.flush()
