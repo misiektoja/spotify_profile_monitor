@@ -2,17 +2,17 @@
 
 spotify_profile_monitor is a Python script which allows for real-time monitoring of Spotify users profile information. 
 
-NOTE: If you want to monitor Spotify friends music activity check out the other tool I developed: [spotify_monitor](https://github.com/misiektoja/spotify_monitor).
+NOTE: If you want to track Spotify friends music activity check out the other tool I developed: [spotify_monitor](https://github.com/misiektoja/spotify_monitor).
 
 ## Features
 
-- Real-time monitoring of Spotify user profile changes:
+- Real-time tracking of Spotify user profile changes:
    - added/removed followings and followers
    - added/removed public playlists
    - added/removed tracks in playlists
    - playlists name and description changes
    - number of likes for playlists
-- Email notifications for different events (added/removed followings, followers, public playlists and its tracks, playlists name and description changes, number of likes for playlists, errors)
+- Email notifications for different events (added/removed followings + followers + public playlists + its tracks, playlists name and description changes, number of likes for playlists, errors)
 - Additional functionalities on top of the monitoring mode allowing to display detailed info about the user, list of followers & followings, recently played artists and possibility to search user names for user URI ID
 - Saving all profile changes with timestamps to the CSV file
 - Clickable Spotify, Apple Music and Genius Lyrics search URLs printed in the console & included in email notifications
@@ -34,18 +34,21 @@ I'm not a dev, project done as a hobby. Code is ugly and as-is, but it works (at
 
 The script requires Python 3.x.
 
-It requires requests, python-dateutil, pytz and urllib3.
+It uses requests, python-dateutil, pytz, tzlocal and urllib3.
 
-It has been tested succesfully on Linux (Raspberry Pi Bullseye & Bookworm based on Debian) and Mac OS (Ventura & Sonoma). 
+It has been tested succesfully on:
+- macOS (Ventura & Sonoma)
+- Linux (Raspberry Pi Bullseye & Bookworm based on Debian, Ubuntu 24)
+- Windows (10 & 11)
 
-Should work on any other Linux OS and Windows with Python.
+It should work on other versions of macOS, Linux, Unix and Windows as well.
 
 ## Installation
 
 Install the required Python packages:
 
 ```sh
-python3 -m pip install requests python-dateutil pytz urllib3
+python3 -m pip install requests python-dateutil pytz tzlocal urllib3
 ```
 
 Or from requirements.txt:
@@ -56,7 +59,7 @@ pip3 install -r requirements.txt
 
 Copy the *[spotify_profile_monitor.py](spotify_profile_monitor.py)* file to the desired location. 
 
-You might want to add executable rights if on Linux or MacOS:
+You might want to add executable rights if on Linux/Unix/macOS:
 
 ```sh
 chmod a+x spotify_profile_monitor.py
@@ -78,11 +81,15 @@ It is suggested to create a new Spotify account for usage with the tool since we
 
 ### Timezone
 
-It is recommended to specify your local time zone so the tool converts Spotify timestamps to your time:
+The tool will try to automatically detect your local time zone so it can convert Spotify timestamps to your time. 
+
+In case you want to specify your timezone manually then change **LOCAL_TIMEZONE** variable from *'Auto'* to specific location, e.g.
 
 ```
 LOCAL_TIMEZONE='Europe/Warsaw'
 ```
+
+In such case it is not needed to install *tzlocal* pip module.
 
 ### Spotify sha256
 
@@ -229,7 +236,7 @@ Example email:
 
 ### Saving profile changes to the CSV file
 
-If you want to save all the profile changes in the CSV file, use **-b** parameter with the name of the file (it will be automatically created if it does not exist):
+If you want to save all profile changes in the CSV file, use **-b** parameter with the name of the file (it will be automatically created if it does not exist):
 
 ```sh
 ./spotify_profile_monitor.py misiektoja -b spotify_profile_changes_misiektoja.csv
@@ -243,7 +250,7 @@ If you want to change the check interval to 15 minutes (900 seconds) use **-c** 
 ./spotify_profile_monitor.py misiektoja -c 900
 ```
 
-### Controlling the script via signals
+### Controlling the script via signals (only macOS/Linux/Unix)
 
 The tool has several signal handlers implemented which allow to change behaviour of the tool without a need to restart it with new parameters.
 
@@ -262,6 +269,8 @@ I personally use **pkill** tool, so for example to toggle email notifications fo
 ```sh
 pkill -f -USR1 "python3 ./spotify_profile_monitor.py misiektoja"
 ```
+
+As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.
 
 ### Other
 
