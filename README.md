@@ -77,7 +77,7 @@ You can use Cookie-Editor by cgagnier to get it easily (available for all major 
 
 Newly generated Spotify's sp_dc cookie should be valid for 1 year. You will be informed by the tool once the cookie expires (proper message on the console and in email if errors notifications have not been disabled via **-e** parameter).
 
-It is suggested to create a new Spotify account for usage with the tool since we are not using official Spotify Web API as some needed features were not available.
+It is suggested to create a new Spotify account for usage with the tool since we are not using official Spotify Web API most of the time (as some needed features were not available).
 
 ### Timezone
 
@@ -150,7 +150,7 @@ The tool will run infinitely and monitor the user until the script is interrupte
 
 You can monitor multiple Spotify users by spawning multiple copies of the script. 
 
-It is suggested to use sth like **tmux** or **screen** to have the script running after you log out from the server.
+It is suggested to use sth like **tmux** or **screen** to have the script running after you log out from the server (unless you are running it on your desktop).
 
 The tool automatically saves its output to *spotify_profile_monitor_{user_uri_id}.log* file (can be changed in the settings or disabled with **-d** parameter). 
 
