@@ -1244,22 +1244,26 @@ def spotify_profile_monitor_uri(user_uri_id,error_notification,csv_file_name,csv
     while True:
 
         # Sometimes Spotify network functions halt even though we specified the timeout
-        # To overcome this we use alarm signal functionality to kill it inevitably
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(FUNCTION_TIMEOUT)        
+        # To overcome this we use alarm signal functionality to kill it inevitably, not available on Windows
+        if platform.system() != 'Windows':
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(FUNCTION_TIMEOUT)
         try:
             sp_accessToken=spotify_get_access_token(SP_DC_COOKIE)
             sp_user_data=spotify_get_user_info(sp_accessToken,user_uri_id)
             email_sent=False
-            signal.alarm(0)
+            if platform.system() != 'Windows':
+                signal.alarm(0)
         except TimeoutException:
-            signal.alarm(0)
+            if platform.system() != 'Windows':
+                signal.alarm(0)
             print(f"spotify_*() timeout, retrying in {display_time(FUNCTION_TIMEOUT)}")
             print_cur_ts("Timestamp:\t\t")
             time.sleep(FUNCTION_TIMEOUT)
             continue
         except Exception as e:
-            signal.alarm(0)
+            if platform.system() != 'Windows':
+                signal.alarm(0)
             print(f"Error, retrying in {display_time(SPOTIFY_ERROR_INTERVAL)} - {e}")
             if ('access token' in str(e)) or ('Unauthorized' in str(e)):
                 print("* sp_dc might have expired!")
