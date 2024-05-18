@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes. 
 
-# Changes in 1.1 (17 May 2024)
+# Changes in 1.1 (19 May 2024)
 
 **Features and Improvements**:
 
@@ -10,6 +10,7 @@ This is a high-level summary of the most important changes.
 - Automatic detection of local timezone if you set LOCAL_TIMEZONE variable to 'Auto' (it is default now); requires tzlocal pip module
 - Information about time zone is displayed in the start screen now
 - Better checking for wrong command line arguments
+- pep8 style convention corrections
 
 **Bugfixes**:
 
