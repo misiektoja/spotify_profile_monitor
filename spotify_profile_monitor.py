@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.1
+v1.2
 
 Script implementing real-time monitoring of Spotify users profile changes:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -15,7 +15,7 @@ requests
 urllib3
 """
 
-VERSION = 1.1
+VERSION = 1.2
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -1157,6 +1157,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
     print(f"Followings:\t\t{followings_count}")
     print(f"Public playlists:\t{playlists_count}")
 
+    list_of_playlists = []
     if playlists:
         print("\n* Getting list of public playlists (be patient, it might take a while) ...\n")
         list_of_playlists = spotify_process_public_playlists(sp_accessToken, playlists, True)
