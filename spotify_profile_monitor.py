@@ -1103,27 +1103,19 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
     email_sent = False
 
-    while True:
-        try:
-            sp_accessToken = spotify_get_access_token(SP_DC_COOKIE)
-            sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id)
-            sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
-            sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
-            email_sent = False
-            break
-        except Exception as e:
-            print(f"Error, retrying in {display_time(SPOTIFY_ERROR_INTERVAL)} - {e}")
-            if ('access token' in str(e)) or ('Unauthorized' in str(e)):
-                print("* sp_dc might have expired!")
-                if error_notification and not email_sent:
-                    m_subject = f"spotify_profile_monitor: sp_dc might have expired! (uri: {user_uri_id})"
-                    m_body = f"sp_dc might have expired: {e}{get_cur_ts("\n\nTimestamp: ")}"
-                    m_body_html = f"<html><head></head><body>sp_dc might have expired: {e}{get_cur_ts("<br><br>Timestamp: ")}</body></html>"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-                    email_sent = True
-            print_cur_ts("Timestamp:\t\t")
-            time.sleep(SPOTIFY_ERROR_INTERVAL)
+    try:
+        sp_accessToken = spotify_get_access_token(SP_DC_COOKIE)
+        sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id)
+        sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
+        sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
+    except Exception as e:
+        if ('access token' in str(e)) or ('Unauthorized' in str(e)):
+            print("* Error: sp_dc might have expired!")
+        elif '404' in str(e):
+            print("* Error: user does not exist!")
+        else:
+            print(f"Error: {e}")
+        sys.exit(1)
 
     print("* User found, starting monitoring ....")
 
