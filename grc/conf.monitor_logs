@@ -244,7 +244,7 @@ colours=unchanged, bold magenta, bold magenta
 regexp=.*\(was offline since.*, (\d\d:\d\d:\d\d)
 colours=unchanged, bold magenta
 -
-regexp=(?i).*(story for user|Newest post|Followers number changed|Followings number changed|Playlists number changed|Bio changed for|New post for user|number changed|Followings changed|Followers changed|name changed to|has changed for user|has been updated for user|number of tracks changed|number of likes changed|name changed to new name|description changed from).*
+regexp=(?i).*(story for user|Newest post|Followers number changed|Followings number changed|Playlists number changed|Bio changed for|New post for user|number changed|Followings changed|Followers changed|name changed to|has changed for user|has been updated for user|number of tracks changed|number of likes changed|name changed to new name|description changed from|changed profile picture|removed profile picture|set profile picture).*
 colours=yellow
 -
 regexp=.*number.*from (\d+ )to (\d+)
@@ -331,4 +331,10 @@ colours=unchanged, unchanged, unchanged, blue underline, unchanged
 -
 regexp=\* Playlist \'(.*)\'(\s|:)(.*)$
 colours=unchanged, green, unchanged, unchanged
+-
+regexp=^\* User ([\w_-]+) has .*
+colours=unchanged, blue underline, unchanged
+-
+regexp=^\* User [\w_-]+ has .* added on (\d+ \w+ \d+, \d\d:\d\d)
+colours=unchanged, magenta, unchanged
 
