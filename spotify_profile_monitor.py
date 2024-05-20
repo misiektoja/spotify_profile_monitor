@@ -51,6 +51,14 @@ SPOTIFY_ERROR_INTERVAL = 180  # 3 mins
 # If you leave it as 'Auto' we will try to automatically detect the local timezone
 LOCAL_TIMEZONE = 'Auto'
 
+# Do you want to be informed about changed user's profile pic ? (via console & email notifications when -p is enabled)
+# If so, the tool will save the pic to the file named 'spotify_user_uri_id_profile_pic.jpeg' after tool is started (in monitoring mode)
+# And also to files named 'spotify_user_uri_id_profile_pic_YYmmdd_HHMM.jpeg' when changes are detected
+# The file won't be saved when using listing mode (for example -i parameter)
+# We need to save the binary form of the image as the pic URL can change, so we need to actually do bin comparison of files
+# It is enabled by default, you can change it below or disable by using -j parameter
+DETECT_CHANGED_PROFILE_PIC = True
+
 # SP_SHA256 is only needed for functionality searching Spotify users (-s), otherwise you can leave it empty
 # You need to intercept your Spotify client's network traffic and get the sha256 value
 # To simulate the needed request, search for some user in Spotify client
@@ -111,6 +119,7 @@ from datetime import datetime
 from dateutil import relativedelta
 import calendar
 import requests as req
+import shutil
 import signal
 import smtplib
 import ssl
@@ -129,6 +138,7 @@ import html
 import urllib
 import re
 import ipaddress
+from itertools import zip_longest
 
 
 # Logger class to output messages to stdout and log file
@@ -591,6 +601,7 @@ def spotify_get_user_info(access_token, user_uri_id):
         sp_user_followers_count = json_response.get("followers_count", 0)
         sp_user_show_follows = json_response.get("show_follows")
         sp_user_followings_count = json_response.get("following_count", 0)
+        sp_user_image_url = json_response.get("image_url", "")
 
         sp_user_public_playlists_uris = json_response.get("public_playlists", None)
         sp_user_public_playlists_count = json_response.get("total_public_playlists_count", 0)
@@ -609,7 +620,7 @@ def spotify_get_user_info(access_token, user_uri_id):
         remove_key_from_list_of_dicts(sp_user_recently_played_artists, 'image_url')
         remove_key_from_list_of_dicts(sp_user_recently_played_artists, 'followers_count')
 
-        return {"sp_username": sp_username, "sp_user_followers_count": sp_user_followers_count, "sp_user_show_follows": sp_user_show_follows, "sp_user_followings_count": sp_user_followings_count, "sp_user_public_playlists_count": sp_user_public_playlists_count, "sp_user_public_playlists_uris": sp_user_public_playlists_uris, "sp_user_recently_played_artists": sp_user_recently_played_artists}
+        return {"sp_username": sp_username, "sp_user_followers_count": sp_user_followers_count, "sp_user_show_follows": sp_user_show_follows, "sp_user_followings_count": sp_user_followings_count, "sp_user_public_playlists_count": sp_user_public_playlists_count, "sp_user_public_playlists_uris": sp_user_public_playlists_uris, "sp_user_recently_played_artists": sp_user_recently_played_artists, "sp_user_image_url": sp_user_image_url}
     except Exception as e:
         raise
 
@@ -756,6 +767,7 @@ def spotify_search_users(access_token, username):
         print("No results")
 
 
+# Function processing items of all passed playlists and returning list of dictionaries
 def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
     list_of_playlists = []
 
@@ -828,6 +840,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
     return list_of_playlists
 
 
+# Function printing detailed info about user's playlists
 def spotify_print_public_playlists(list_of_playlists):
 
     if list_of_playlists:
@@ -857,7 +870,7 @@ def spotify_print_public_playlists(list_of_playlists):
                 print()
 
 
-# Function printing detailed info about the user with specified URI ID
+# Function printing detailed info about user with specified URI ID (-i parameter)
 def spotify_get_user_details(sp_accessToken, user_uri_id):
     print(f"Getting detailed info for user with URI ID '{user_uri_id}' ...\n")
 
@@ -866,6 +879,7 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
     sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
 
     username = sp_user_data["sp_username"]
+    image_url = sp_user_data["sp_user_image_url"]
 
     followers = sp_user_followers_data["sp_user_followers"]
     followings = sp_user_followings_data["sp_user_followings"]
@@ -890,6 +904,8 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
     print(f"Username:\t\t{username}")
     print(f"User URI ID:\t\t{user_uri_id}")
     print(f"User URL:\t\t{spotify_convert_uri_to_url(f"spotify:user:{user_uri_id}")}")
+
+    print(f"User profile picture:\t{image_url != ""}")
 
     print(f"\nFollowers:\t\t{followers_count}")
     if followers:
@@ -918,19 +934,22 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
         spotify_print_public_playlists(list_of_playlists)
 
 
-# Function returning recently played artists for user with specified URI
+# Function returning recently played artists for user with specified URI (-a parameter)
 def spotify_get_recently_played_artists(sp_accessToken, user_uri_id):
     print(f"Getting list of recently played artists for user with URI ID '{user_uri_id}' ...\n")
 
     sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id)
 
     username = sp_user_data["sp_username"]
+    image_url = sp_user_data["sp_user_image_url"]
 
     recently_played_artists = sp_user_data["sp_user_recently_played_artists"]
 
     print(f"Username:\t\t{username}")
     print(f"User URI ID:\t\t{user_uri_id}")
     print(f"User URL:\t\t{spotify_convert_uri_to_url(f"spotify:user:{user_uri_id}")}")
+
+    print(f"User profile picture:\t{image_url != ""}")
 
     if recently_played_artists:
         print("\nRecently played artists:\n")
@@ -941,11 +960,12 @@ def spotify_get_recently_played_artists(sp_accessToken, user_uri_id):
         print("\nRecently played artists list is empty\n")
 
 
-# Function printing followers & followings for user with specified URI
+# Function printing followers & followings for user with specified URI (-f parameter)
 def spotify_get_followers_and_followings(sp_accessToken, user_uri_id):
     print(f"Getting followers & followings for user with URI ID '{user_uri_id}' ...\n")
 
     sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id)
+    image_url = sp_user_data["sp_user_image_url"]
     sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
     sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
 
@@ -970,6 +990,8 @@ def spotify_get_followers_and_followings(sp_accessToken, user_uri_id):
     print(f"User URI ID:\t\t{user_uri_id}")
     print(f"User URL:\t\t{spotify_convert_uri_to_url(f"spotify:user:{user_uri_id}")}")
 
+    print(f"User profile picture:\t{image_url != ""}")
+
     print("\nFollowers:\t\t", followers_count)
     if followers:
         print()
@@ -984,6 +1006,7 @@ def spotify_get_followers_and_followings(sp_accessToken, user_uri_id):
                 print(f"- {f_dict["name"]} [ {spotify_convert_uri_to_url(f_dict["uri"])} ]")
 
 
+# Function printing and saving changed list of followers/followings/playlists (with email notifications)
 def spotify_print_changed_followers_followings_playlists(username, f_list, f_list_old, f_count, f_old_count, f_str, f_str_by_or_from, f_added_str, f_added_csv, f_removed_str, f_removed_csv, f_file, csv_file_name, profile_notification, is_playlist, sp_accessToken=""):
 
             f_diff = f_count - f_old_count
@@ -1088,6 +1111,35 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                 send_email(m_subject, m_body, "", SMTP_SSL)
 
 
+# Function saving user's profile pic to selected file name
+def save_profile_pic(user_uri_id, user_image_url, image_file_name):
+    try:
+        image_response = req.get(user_image_url, timeout=FUNCTION_TIMEOUT, stream=True)
+        image_response.raise_for_status()
+        if image_response.status_code == 200:
+            with open(image_file_name, 'wb') as f:
+                image_response.raw.decode_content = True
+                shutil.copyfileobj(image_response.raw, f)
+        return True
+    except Exception as e:
+        return False
+
+
+# Function comparing two image files
+def compare_images(path1, path2):
+    try:
+        with open(path1, 'rb') as f1, open(path2, 'rb') as f2:
+            for line1, line2 in zip_longest(f1, f2, fillvalue=None):
+                if line1 == line2:
+                    continue
+                else:
+                    return False
+            return True
+    except Exception as e:
+        print(f"Error while comparing profile pictures - {e}")
+        return False
+
+
 # Main function monitoring profile changes of the specified Spotify user URI ID
 def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, csv_exists):
 
@@ -1117,9 +1169,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             print(f"Error: {e}")
         sys.exit(1)
 
-    print("* User found, starting monitoring ....")
-
     username = sp_user_data["sp_username"]
+    image_url = sp_user_data["sp_user_image_url"]
 
     followers = sp_user_followers_data["sp_user_followers"]
     followings = sp_user_followings_data["sp_user_followings"]
@@ -1141,9 +1192,11 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
     recently_played_artists = sp_user_data["sp_user_recently_played_artists"]
 
-    print(f"\nUsername:\t\t{username}")
+    print(f"Username:\t\t{username}")
     print(f"User URI ID:\t\t{user_uri_id}")
     print(f"User URL:\t\t{spotify_convert_uri_to_url(f"spotify:user:{user_uri_id}")}")
+
+    print(f"User profile picture:\t{image_url != ""}")
 
     print(f"\nFollowers:\t\t{followers_count}")
     print(f"Followings:\t\t{followings_count}")
@@ -1154,12 +1207,17 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
         print("\n* Getting list of public playlists (be patient, it might take a while) ...\n")
         list_of_playlists = spotify_process_public_playlists(sp_accessToken, playlists, True)
         spotify_print_public_playlists(list_of_playlists)
+    else:
+        print()
 
     print_cur_ts("Timestamp:\t\t")
 
     followers_file = f"spotify_{user_uri_id}_followers.json"
     followings_file = f"spotify_{user_uri_id}_followings.json"
     playlists_file = f"spotify_{user_uri_id}_playlists.json"
+    profile_pic_file = f"spotify_{user_uri_id}_profile_pic.jpeg"
+    profile_pic_file_old = f"spotify_{user_uri_id}_profile_pic_old.jpeg"
+    profile_pic_file_tmp = f"spotify_{user_uri_id}_profile_pic_tmp.jpeg"
 
     followers_old = followers
     followings_old = followings
@@ -1259,14 +1317,54 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
     if followings_count != followings_old_count:
         spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, False, False)
 
+    print_cur_ts("Timestamp:\t\t")
+
+    # profile pic
+
+    if DETECT_CHANGED_PROFILE_PIC:
+
+        # user has no profile pic, but it exists in the filesystem
+        if not image_url and os.path.isfile(profile_pic_file):
+            profile_pic_mdate = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file))).strftime("%d %b %Y, %H:%M")
+            print(f"* User {username} has removed profile picture added on {profile_pic_mdate} !")
+            os.replace(profile_pic_file, profile_pic_file_old)
+            print_cur_ts("Timestamp:\t\t")
+
+        # user has profile pic, but it does not exist in the filesystem
+        elif image_url and not os.path.isfile(profile_pic_file):
+            if save_profile_pic(user_uri_id, image_url, profile_pic_file):
+                print(f"* User {username} profile picture saved to '{profile_pic_file}'")
+                try:
+                    shutil.copyfile(profile_pic_file, f"spotify_{user_uri_id}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
+                except:
+                    pass
+            else:
+                print(f"Error saving profile picture !")
+            print_cur_ts("Timestamp:\t\t")
+
+        # user has profile pic and it exists in the filesystem, but we check if it has not changed
+        elif image_url and os.path.isfile(profile_pic_file):
+            profile_pic_mdate = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file))).strftime("%d %b %Y, %H:%M")
+            print(f"* Profile picture '{profile_pic_file}' already exists ({profile_pic_mdate})")
+            if save_profile_pic(user_uri_id, image_url, profile_pic_file_tmp):
+                if not compare_images(profile_pic_file, profile_pic_file_tmp):
+                    print(f"* User {username} has changed profile picture, saving new one !")
+                    try:
+                        shutil.copyfile(profile_pic_file_tmp, f"spotify_{user_uri_id}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
+                        os.replace(profile_pic_file, profile_pic_file_old)
+                        os.replace(profile_pic_file_tmp, profile_pic_file)
+                    except Exception as e:
+                        print(f"Error while replacing/copying files - {e}")
+            else:
+                print(f"Error while checking if the profile picture has changed !")
+            print_cur_ts("Timestamp:\t\t")
+
     followers_old = followers
     followings_old = followings
     followers_old_count = followers_count
     followings_old_count = followings_count
     playlists_old = playlists
     playlists_old_count = playlists_count
-
-    print_cur_ts("Timestamp:\t\t")
 
     time.sleep(SPOTIFY_CHECK_INTERVAL)
     email_sent = False
@@ -1298,11 +1396,20 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                 signal.alarm(0)
             print(f"Error, retrying in {display_time(SPOTIFY_ERROR_INTERVAL)} - {e}")
             if ('access token' in str(e)) or ('Unauthorized' in str(e)):
-                print("* sp_dc might have expired!")
+                print("* Error: sp_dc might have expired!")
                 if error_notification and not email_sent:
                     m_subject = f"spotify_profile_monitor: sp_dc might have expired! (uri: {user_uri_id})"
                     m_body = f"sp_dc might have expired: {e}{get_cur_ts("\n\nTimestamp: ")}"
                     m_body_html = f"<html><head></head><body>sp_dc might have expired: {e}{get_cur_ts("<br><br>Timestamp: ")}</body></html>"
+                    print(f"Sending email notification to {RECEIVER_EMAIL}")
+                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                    email_sent = True
+            elif '404' in str(e):
+                print("* Error: user might have removed the account !")
+                if error_notification and not email_sent:
+                    m_subject = f"spotify_profile_monitor: user might have removed the account! (uri: {user_uri_id})"
+                    m_body = f"User might have removed the account: {e}{get_cur_ts("\n\nTimestamp: ")}"
+                    m_body_html = f"<html><head></head><body>User might have removed the account: {e}{get_cur_ts("<br><br>Timestamp: ")}</body></html>"
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, m_body_html, SMTP_SSL)
                     email_sent = True
@@ -1311,6 +1418,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             continue
 
         username = sp_user_data["sp_username"]
+        image_url = sp_user_data["sp_user_image_url"]
 
         try:
             sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
@@ -1358,6 +1466,66 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
             print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
             print_cur_ts("Timestamp:\t\t")
+
+        # profile pic
+
+        if DETECT_CHANGED_PROFILE_PIC:
+
+            # user has no profile pic, but it exists in the filesystem
+            if not image_url and os.path.isfile(profile_pic_file):
+                profile_pic_mdate = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file))).strftime("%d %b %Y, %H:%M")
+                print(f"* User {username} has removed profile picture added on {profile_pic_mdate} !")
+                os.replace(profile_pic_file, profile_pic_file_old)
+                if profile_notification:
+                    m_subject = f"Spotify user {username} has removed profile picture !"
+                    m_body = f"Spotify user {username} has removed profile picture added on {profile_pic_mdate} !\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
+                    print(f"Sending email notification to {RECEIVER_EMAIL}")
+                    send_email(m_subject, m_body, "", SMTP_SSL)
+                print_cur_ts("Timestamp:\t\t")
+
+            # user has profile pic, but it does not exist in the filesystem
+            elif image_url and not os.path.isfile(profile_pic_file):
+                print(f"* User {username} has set profile picture !")
+                mbody_pic_saved_text = ""
+                if save_profile_pic(user_uri_id, image_url, profile_pic_file):
+                    mbody_pic_saved_text = f"\n\nUser profile picture saved to '{profile_pic_file}'"
+                    print(f"* User profile picture saved to '{profile_pic_file}'")
+                    try:
+                        shutil.copyfile(profile_pic_file, f"spotify_{user_uri_id}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
+                    except:
+                        pass
+                else:
+                    mbody_pic_saved_text = f"\n\nError saving profile picture !"
+                    print(f"Error saving profile picture !")
+                if profile_notification:
+                    m_subject = f"Spotify user {username} has set profile picture !"
+                    m_body = f"Spotify user {username} has set profile picture !{mbody_pic_saved_text}\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
+                    print(f"Sending email notification to {RECEIVER_EMAIL}")
+                    send_email(m_subject, m_body, "", SMTP_SSL)
+                print_cur_ts("Timestamp:\t\t")
+
+            # user has profile pic and it exists in the filesystem, but we check if it has not changed
+            elif image_url and os.path.isfile(profile_pic_file):
+                profile_pic_mdate = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file))).strftime("%d %b %Y, %H:%M")
+                if save_profile_pic(user_uri_id, image_url, profile_pic_file_tmp):
+                    if not compare_images(profile_pic_file, profile_pic_file_tmp):
+
+                        print(f"* User {username} has changed profile picture, saving new one ! (previous one added on {profile_pic_mdate})")
+                        try:
+                            shutil.copyfile(profile_pic_file_tmp, f"spotify_{user_uri_id}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
+                            os.replace(profile_pic_file, profile_pic_file_old)
+                            os.replace(profile_pic_file_tmp, profile_pic_file)
+                        except Exception as e:
+                            print(f"Error while replacing/copying files - {e}")
+                        if profile_notification:
+                            m_subject = f"Spotify user {username} has changed profile picture !"
+                            m_body = f"Spotify user {username} has changed profile picture !\n\nPrevious one added on {profile_pic_mdate}\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
+                            print(f"Sending email notification to {RECEIVER_EMAIL}")
+                            send_email(m_subject, m_body, "", SMTP_SSL)
+                        print_cur_ts("Timestamp:\t\t")
+                else:
+                    print(f"Error while checking if the profile pic has changed !")
+                    print_cur_ts("Timestamp:\t\t")
 
         list_of_playlists = []
         if playlists:
@@ -1551,6 +1719,7 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--check_interval", help="Time between monitoring checks, in seconds", type=int)
     parser.add_argument("-m", "--error_interval", help="Time between error checks, in seconds", type=int)
     parser.add_argument("-b", "--csv_file", help="Write every profile change to CSV file", type=str, metavar="CSV_FILENAME")
+    parser.add_argument("-j", "--do_not_detect_changed_profile_pic", help="Disable saving the user's profile pic in monitoring mode to the file named 'spotify_user_uri_id_profile_pic_YYmmdd_HHMM.jpeg' after every start of the tool and when changes are detected", action='store_false')
     parser.add_argument("-l", "--list_tracks_for_playlist", help="List all tracks for specific Spotify playlist URL", type=str, metavar="SPOTIFY_PLAYLIST_URL")
     parser.add_argument("-i", "--user_profile_details", help="Show profile details for user with specific Spotify URI ID (playlists, followers, followings, recently played artists etc.)", action='store_true')
     parser.add_argument("-a", "--recently_played_artists", help="List recently played artists for user with specific Spotify URI ID", action='store_true')
@@ -1581,6 +1750,9 @@ if __name__ == "__main__":
     if not SP_DC_COOKIE or SP_DC_COOKIE == "your_sp_dc_cookie_value":
         print("* Error: SP_DC_COOKIE (-u / --spotify_dc_cookie) value is empty or incorrect")
         sys.exit(1)
+
+    if args.do_not_detect_changed_profile_pic is False:
+        DETECT_CHANGED_PROFILE_PIC = False
 
     if args.check_interval:
         SPOTIFY_CHECK_INTERVAL = args.check_interval
@@ -1680,6 +1852,7 @@ if __name__ == "__main__":
 
     print(f"* Spotify timers:\t\t[check interval: {display_time(SPOTIFY_CHECK_INTERVAL)}] [error interval: {display_time(SPOTIFY_ERROR_INTERVAL)}]")
     print(f"* Email notifications:\t\t[profile changes = {profile_notification}] [errors = {args.error_notification}]")
+    print(f"* Detect changed profile pic:\t{DETECT_CHANGED_PROFILE_PIC}")
     print(f"* Output logging disabled:\t{args.disable_logging}")
     if csv_enabled:
         print(f"* CSV logging enabled:\t\t{csv_enabled} ({args.csv_file})")
