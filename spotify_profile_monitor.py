@@ -1366,6 +1366,11 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                         os.replace(profile_pic_file_tmp, profile_pic_file)
                     except Exception as e:
                         print(f"Error while replacing/copying files - {e}")
+                else:
+                    try:
+                        os.remove(profile_pic_file_tmp)
+                    except:
+                        pass
             else:
                 print(f"Error while checking if the profile picture has changed !")
             print_cur_ts("Timestamp:\t\t")
@@ -1552,6 +1557,11 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                             else:
                                 send_email(m_subject, m_body, m_body_html, SMTP_SSL)
                         print_cur_ts("Timestamp:\t\t")
+                    else:
+                        try:
+                            os.remove(profile_pic_file_tmp)
+                        except:
+                            pass
                 else:
                     print(f"Error while checking if the profile pic has changed !")
                     print_cur_ts("Timestamp:\t\t")
