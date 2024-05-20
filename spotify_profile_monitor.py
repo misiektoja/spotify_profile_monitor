@@ -126,6 +126,7 @@ import ssl
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.mime.image import MIMEImage
 import argparse
 import csv
 import pytz
@@ -275,7 +276,7 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
 
 
 # Function to send email notification
-def send_email(subject, body, body_html, use_ssl):
+def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1"):
     fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
     email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
 
@@ -323,6 +324,11 @@ def send_email(subject, body, body_html, use_ssl):
         email_msg["To"] = RECEIVER_EMAIL
         email_msg["Subject"] = Header(subject, 'utf-8')
 
+        if image_file:
+            fp = open(image_file, 'rb')
+            img_part = MIMEImage(fp.read())
+            fp.close()
+
         if body:
             part1 = MIMEText(body, 'plain')
             part1 = MIMEText(body.encode('utf-8'), 'plain', _charset='utf-8')
@@ -332,6 +338,10 @@ def send_email(subject, body, body_html, use_ssl):
             part2 = MIMEText(body_html, 'html')
             part2 = MIMEText(body_html.encode('utf-8'), 'html', _charset='utf-8')
             email_msg.attach(part2)
+
+        if image_file:
+            img_part.add_header('Content-ID', f'<{image_name}>')
+            email_msg.attach(img_part)
 
         smtpObj.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_msg.as_string())
         smtpObj.quit()
@@ -1112,7 +1122,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
 
 
 # Function saving user's profile pic to selected file name
-def save_profile_pic(user_uri_id, user_image_url, image_file_name):
+def save_profile_pic(user_image_url, image_file_name):
     try:
         image_response = req.get(user_image_url, timeout=FUNCTION_TIMEOUT, stream=True)
         image_response.raise_for_status()
@@ -1332,7 +1342,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
         # user has profile pic, but it does not exist in the filesystem
         elif image_url and not os.path.isfile(profile_pic_file):
-            if save_profile_pic(user_uri_id, image_url, profile_pic_file):
+            if save_profile_pic(image_url, profile_pic_file):
                 print(f"* User {username} profile picture saved to '{profile_pic_file}'")
                 try:
                     shutil.copyfile(profile_pic_file, f"spotify_{user_uri_id}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
@@ -1346,7 +1356,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
         elif image_url and os.path.isfile(profile_pic_file):
             profile_pic_mdate = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file))).strftime("%d %b %Y, %H:%M")
             print(f"* Profile picture '{profile_pic_file}' already exists ({profile_pic_mdate})")
-            if save_profile_pic(user_uri_id, image_url, profile_pic_file_tmp):
+            if save_profile_pic(image_url, profile_pic_file_tmp):
                 if not compare_images(profile_pic_file, profile_pic_file_tmp):
                     print(f"* User {username} has changed profile picture, saving new one !")
                     try:
@@ -1487,41 +1497,59 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             elif image_url and not os.path.isfile(profile_pic_file):
                 print(f"* User {username} has set profile picture !")
                 mbody_pic_saved_text = ""
-                if save_profile_pic(user_uri_id, image_url, profile_pic_file):
-                    mbody_pic_saved_text = f"\n\nUser profile picture saved to '{profile_pic_file}'"
+                mbody_html_pic_saved_text = ""
+                if save_profile_pic(image_url, profile_pic_file):
+                    save_ok = True
+                    mbody_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
                     print(f"* User profile picture saved to '{profile_pic_file}'")
                     try:
                         shutil.copyfile(profile_pic_file, f"spotify_{user_uri_id}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
                     except:
                         pass
                 else:
+                    save_ok = False
                     mbody_pic_saved_text = f"\n\nError saving profile picture !"
+                    mbody_html_pic_saved_text = f"<br><br>Error saving profile picture !"
                     print(f"Error saving profile picture !")
                 if profile_notification:
                     m_subject = f"Spotify user {username} has set profile picture !"
                     m_body = f"Spotify user {username} has set profile picture !{mbody_pic_saved_text}\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
+                    m_body_html = f"Spotify user <b>{username}</b> has set profile picture !{mbody_html_pic_saved_text}<br><br>Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("<br>Timestamp: ")}"
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, "", SMTP_SSL)
+                    if save_ok:
+                        send_email(m_subject, m_body, m_body_html, SMTP_SSL, profile_pic_file, "profile_pic")
+                    else:
+                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
                 print_cur_ts("Timestamp:\t\t")
 
             # user has profile pic and it exists in the filesystem, but we check if it has not changed
             elif image_url and os.path.isfile(profile_pic_file):
                 profile_pic_mdate = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file))).strftime("%d %b %Y, %H:%M")
-                if save_profile_pic(user_uri_id, image_url, profile_pic_file_tmp):
+                if save_profile_pic(image_url, profile_pic_file_tmp):
                     if not compare_images(profile_pic_file, profile_pic_file_tmp):
-
                         print(f"* User {username} has changed profile picture, saving new one ! (previous one added on {profile_pic_mdate})")
+                        mbody_pic_saved_text = ""
+                        mbody_html_pic_saved_text = ""
                         try:
                             shutil.copyfile(profile_pic_file_tmp, f"spotify_{user_uri_id}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
                             os.replace(profile_pic_file, profile_pic_file_old)
                             os.replace(profile_pic_file_tmp, profile_pic_file)
+                            save_ok = True
+                            mbody_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
                         except Exception as e:
                             print(f"Error while replacing/copying files - {e}")
+                            save_ok = False
+                            mbody_pic_saved_text = f"\n\nError while replacing/copying files - {e}"
+                            mbody_html_pic_saved_text = f"<br><br>Error while replacing/copying files - {e}"
                         if profile_notification:
                             m_subject = f"Spotify user {username} has changed profile picture !"
-                            m_body = f"Spotify user {username} has changed profile picture !\n\nPrevious one added on {profile_pic_mdate}\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
+                            m_body = f"Spotify user {username} has changed profile picture !{mbody_pic_saved_text}\n\nPrevious one added on {profile_pic_mdate}\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
+                            m_body_html = f"Spotify user <b>{username}</b> has changed profile picture !{mbody_html_pic_saved_text}<br><br>Previous one added on {profile_pic_mdate}<br><br>Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("<br>Timestamp: ")}"
                             print(f"Sending email notification to {RECEIVER_EMAIL}")
-                            send_email(m_subject, m_body, "", SMTP_SSL)
+                            if save_ok:
+                                send_email(m_subject, m_body, m_body_html, SMTP_SSL, profile_pic_file, "profile_pic")
+                            else:
+                                send_email(m_subject, m_body, m_body_html, SMTP_SSL)
                         print_cur_ts("Timestamp:\t\t")
                 else:
                     print(f"Error while checking if the profile pic has changed !")
@@ -1719,7 +1747,7 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--check_interval", help="Time between monitoring checks, in seconds", type=int)
     parser.add_argument("-m", "--error_interval", help="Time between error checks, in seconds", type=int)
     parser.add_argument("-b", "--csv_file", help="Write every profile change to CSV file", type=str, metavar="CSV_FILENAME")
-    parser.add_argument("-j", "--do_not_detect_changed_profile_pic", help="Disable saving the user's profile pic in monitoring mode to the file named 'spotify_user_uri_id_profile_pic_YYmmdd_HHMM.jpeg' after every start of the tool and when changes are detected", action='store_false')
+    parser.add_argument("-j", "--do_not_detect_changed_profile_pic", help="Disable detection of changed user's profile picture in monitoring mode", action='store_false')
     parser.add_argument("-l", "--list_tracks_for_playlist", help="List all tracks for specific Spotify playlist URL", type=str, metavar="SPOTIFY_PLAYLIST_URL")
     parser.add_argument("-i", "--user_profile_details", help="Show profile details for user with specific Spotify URI ID (playlists, followers, followings, recently played artists etc.)", action='store_true')
     parser.add_argument("-a", "--recently_played_artists", help="List recently played artists for user with specific Spotify URI ID", action='store_true')
