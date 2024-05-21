@@ -388,23 +388,44 @@ def print_cur_ts(ts_str=""):
     print("---------------------------------------------------------------------------------------------------------")
 
 
-# Function to return the timestamp in human readable format (long version); eg. Sun, 21 Apr 2024, 15:08:45
+# Function to return the timestamp/datetime object in human readable format (long version); eg. Sun, 21 Apr 2024, 15:08:45
 def get_date_from_ts(ts):
-    return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts)).weekday()]} {datetime.fromtimestamp(ts).strftime("%d %b %Y, %H:%M:%S")}")
+    if type(ts) is datetime:
+        ts_new = int(round(ts.timestamp()))
+    elif type(ts) is int:
+        ts_new = ts
+    else:
+        return ""
+
+    return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %Y, %H:%M:%S")}")
 
 
-# Function to return the timestamp in human readable format (short version); eg. Sun 21 Apr 15:08
+# Function to return the timestamp/datetime object in human readable format (short version); eg. Sun 21 Apr 15:08
 def get_short_date_from_ts(ts):
-    return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts)).weekday()]} {datetime.fromtimestamp(ts).strftime("%d %b %H:%M")}")
+    if type(ts) is datetime:
+        ts_new = int(round(ts.timestamp()))
+    elif type(ts) is int:
+        ts_new = ts
+    else:
+        return ""
+
+    return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %H:%M")}")
 
 
-# Function to return the timestamp in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
+# Function to return the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
 def get_hour_min_from_ts(ts, show_seconds=False):
+    if type(ts) is datetime:
+        ts_new = int(round(ts.timestamp()))
+    elif type(ts) is int:
+        ts_new = ts
+    else:
+        return ""
+
     if show_seconds:
         out_strf = "%H:%M:%S"
     else:
         out_strf = "%H:%M"
-    return (str(datetime.fromtimestamp(ts).strftime(out_strf)))
+    return (str(datetime.fromtimestamp(ts_new).strftime(out_strf)))
 
 
 # Function to return the range between two timestamps; eg. Sun 21 Apr 14:09 - 14:15
@@ -1588,6 +1609,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                             p_descr_old = playlist_old.get("desc")
                             p_likes_old = playlist_old.get("likes")
                             p_tracks_old = playlist_old.get("tracks_count")
+                            p_update_old = playlist_old.get("update_date")
                             p_tracks_list_old = playlist_old.get("list_of_tracks")
 
                             # Number of likes changed
@@ -1614,7 +1636,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                 print_cur_ts("Timestamp:\t\t")
 
                             # Number of tracks changed
-                            if p_tracks != p_tracks_old:
+                            if p_tracks != p_tracks_old or p_update != p_update_old:
                                 try:
                                     p_tracks_diff = p_tracks - p_tracks_old
                                     p_tracks_diff_str = ""
@@ -1622,7 +1644,13 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                         p_tracks_diff_str = "+" + str(p_tracks_diff)
                                     else:
                                         p_tracks_diff_str = str(p_tracks_diff)
-                                    p_message = f"* Playlist '{p_name}': number of tracks changed from {p_tracks_old} to {p_tracks} ({p_tracks_diff_str})\n* Playlist URL: {p_url}\n"
+                                    if p_update < p_update_old:
+                                        p_update = int(time.time())
+
+                                    if p_tracks_diff != 0:
+                                        p_message = f"* Playlist '{p_name}': number of tracks changed from {p_tracks_old} to {p_tracks} ({p_tracks_diff_str}) (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}; previous update: {get_short_date_from_ts(p_update_old)})\n* Playlist URL: {p_url}\n"
+                                    else:
+                                        p_message = f"* Playlist '{p_name}': list of tracks ({p_tracks}) have changed (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}; previous update: {get_short_date_from_ts(p_update_old)})\n* Playlist URL: {p_url}\n"
                                     print(p_message)
                                 except Exception as e:
                                     print(f"Error while processing data for playlist with URI {p_uri}, skipping for now - {e}")
@@ -1672,7 +1700,10 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                                 print(f"* Cannot write CSV entry - {e}")
                                     p_message_removed_tracks += "\n"
 
-                                m_subject = f"Spotify user {username} number of tracks for playlist '{p_name}' has changed! ({p_tracks_diff_str}, {p_tracks_old} -> {p_tracks})"
+                                if p_tracks_diff != 0:
+                                    m_subject = f"Spotify user {username} number of tracks for playlist '{p_name}' has changed! ({p_tracks_diff_str}, {p_tracks_old} -> {p_tracks}; after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)})"
+                                else:
+                                    m_subject = f"Spotify user {username} list of tracks ({p_tracks}) for playlist '{p_name}' has changed! (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)})"
                                 m_body = f"{p_message}\n{p_message_added_tracks}{p_message_removed_tracks}Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
                                 if profile_notification:
                                     print(f"Sending email notification to {RECEIVER_EMAIL}")
