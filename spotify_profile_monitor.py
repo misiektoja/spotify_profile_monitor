@@ -1796,6 +1796,7 @@ if __name__ == "__main__":
     parser.add_argument("-f", "--followers_and_followings", help="List followers & followings for user with specific Spotify URI ID", action='store_true')
     parser.add_argument("-s", "--search_username", help="Search for users with specific name to get their Spotify user URI ID", type=str, metavar="SPOTIFY_USERNAME")
     parser.add_argument("-d", "--disable_logging", help="Disable logging to file 'spotify_profile_monitor_UserURIID.log' file", action='store_true')
+    parser.add_argument("-y", "--log_file_suffix", help="Log file suffix to be used instead of Spotify user URI ID, so output will be logged to 'spotify_profile_monitor_suffix.log' file", type=str, metavar="LOG_SUFFIX")
     args = parser.parse_args()
 
     if len(sys.argv) == 1:
@@ -1914,8 +1915,13 @@ if __name__ == "__main__":
         csv_file = None
         csv_exists = False
 
+    if args.log_file_suffix:
+        log_suffix = args.log_file_suffix
+    else:
+        log_suffix = str(args.SPOTIFY_USER_URI_ID)
+
     if not args.disable_logging:
-        SP_LOGFILE = f"{SP_LOGFILE}_{args.SPOTIFY_USER_URI_ID}.log"
+        SP_LOGFILE = f"{SP_LOGFILE}_{log_suffix}.log"
         sys.stdout = Logger(SP_LOGFILE)
 
     profile_notification = args.profile_notification
@@ -1923,7 +1929,10 @@ if __name__ == "__main__":
     print(f"* Spotify timers:\t\t[check interval: {display_time(SPOTIFY_CHECK_INTERVAL)}] [error interval: {display_time(SPOTIFY_ERROR_INTERVAL)}]")
     print(f"* Email notifications:\t\t[profile changes = {profile_notification}] [errors = {args.error_notification}]")
     print(f"* Detect changed profile pic:\t{DETECT_CHANGED_PROFILE_PIC}")
-    print(f"* Output logging disabled:\t{args.disable_logging}")
+    if not args.disable_logging:
+        print(f"* Output logging enabled:\t{not args.disable_logging} ({SP_LOGFILE})")
+    else:
+        print(f"* Output logging enabled:\t{not args.disable_logging}")
     if csv_enabled:
         print(f"* CSV logging enabled:\t\t{csv_enabled} ({args.csv_file})")
     else:
