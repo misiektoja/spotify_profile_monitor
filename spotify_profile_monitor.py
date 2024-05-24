@@ -59,6 +59,11 @@ LOCAL_TIMEZONE = 'Auto'
 # It is enabled by default, you can change it below or disable by using -j parameter
 DETECT_CHANGED_PROFILE_PIC = True
 
+# If you have imgcat installed, you can configure its path below, so new profile pictures will be displayed right in your terminal
+# Leave it empty to disable this feature
+# IMGCAT_PATH = "/usr/local/bin/imgcat"
+IMGCAT_PATH = ""
+
 # SP_SHA256 is only needed for functionality searching Spotify users (-s), otherwise you can leave it empty
 # You need to intercept your Spotify client's network traffic and get the sha256 value
 # To simulate the needed request, search for some user in Spotify client
@@ -141,6 +146,7 @@ import re
 import ipaddress
 from itertools import zip_longest
 from html import escape
+import subprocess
 
 
 # Logger class to output messages to stdout and log file
@@ -1387,6 +1393,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             if save_profile_pic(image_url, profile_pic_file):
                 print(f"* User {username} profile picture saved to '{profile_pic_file}'")
                 try:
+                    if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
+                        subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file};echo'), shell=True)
                     shutil.copyfile(profile_pic_file, f"spotify_{user_uri_id}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
                 except:
                     pass
@@ -1413,6 +1421,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                     except Exception as e:
                         print(f"* Cannot write CSV entry - {e}")
                     try:
+                        if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
+                            subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file_tmp};echo'), shell=True)
                         shutil.copyfile(profile_pic_file_tmp, f"spotify_{user_uri_id}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
                         os.replace(profile_pic_file, profile_pic_file_old)
                         os.replace(profile_pic_file_tmp, profile_pic_file)
@@ -1568,6 +1578,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                     m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
                     print(f"* User profile picture saved to '{profile_pic_file}'\n")
                     try:
+                        if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
+                            subprocess.call((f'{IMGCAT_PATH} {profile_pic_file};echo'), shell=True)
                         shutil.copyfile(profile_pic_file, f"spotify_{user_uri_id}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
                     except:
                         pass
@@ -1608,6 +1620,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                         except Exception as e:
                             print(f"* Cannot write CSV entry - {e}")
                         try:
+                            if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
+                                subprocess.call((f'{IMGCAT_PATH} {profile_pic_file_tmp};echo'), shell=True)
                             shutil.copyfile(profile_pic_file_tmp, f"spotify_{user_uri_id}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
                             os.replace(profile_pic_file, profile_pic_file_old)
                             os.replace(profile_pic_file_tmp, profile_pic_file)
