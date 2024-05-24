@@ -54,12 +54,11 @@ LOCAL_TIMEZONE = 'Auto'
 # Do you want to be informed about changed user's profile pic ? (via console & email notifications when -p is enabled)
 # If so, the tool will save the pic to the file named 'spotify_user_uri_id_profile_pic.jpeg' after tool is started (in monitoring mode)
 # And also to files named 'spotify_user_uri_id_profile_pic_YYmmdd_HHMM.jpeg' when changes are detected
-# The file won't be saved when using listing mode (for example -i parameter)
-# We need to save the binary form of the image as the pic URL can change, so we need to actually do bin comparison of files
+# We need to save the binary form of the image as the pic URL can change, so we need to actually do bin comparison of jpeg files
 # It is enabled by default, you can change it below or disable by using -j parameter
 DETECT_CHANGED_PROFILE_PIC = True
 
-# If you have imgcat installed, you can configure its path below, so new profile pictures will be displayed right in your terminal
+# If you have 'imgcat' installed, you can configure its path below, so new profile pictures will be displayed right in your terminal
 # Leave it empty to disable this feature
 # IMGCAT_PATH = "/usr/local/bin/imgcat"
 IMGCAT_PATH = ""
@@ -724,7 +723,7 @@ def spotify_get_user_followers(access_token, user_uri_id):
         raise
 
 
-# Function listing tracks for playlist with specified URI
+# Function listing tracks for playlist with specified URI (-l parameter)
 def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
     print(f"Listing tracks for playlist '{playlist_url}' ...\n")
 
@@ -794,7 +793,7 @@ def compare_two_lists_of_dicts(list1: list, list2: list) -> bool:
     return diff
 
 
-# Function searching for Spotify users
+# Function searching for Spotify users (-s parameter)
 def spotify_search_users(access_token, username):
     url = f"https://api-partner.spotify.com/pathfinder/v1/query?operationName=searchUsers&variables=%7B%22searchTerm%22%3A%22{username}%22%2C%22offset%22%3A0%2C%22limit%22%3A5%2C%22numberOfTopResults%22%3A5%2C%22includeAudiobooks%22%3Afalse%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22{SP_SHA256}%22%7D%7D"
     headers = {"Authorization": "Bearer " + access_token}
@@ -958,6 +957,18 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
     print(f"User URL:\t\t{spotify_convert_uri_to_url(f"spotify:user:{user_uri_id}")}")
 
     print(f"User profile picture:\t{image_url != ""}")
+
+    profile_pic_file_tmp = f"spotify_{user_uri_id}_profile_pic_tmp_info.jpeg"
+    if image_url and IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
+        if save_profile_pic(image_url, profile_pic_file_tmp):
+            try:
+                subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file_tmp}'), shell=True)
+            except:
+                pass
+            try:
+                os.remove(profile_pic_file_tmp)
+            except:
+                pass
 
     print(f"\nFollowers:\t\t{followers_count}")
     if followers:
@@ -1249,6 +1260,18 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
     print(f"User URL:\t\t{spotify_convert_uri_to_url(f"spotify:user:{user_uri_id}")}")
 
     print(f"User profile picture:\t{image_url != ""}")
+
+    profile_pic_file_tmp = f"spotify_{user_uri_id}_profile_pic_tmp_info.jpeg"
+    if image_url and IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
+        if save_profile_pic(image_url, profile_pic_file_tmp):
+            try:
+                subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file_tmp}'), shell=True)
+            except:
+                pass
+            try:
+                os.remove(profile_pic_file_tmp)
+            except:
+                pass
 
     print(f"\nFollowers:\t\t{followers_count}")
     print(f"Followings:\t\t{followings_count}")
