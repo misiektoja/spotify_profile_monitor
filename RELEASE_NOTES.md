@@ -2,14 +2,15 @@
 
 This is a high-level summary of the most important changes. 
 
-# Changes in 1.2 (XX May 2024)
+# Changes in 1.2 (24 May 2024)
 
 **Features and Improvements**:
 
-- New feature allowing for detection of changed profile pictures; since Spotify user's profile picture URL seems to change from time to time the tool detects it by doing binary comparison of saved picture jpeg files; initally it saves the profile pic to *'spotify_{user_uri_id}_profile_pic.jpeg'* file after tool is started (in monitoring mode); then during every check the new picture is fetched and the tool does binary comparison if it has changed or not; in case of changes the old profile picture is moved to *'spotify_{user_uri_id}_profile_pic_old.jpeg'* file and the new one is saved to *'spotify_{user_uri_id}_profile_pic.jpeg'* and also file named *'spotify_{user_uri_id}_profile_pic_YYmmdd_HHMM.jpeg'* (so we can have history of all profile pictures); the profile picture file won't be saved when using listing mode (for example -i parameter); in order to control the feature there is a new **DETECT_CHANGED_PROFILE_PIC** variable set to True by default; the feature can be disabled by setting it to False or by enabling **-j** / **--do_not_detect_changed_profile_pic** parameter
+- New feature allowing for **detection of changed profile pictures**; since Spotify user's profile picture URL seems to change from time to time, the tool detects changed profile picture by doing binary comparison of saved jpeg files; initially it saves the profile pic to *spotify_{user_uri_id}_profile_pic.jpeg* file after the tool is started (in monitoring mode); then during every check the new picture is fetched and the tool does binary comparison if it has changed or not; in case of changes the old profile picture is moved to *spotify_{user_uri_id}_profile_pic_old.jpeg* file and the new one is saved to *spotify_{user_uri_id}_profile_pic.jpeg* and also to file named *spotify_{user_uri_id}_profile_pic_YYmmdd_HHMM.jpeg* (so we can have history of all profile pictures); in order to control the feature there is a new **DETECT_CHANGED_PROFILE_PIC** variable set to True by default; the feature can be disabled by setting it to *False* or by enabling **-j** / **--do_not_detect_changed_profile_pic** parameter
 - New feature attaching changed profile pics directly in email notifications (when **-p** parameter is used)
+- New feature allowing to display the profile picture right in your terminal (if you have *imgcat* installed); put path to your *imgcat* binary in **IMGCAT_PATH** variable (or leave it empty to disable this functionality)
 - Improved detection of tracks changed for the playlist; previously if the number of added and removed tracks was the same it went unnoticed by the tool; currently the tool also compares last update timestamp of the playlist to cover such use cases
-- Improvement showing the time which passed since the previous time new track has been added to the playlist (console + email notifications)
+- The tool now shows the time which passed since the previous time new track has been added to the playlist (console + email notifications)
 - Possibility to define output log file name suffix (**-y** / **--log_file_suffix**)
 - Information about log file name visible in the start screen
 - Rewritten get_date_from_ts(), get_short_date_from_ts(), get_hour_min_from_ts() and get_range_of_dates_from_tss() functions to automatically detect if time object is timestamp or datetime
@@ -18,6 +19,7 @@ This is a high-level summary of the most important changes.
 **Bugfixes**:
 
 - Fixed stupid bug with the tool crashing when user had no public playlists at all
+- Fixed issues with sporadic broken links in HTML emails (vars with special characters are now escaped properly)
 
 # Changes in 1.1 (19 May 2024)
 

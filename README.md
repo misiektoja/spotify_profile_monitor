@@ -1,6 +1,6 @@
 # spotify_profile_monitor
 
-spotify_profile_monitor is a Python script which allows for real-time monitoring of Spotify users profile information. 
+spotify_profile_monitor is a Python script which allows for real-time monitoring of Spotify users profile changes. 
 
 NOTE: If you want to track Spotify friends music activity check out the other tool I developed: [spotify_monitor](https://github.com/misiektoja/spotify_monitor).
 
@@ -12,8 +12,9 @@ NOTE: If you want to track Spotify friends music activity check out the other to
    - added/removed tracks in playlists
    - playlists name and description changes
    - number of likes for playlists
-- Email notifications for different events (added/removed followings + followers + public playlists + its tracks, playlists name and description changes, number of likes for playlists, errors)
-- Additional functionalities on top of the monitoring mode allowing to display detailed info about the user, list of followers & followings, recently played artists and possibility to search user names for user URI ID
+   - changed profile pictures
+- Email notifications for different events (added/removed followings + followers + public playlists + its tracks, playlists name and description changes, changed profile pictures, number of likes for playlists, errors)
+- Additional functionalities on top of the monitoring mode allowing to display detailed info about the user, list of followers & followings, recently played artists and possibility to search for users with specific names
 - Saving all profile changes with timestamps to the CSV file
 - Clickable Spotify, Apple Music and Genius Lyrics search URLs printed in the console & included in email notifications
 - Possibility to control the running copy of the script via signals
@@ -152,9 +153,11 @@ You can monitor multiple Spotify users by spawning multiple copies of the script
 
 It is suggested to use sth like **tmux** or **screen** to have the script running after you log out from the server (unless you are running it on your desktop).
 
-The tool automatically saves its output to *spotify_profile_monitor_{user_uri_id}.log* file (can be changed in the settings or disabled with **-d** parameter). 
+The tool automatically saves its output to *spotify_profile_monitor_{user_uri_id}.log* file (the log file name suffix can be changed via **-y** parameter or logging can be disabled completely with **-d** parameter).
 
-The tool also saves the the list of followings, followers and playlists to *spotify_{user_uri_id}_followings.json*, *spotify_{user_uri_id}_followers.json* and *spotify_{user_uri_id}_playlists.json* files, so we can detect changes after the tool is restarted.
+The tool also saves the list of followings, followers and playlists to *spotify_{user_uri_id}_followings.json*, *spotify_{user_uri_id}_followers.json* and *spotify_{user_uri_id}_playlists.json* files, so we can detect changes after the tool is restarted.
+
+The tool also saves the user profile picture to *spotify_{user_uri_id}_profile_pic.jpeg* file and also *spotify_{user_uri_id}_profile_pic_old.jpeg* and *spotify_{user_uri_id}_profile_pic_YYmmdd_HHMM.jpeg* files in case of changes. 
 
 ### How to get user's URI ID
 
@@ -241,6 +244,18 @@ If you want to save all profile changes in the CSV file, use **-b** parameter wi
 ```sh
 ./spotify_profile_monitor.py misiektoja -b spotify_profile_changes_misiektoja.csv
 ```
+
+### Detection of changed profile pictures
+
+The tool has functionality to detect changed profile pictures. Proper information will be visible in the console (and email notifications when **-p** parameter is enabled). By default this feature is enabled, but you can disable it either by setting **DETECT_CHANGED_PROFILE_PIC** variable to *False* or by enabling **-j** / **--do_not_detect_changed_profile_pic** parameter.
+
+Since Spotify user's profile picture URL seems to change from time to time, the tool detects changed profile picture by doing binary comparison of saved jpeg files. Initially it saves the profile pic to *spotify_{user_uri_id}_profile_pic.jpeg* file after the tool is started (in monitoring mode), then during every check the new picture is fetched and the tool does binary comparison if it has changed or not.
+
+In case of changes the old profile picture is moved to *spotify_{user_uri_id}_profile_pic_old.jpeg* file and the new one is saved to *spotify_{user_uri_id}_profile_pic.jpeg* and also to file named *spotify_{user_uri_id}_profile_pic_YYmmdd_HHMM.jpeg* (so we can have history of all profile pictures).
+
+### Displaying profile pictures in your terminal
+
+if you have *imgcat* installed you can enable the feature displaying pictures right in your terminal. For that put path to your *imgcat* binary in **IMGCAT_PATH** variable (or leave it empty to disable this functionality).
 
 ### Check interval 
 
