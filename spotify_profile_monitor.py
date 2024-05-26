@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.2
+v1.3
 
 Script implementing real-time monitoring of Spotify users profile changes:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -15,7 +15,7 @@ requests
 urllib3
 """
 
-VERSION = 1.2
+VERSION = 1.3
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -405,8 +405,11 @@ def get_date_from_ts(ts):
     return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %Y, %H:%M:%S")}")
 
 
-# Function to return the timestamp/datetime object in human readable format (short version); eg. Sun 21 Apr 15:08
-def get_short_date_from_ts(ts):
+# Function to return the timestamp/datetime object in human readable format (short version); eg.
+# Sun 21 Apr 15:08
+# Sun 21 Apr 24, 15:08 (if show_year == True and current year is different)
+# Sun 21 Apr (if show_hour == False)
+def get_short_date_from_ts(ts, show_year=False, show_hour=True):
     if type(ts) is datetime:
         ts_new = int(round(ts.timestamp()))
     elif type(ts) is int:
@@ -414,7 +417,19 @@ def get_short_date_from_ts(ts):
     else:
         return ""
 
-    return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %H:%M")}")
+    if show_hour:
+        hour_strftime = " %H:%M"
+    else:
+        hour_strftime = ""
+
+    if show_year and int(datetime.fromtimestamp(ts_new).strftime("%Y")) != int(datetime.now().strftime("%Y")):
+        if show_hour:
+            hour_prefix = ","
+        else:
+            hour_prefix = ""
+        return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime(f"%d %b %y{hour_prefix}{hour_strftime}")}")
+    else:
+        return (f"{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime(f"%d %b{hour_strftime}")}")
 
 
 # Function to return the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
@@ -1303,8 +1318,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
     playlists_old = playlists
     playlists_old_count = playlists_count
 
-    if list_of_playlists:
-        list_of_playlists_old = list_of_playlists
+    list_of_playlists_old = list_of_playlists
 
     followers_read = []
     followings_read = []
@@ -1737,9 +1751,9 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                         p_update = int(time.time())
 
                                     if p_tracks_diff != 0:
-                                        p_message = f"* Playlist '{p_name}': number of tracks changed from {p_tracks_old} to {p_tracks} ({p_tracks_diff_str}) (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}; previous update: {get_short_date_from_ts(p_update_old)})\n* Playlist URL: {p_url}\n"
+                                        p_message = f"* Playlist '{p_name}': number of tracks changed from {p_tracks_old} to {p_tracks} ({p_tracks_diff_str}) (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}; previous update: {get_short_date_from_ts(p_update_old, True)})\n* Playlist URL: {p_url}\n"
                                     else:
-                                        p_message = f"* Playlist '{p_name}': list of tracks ({p_tracks}) have changed (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}; previous update: {get_short_date_from_ts(p_update_old)})\n* Playlist URL: {p_url}\n"
+                                        p_message = f"* Playlist '{p_name}': list of tracks ({p_tracks}) have changed (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}; previous update: {get_short_date_from_ts(p_update_old, True)})\n* Playlist URL: {p_url}\n"
                                     print(p_message)
                                 except Exception as e:
                                     print(f"Error while processing data for playlist with URI {p_uri}, skipping for now - {e}")
@@ -1901,7 +1915,7 @@ if __name__ == "__main__":
         if local_tz:
             LOCAL_TIMEZONE = str(local_tz)
         else:
-            print("* Error: Cannot detect local timezone, consider setting LOCAL_TIMEZONE to your local timezone manually !")
+            print("* Error: Cannot detect local timezone, consider setting LOCAL_TIMEZONE manually !")
             sys.exit(1)
 
     if args.spotify_dc_cookie:
