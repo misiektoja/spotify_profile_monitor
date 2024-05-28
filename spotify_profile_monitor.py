@@ -818,9 +818,8 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
 
 
 # Function comparing two lists of dictionaries
-def compare_two_lists_of_dicts(list1: list, list2: list) -> bool:
+def compare_two_lists_of_dicts(list1: list, list2: list):
     diff = [i for i in list1 + list2 if i not in list2]
-    result = len(diff) == 0
     return diff
 
 
@@ -897,7 +896,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
                                     added_at_ts_highest = added_at_dt_ts
                                 added_at_dt_new = datetime.fromtimestamp(int(added_at_dt_ts)).strftime("%d %b %Y, %H:%M:%S")
 
-                            if get_tracks:
+                            if get_tracks and added_at:
                                 list_of_tracks.append({"artist": p_artist, "track": p_track, "duration": track_duration, "added_at": added_at_str, "uri": track_uri})
 
                 except Exception as e:
@@ -1175,7 +1174,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                                     list_of_removed_f_list += f"- Playlist has been removed or set to private [ {spotify_convert_uri_to_url(f_dict["uri"])} ]\n"
                                 else:
                                     print(f"Error while getting info for playlist with URI {f_dict["uri"]}, skipping for now - {e}")
-                                print_cur_ts("Timestamp:\t\t")
+                                    print_cur_ts("Timestamp:\t\t")
                                 continue
                             p_name = sp_playlist_data.get("sp_playlist_name")
                             print(f"- {p_name} [ {spotify_convert_uri_to_url(f_dict["uri"])} ]")
@@ -1684,7 +1683,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                             print(f"Error while replacing/copying files - {e}")
                             save_ok = False
                             m_body_pic_saved_text = f"\n\nError while replacing/copying files - {e}"
-                            m_body_html_pic_saved_text = f"<br><br>Error while replacing/copying files - {escape(e)}"
+                            m_body_html_pic_saved_text = f"<br><br>Error while replacing/copying files - {escape(str(e))}"
                         if profile_notification:
                             m_subject = f"Spotify user {username} has changed profile picture ! (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
                             m_body = f"Spotify user {username} has changed profile picture !{m_body_pic_saved_text}\n\nPrevious one added on {profile_pic_mdate} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
