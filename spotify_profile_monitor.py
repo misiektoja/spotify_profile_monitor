@@ -52,8 +52,8 @@ SPOTIFY_ERROR_INTERVAL = 180  # 3 mins
 LOCAL_TIMEZONE = 'Auto'
 
 # Do you want to be informed about changed user's profile pic ? (via console & email notifications when -p is enabled)
-# If so, the tool will save the pic to the file named 'spotify_user_uri_id_profile_pic.jpeg' after tool is started (in monitoring mode)
-# And also to files named 'spotify_user_uri_id_profile_pic_YYmmdd_HHMM.jpeg' when changes are detected
+# If so, the tool will save the pic to the file named 'spotify_profile_{user_uri_id/file_suffix}_pic.jpeg' after tool is started
+# And also to files named 'spotify_profile_{user_uri_id/file_suffix}_pic_YYmmdd_HHMM.jpeg' when changes are detected
 # We need to save the binary form of the image as the pic URL can change, so we need to actually do bin comparison of jpeg files
 # It is enabled by default, you can change it below or disable by using -j parameter
 DETECT_CHANGED_PROFILE_PIC = True
@@ -89,7 +89,7 @@ CHECK_INTERNET_URL = 'http://www.google.com/'
 # Default value for initial checking of internet connectivity; in seconds
 CHECK_INTERNET_TIMEOUT = 5
 
-# The name of the .log file; the tool by default will output its messages to spotify_profile_monitor_userid.log file
+# The name of the .log file; the tool by default will output its messages to spotify_profile_monitor_{user_uri_id/file_suffix}.log file
 SP_LOGFILE = "spotify_profile_monitor"
 
 # Value used by signal handlers increasing/decreasing the profile check (SPOTIFY_CHECK_INTERVAL); in seconds
@@ -112,6 +112,7 @@ stdout_bck = None
 csvfieldnames = ['Date', 'Type', 'Name', 'Old', 'New']
 
 profile_notification = False
+file_suffix = ""
 
 
 import sys
@@ -375,10 +376,14 @@ def write_csv_entry(csv_file_name, timestamp, object_type, object_name, old, new
 
 
 # Function to convert UTC string returned by Spotify to datetime object in specified timezone
-def convert_utc_str_to_tz_datetime(utc_string, timezone):
+def convert_utc_str_to_tz_datetime(utc_string, timezone, version=1):
     try:
-        utc_string_sanitize = utc_string.split('Z', 1)[0]
-        dt_utc = datetime.strptime(utc_string_sanitize, '%Y-%m-%dT%H:%M:%S')
+        if version == 1:
+            utc_string_sanitize = utc_string.split('Z', 1)[0]
+            dt_utc = datetime.strptime(utc_string_sanitize, '%Y-%m-%dT%H:%M:%S')
+        else:
+            utc_string_sanitize = utc_string.split(' GMT', 1)[0]
+            dt_utc = datetime.strptime(utc_string_sanitize, '%a, %d %b %Y %H:%M:%S')
 
         old_tz = pytz.timezone("UTC")
         new_tz = pytz.timezone(timezone)
@@ -1209,10 +1214,18 @@ def save_profile_pic(user_image_url, image_file_name):
     try:
         image_response = req.get(user_image_url, timeout=FUNCTION_TIMEOUT, stream=True)
         image_response.raise_for_status()
+        url_time = image_response.headers.get('last-modified')
+        url_time_in_tz_ts = 0
+        if url_time:
+            url_time_in_tz = convert_utc_str_to_tz_datetime(url_time, LOCAL_TIMEZONE, 2)
+            url_time_in_tz_ts = int(url_time_in_tz.timestamp())
+
         if image_response.status_code == 200:
             with open(image_file_name, 'wb') as f:
                 image_response.raw.decode_content = True
                 shutil.copyfileobj(image_response.raw, f)
+            if url_time_in_tz_ts:
+                os.utime(image_file_name, (url_time_in_tz_ts, url_time_in_tz_ts))
         return True
     except Exception as e:
         return False
@@ -1291,7 +1304,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
     print(f"User profile picture:\t{image_url != ""}")
 
-    profile_pic_file_tmp = f"spotify_{user_uri_id}_profile_pic_tmp_info.jpeg"
+    profile_pic_file_tmp = f"spotify_profile_{file_suffix}_pic_tmp_info.jpeg"
     if image_url and IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
         if save_profile_pic(image_url, profile_pic_file_tmp):
             try:
@@ -1317,12 +1330,12 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
     print_cur_ts("Timestamp:\t\t")
 
-    followers_file = f"spotify_{user_uri_id}_followers.json"
-    followings_file = f"spotify_{user_uri_id}_followings.json"
-    playlists_file = f"spotify_{user_uri_id}_playlists.json"
-    profile_pic_file = f"spotify_{user_uri_id}_profile_pic.jpeg"
-    profile_pic_file_old = f"spotify_{user_uri_id}_profile_pic_old.jpeg"
-    profile_pic_file_tmp = f"spotify_{user_uri_id}_profile_pic_tmp.jpeg"
+    followers_file = f"spotify_profile_{file_suffix}_followers.json"
+    followings_file = f"spotify_profile_{file_suffix}_followings.json"
+    playlists_file = f"spotify_profile_{file_suffix}_playlists.json"
+    profile_pic_file = f"spotify_profile_{file_suffix}_pic.jpeg"
+    profile_pic_file_old = f"spotify_profile_{file_suffix}_pic_old.jpeg"
+    profile_pic_file_tmp = f"spotify_profile_{file_suffix}_pic_tmp.jpeg"
 
     followers_old = followers
     followings_old = followings
@@ -1430,57 +1443,70 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
         # user has no profile pic, but it exists in the filesystem
         if not image_url and os.path.isfile(profile_pic_file):
             profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)))
-            profile_pic_mdate = profile_pic_mdate_dt.strftime("%d %b %Y, %H:%M")
-            print(f"* User {username} has removed profile picture added on {profile_pic_mdate} ! (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})")
+            print(f"* User {username} has removed profile picture added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ! (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})")
             os.replace(profile_pic_file, profile_pic_file_old)
+
             try:
                 if csv_file_name:
                     write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Removed", username, profile_pic_mdate_dt, "")
             except Exception as e:
                 print(f"* Cannot write CSV entry - {e}")
+
             print_cur_ts("Timestamp:\t\t")
 
         # user has profile pic, but it does not exist in the filesystem
         elif image_url and not os.path.isfile(profile_pic_file):
             if save_profile_pic(image_url, profile_pic_file):
+                profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)))
                 print(f"* User {username} profile picture saved to '{profile_pic_file}'")
+                print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False)} ago)")
+
                 try:
                     if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
                         subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file};echo'), shell=True)
-                    shutil.copyfile(profile_pic_file, f"spotify_{user_uri_id}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
+                    shutil.copy2(profile_pic_file, f"spotify_profile_{file_suffix}_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg")
                 except:
                     pass
+
+                try:
+                    if csv_file_name:
+                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Created", username, "", profile_pic_mdate_dt)
+                except Exception as e:
+                    print(f"* Cannot write CSV entry - {e}")
+
             else:
                 print(f"Error saving profile picture !")
-            try:
-                if csv_file_name:
-                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Created", username, "", datetime.fromtimestamp(int(time.time())))
-            except Exception as e:
-                print(f"* Cannot write CSV entry - {e}")
+
             print_cur_ts("Timestamp:\t\t")
 
         # user has profile pic and it exists in the filesystem, but we check if it has not changed
         elif image_url and os.path.isfile(profile_pic_file):
             profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)))
-            profile_pic_mdate = profile_pic_mdate_dt.strftime("%d %b %Y, %H:%M")
-            print(f"* Profile picture '{profile_pic_file}' already exists ({profile_pic_mdate})")
             if save_profile_pic(image_url, profile_pic_file_tmp):
+                profile_pic_tmp_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)))
+
                 if not compare_images(profile_pic_file, profile_pic_file_tmp):
-                    print(f"* User {username} has changed profile picture ! (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})")
+                    print(f"* User {username} has changed profile picture ! (previous one added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} - {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)")
+                    print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)")
+
                     try:
                         if csv_file_name:
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Changed", username, profile_pic_mdate_dt, datetime.fromtimestamp(int(time.time())))
+                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Changed", username, profile_pic_mdate_dt, profile_pic_tmp_mdate_dt)
                     except Exception as e:
                         print(f"* Cannot write CSV entry - {e}")
+
                     try:
                         if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
                             subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file_tmp};echo'), shell=True)
-                        shutil.copyfile(profile_pic_file_tmp, f"spotify_{user_uri_id}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
+                        shutil.copy2(profile_pic_file_tmp, f"spotify_profile_{file_suffix}_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg")
                         os.replace(profile_pic_file, profile_pic_file_old)
                         os.replace(profile_pic_file_tmp, profile_pic_file)
                     except Exception as e:
                         print(f"Error while replacing/copying files - {e}")
+
                 else:
+                    print(f"* Profile picture '{profile_pic_file}' already exists")
+                    print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False)} ago)")
                     try:
                         os.remove(profile_pic_file_tmp)
                     except:
@@ -1604,95 +1630,95 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             # user has no profile pic, but it exists in the filesystem
             if not image_url and os.path.isfile(profile_pic_file):
                 profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)))
-                profile_pic_mdate = profile_pic_mdate_dt.strftime("%d %b %Y, %H:%M")
-                print(f"* User {username} has removed profile picture added on {profile_pic_mdate} ! (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n")
+                print(f"* User {username} has removed profile picture added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ! (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n")
                 os.replace(profile_pic_file, profile_pic_file_old)
+
                 try:
                     if csv_file_name:
                         write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Removed", username, profile_pic_mdate_dt, "")
                 except Exception as e:
                     print(f"* Cannot write CSV entry - {e}")
+
                 if profile_notification:
                     m_subject = f"Spotify user {username} has removed profile picture ! (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
-                    m_body = f"Spotify user {username} has removed profile picture added on {profile_pic_mdate} (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
+                    m_body = f"Spotify user {username} has removed profile picture added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
+
                 print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t")
 
             # user has profile pic, but it does not exist in the filesystem
             elif image_url and not os.path.isfile(profile_pic_file):
                 print(f"* User {username} has set profile picture !")
-                m_body_pic_saved_text = ""
                 m_body_html_pic_saved_text = ""
                 if save_profile_pic(image_url, profile_pic_file):
-                    save_ok = True
+                    profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)))
+                    print(f"* User profile picture saved to '{profile_pic_file}'")
+                    print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False)} ago)\n")
                     m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
-                    print(f"* User profile picture saved to '{profile_pic_file}'\n")
+
                     try:
                         if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
                             subprocess.call((f'{IMGCAT_PATH} {profile_pic_file};echo'), shell=True)
-                        shutil.copyfile(profile_pic_file, f"spotify_{user_uri_id}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
+                        shutil.copy2(profile_pic_file, f"spotify_profile_{file_suffix}_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg")
                     except:
                         pass
-                else:
-                    save_ok = False
-                    m_body_pic_saved_text = f"\n\nError saving profile picture !"
-                    m_body_html_pic_saved_text = f"<br><br>Error saving profile picture !"
-                    print(f"Error saving profile picture !\n")
-                try:
-                    if csv_file_name:
-                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Created", username, "", datetime.fromtimestamp(int(time.time())))
-                except Exception as e:
-                    print(f"* Cannot write CSV entry - {e}")
-                if profile_notification:
-                    m_subject = f"Spotify user {username} has set profile picture !"
-                    m_body = f"Spotify user {username} has set profile picture !{m_body_pic_saved_text}\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
-                    m_body_html = f"Spotify user <b>{username}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("<br>Timestamp: ")}"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                    if save_ok:
+
+                    try:
+                        if csv_file_name:
+                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Created", username, "", profile_pic_mdate_dt)
+                    except Exception as e:
+                        print(f"* Cannot write CSV entry - {e}")
+
+                    if profile_notification:
+                        m_subject = f"Spotify user {username} has set profile picture ! ({get_short_date_from_ts(profile_pic_mdate_dt, True)})"
+                        m_body = f"Spotify user {username} has set profile picture !\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
+                        m_body_html = f"Spotify user <b>{username}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, True)}</b> ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("<br>Timestamp: ")}"
+                        print(f"Sending email notification to {RECEIVER_EMAIL}")
+
                         send_email(m_subject, m_body, m_body_html, SMTP_SSL, profile_pic_file, "profile_pic")
-                    else:
-                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+
+                else:
+                    print(f"Error saving profile picture !\n")
+
                 print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t")
 
             # user has profile pic and it exists in the filesystem, but we check if it has not changed
             elif image_url and os.path.isfile(profile_pic_file):
                 profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)))
-                profile_pic_mdate = profile_pic_mdate_dt.strftime("%d %b %Y, %H:%M")
                 if save_profile_pic(image_url, profile_pic_file_tmp):
+                    profile_pic_tmp_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)))
+
                     if not compare_images(profile_pic_file, profile_pic_file_tmp):
-                        print(f"* User {username} has changed profile picture ! (previous one added on {profile_pic_mdate} - {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n")
-                        m_body_pic_saved_text = ""
+                        print(f"* User {username} has changed profile picture ! (previous one added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} - {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)")
+                        print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n")
                         m_body_html_pic_saved_text = ""
+
                         try:
                             if csv_file_name:
-                                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Changed", username, profile_pic_mdate_dt, datetime.fromtimestamp(int(time.time())))
+                                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Changed", username, profile_pic_mdate_dt, profile_pic_tmp_mdate_dt)
                         except Exception as e:
                             print(f"* Cannot write CSV entry - {e}")
+
                         try:
                             if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
                                 subprocess.call((f'{IMGCAT_PATH} {profile_pic_file_tmp};echo'), shell=True)
-                            shutil.copyfile(profile_pic_file_tmp, f"spotify_{user_uri_id}_profile_pic_{datetime.fromtimestamp(int(time.time())).strftime("%Y%m%d_%H%M")}.jpeg")
+                            shutil.copy2(profile_pic_file_tmp, f"spotify_profile_{file_suffix}_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg")
                             os.replace(profile_pic_file, profile_pic_file_old)
                             os.replace(profile_pic_file_tmp, profile_pic_file)
-                            save_ok = True
-                            m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
                         except Exception as e:
                             print(f"Error while replacing/copying files - {e}")
-                            save_ok = False
-                            m_body_pic_saved_text = f"\n\nError while replacing/copying files - {e}"
-                            m_body_html_pic_saved_text = f"<br><br>Error while replacing/copying files - {escape(str(e))}"
+
                         if profile_notification:
+                            m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
                             m_subject = f"Spotify user {username} has changed profile picture ! (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
-                            m_body = f"Spotify user {username} has changed profile picture !{m_body_pic_saved_text}\n\nPrevious one added on {profile_pic_mdate} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
-                            m_body_html = f"Spotify user <b>{username}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{profile_pic_mdate}</b> ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("<br>Timestamp: ")}"
+                            m_body = f"Spotify user {username} has changed profile picture !\n\nPrevious one added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("\nTimestamp: ")}"
+                            m_body_html = f"Spotify user <b>{username}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, True)}</b> ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(int(time.time()), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts("<br>Timestamp: ")}"
                             print(f"Sending email notification to {RECEIVER_EMAIL}")
-                            if save_ok:
-                                send_email(m_subject, m_body, m_body_html, SMTP_SSL, profile_pic_file, "profile_pic")
-                            else:
-                                send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                            send_email(m_subject, m_body, m_body_html, SMTP_SSL, profile_pic_file, "profile_pic")
+
                         print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                         print_cur_ts("Timestamp:\t\t")
                     else:
@@ -1701,7 +1727,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                         except:
                             pass
                 else:
-                    print(f"Error while checking if the profile pic has changed !")
+                    print(f"Error while checking if the profile pic has changed !\n")
                     print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                     print_cur_ts("Timestamp:\t\t")
 
@@ -1914,7 +1940,7 @@ if __name__ == "__main__":
     parser.add_argument("-f", "--followers_and_followings", help="List followers & followings for user with specific Spotify URI ID", action='store_true')
     parser.add_argument("-s", "--search_username", help="Search for users with specific name to get their Spotify user URI ID", type=str, metavar="SPOTIFY_USERNAME")
     parser.add_argument("-d", "--disable_logging", help="Disable logging to file 'spotify_profile_monitor_UserURIID.log' file", action='store_true')
-    parser.add_argument("-y", "--log_file_suffix", help="Log file suffix to be used instead of Spotify user URI ID, so output will be logged to 'spotify_profile_monitor_suffix.log' file", type=str, metavar="LOG_SUFFIX")
+    parser.add_argument("-y", "--file_suffix", help="File suffix to be used instead of Spotify user URI ID for different file names like output log file, json files, profile picture jpeg files", type=str, metavar="FILE_SUFFIX")
     args = parser.parse_args()
 
     if len(sys.argv) == 1:
@@ -2033,13 +2059,13 @@ if __name__ == "__main__":
         csv_file = None
         csv_exists = False
 
-    if args.log_file_suffix:
-        log_suffix = args.log_file_suffix
+    if args.file_suffix:
+        file_suffix = str(args.file_suffix)
     else:
-        log_suffix = str(args.SPOTIFY_USER_URI_ID)
+        file_suffix = str(args.SPOTIFY_USER_URI_ID)
 
     if not args.disable_logging:
-        SP_LOGFILE = f"{SP_LOGFILE}_{log_suffix}.log"
+        SP_LOGFILE = f"{SP_LOGFILE}_{file_suffix}.log"
         sys.stdout = Logger(SP_LOGFILE)
 
     profile_notification = args.profile_notification
