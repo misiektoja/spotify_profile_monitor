@@ -1784,11 +1784,13 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                 try:
                                     p_tracks_diff = p_tracks - p_tracks_old
                                     p_tracks_diff_str = ""
+
                                     if p_tracks_diff > 0:
                                         p_tracks_diff_str = "+" + str(p_tracks_diff)
                                     else:
                                         p_tracks_diff_str = str(p_tracks_diff)
-                                    if p_update < p_update_old:
+
+                                    if p_update < p_update_old or p_update == p_update_old:
                                         p_update = int(time.time())
 
                                     if p_tracks_diff != 0:
@@ -1932,14 +1934,14 @@ if __name__ == "__main__":
     parser.add_argument("-e", "--error_notification", help="Disable sending email notifications in case of errors like expired sp_dc", action='store_false')
     parser.add_argument("-c", "--check_interval", help="Time between monitoring checks, in seconds", type=int)
     parser.add_argument("-m", "--error_interval", help="Time between error checks, in seconds", type=int)
-    parser.add_argument("-b", "--csv_file", help="Write every profile change to CSV file", type=str, metavar="CSV_FILENAME")
+    parser.add_argument("-b", "--csv_file", help="Write all profile changes to CSV file", type=str, metavar="CSV_FILENAME")
     parser.add_argument("-j", "--do_not_detect_changed_profile_pic", help="Disable detection of changed user's profile picture in monitoring mode", action='store_false')
     parser.add_argument("-l", "--list_tracks_for_playlist", help="List all tracks for specific Spotify playlist URL", type=str, metavar="SPOTIFY_PLAYLIST_URL")
     parser.add_argument("-i", "--user_profile_details", help="Show profile details for user with specific Spotify URI ID (playlists, followers, followings, recently played artists etc.)", action='store_true')
     parser.add_argument("-a", "--recently_played_artists", help="List recently played artists for user with specific Spotify URI ID", action='store_true')
     parser.add_argument("-f", "--followers_and_followings", help="List followers & followings for user with specific Spotify URI ID", action='store_true')
     parser.add_argument("-s", "--search_username", help="Search for users with specific name to get their Spotify user URI ID", type=str, metavar="SPOTIFY_USERNAME")
-    parser.add_argument("-d", "--disable_logging", help="Disable logging to file 'spotify_profile_monitor_UserURIID.log' file", action='store_true')
+    parser.add_argument("-d", "--disable_logging", help="Disable output logging to file 'spotify_profile_monitor_UserURIID.log' file", action='store_true')
     parser.add_argument("-y", "--file_suffix", help="File suffix to be used instead of Spotify user URI ID for different file names like output log file, json files, profile picture jpeg files", type=str, metavar="FILE_SUFFIX")
     args = parser.parse_args()
 
