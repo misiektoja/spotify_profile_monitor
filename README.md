@@ -1,12 +1,12 @@
 # spotify_profile_monitor
 
-spotify_profile_monitor is a Python script which allows for real-time monitoring of Spotify users profile changes. 
+spotify_profile_monitor is a Python script which allows for real-time monitoring of Spotify users activities and profile changes. 
 
 NOTE: If you want to track Spotify friends music activity check out the other tool I developed: [spotify_monitor](https://github.com/misiektoja/spotify_monitor).
 
 ## Features
 
-- Real-time tracking of Spotify user profile changes:
+- Real-time tracking of Spotify user activities and profile changes:
    - added/removed followings and followers
    - added/removed public playlists
    - added/removed tracks in playlists
@@ -14,6 +14,8 @@ NOTE: If you want to track Spotify friends music activity check out the other to
    - number of likes for playlists
    - changed profile pictures
 - Email notifications for different events (added/removed followings + followers + public playlists + its tracks, playlists name and description changes, changed profile pictures, number of likes for playlists, errors)
+- Attaching changed profile pictures directly in email notifications
+- Displaying the profile picture right in your terminal (if you have *imgcat* installed)
 - Additional functionalities on top of the monitoring mode allowing to display detailed info about the user, list of followers & followings, recently played artists and possibility to search for users with specific names
 - Saving all profile changes with timestamps to the CSV file
 - Clickable Spotify, Apple Music and Genius Lyrics search URLs printed in the console & included in email notifications
@@ -37,7 +39,7 @@ The script requires Python 3.x.
 
 It uses requests, python-dateutil, pytz, tzlocal and urllib3.
 
-It has been tested succesfully on:
+It has been tested successfully on:
 - macOS (Ventura & Sonoma)
 - Linux (Raspberry Pi Bullseye & Bookworm based on Debian, Ubuntu 24)
 - Windows (10 & 11)
@@ -100,7 +102,7 @@ For that you need to intercept your Spotify client's network traffic and get the
 
 To simulate the needed request, search for some user in Spotify client. Then in intercepting proxy look for requests with *searchUsers* or *searchDesktop* operation name.
 
-Display details of one of such request and copy the sha256Hash parameter value and put it in **SP_SHA256** variable.
+Display details of one of such requests and copy the sha256Hash parameter value and put it in **SP_SHA256** variable.
 
 Example request:
 https://api-partner.spotify.com/pathfinder/v1/query?operationName=searchUsers&variables={"searchTerm":"misiektoja","offset":0,"limit":5,"numberOfTopResults":5,"includeAudiobooks":false}&extensions={"persistedQuery":{"version":1,"sha256Hash":"XXXXXXXXXX"}}
@@ -155,9 +157,14 @@ It is suggested to use sth like **tmux** or **screen** to have the script runnin
 
 The tool automatically saves its output to *spotify_profile_monitor_{user_uri_id}.log* file (the log file name suffix can be changed via **-y** parameter or logging can be disabled completely with **-d** parameter).
 
-The tool also saves the list of followings, followers and playlists to *spotify_{user_uri_id}_followings.json*, *spotify_{user_uri_id}_followers.json* and *spotify_{user_uri_id}_playlists.json* files, so we can detect changes after the tool is restarted.
+The tool also saves the list of followings, followers and playlists to these files:
+- *spotify_profile_{user_uri_id}_followings.json* 
+- *spotify_profile_{user_uri_id}_followers.json*
+- *spotify_profile_{user_uri_id}_playlists.json*
 
-The tool also saves the user profile picture to *spotify_{user_uri_id}_profile_pic.jpeg* file and also *spotify_{user_uri_id}_profile_pic_old.jpeg* and *spotify_{user_uri_id}_profile_pic_YYmmdd_HHMM.jpeg* files in case of changes. 
+Thanks to this we can detect changes after the tool is restarted (the file name suffix {user_uri_id} can be changed to custom one via **-y** parameter).
+
+The tool also saves the user profile picture to *spotify_profile_{user_uri_id}_pic\*.jpeg* files (the file name suffix {user_uri_id} can be changed to custom one via **-y** parameter). 
 
 ### How to get user's URI ID
 
@@ -249,9 +256,9 @@ If you want to save all profile changes in the CSV file, use **-b** parameter wi
 
 The tool has functionality to detect changed profile pictures. Proper information will be visible in the console (and email notifications when **-p** parameter is enabled). By default this feature is enabled, but you can disable it either by setting **DETECT_CHANGED_PROFILE_PIC** variable to *False* or by enabling **-j** / **--do_not_detect_changed_profile_pic** parameter.
 
-Since Spotify user's profile picture URL seems to change from time to time, the tool detects changed profile picture by doing binary comparison of saved jpeg files. Initially it saves the profile pic to *spotify_{user_uri_id}_profile_pic.jpeg* file after the tool is started (in monitoring mode), then during every check the new picture is fetched and the tool does binary comparison if it has changed or not.
+Since Spotify user's profile picture URL seems to change from time to time, the tool detects changed profile picture by doing binary comparison of saved jpeg files. Initially it saves the profile pic to *spotify_profile_{user_uri_id}_pic.jpeg* file after the tool is started (in monitoring mode), then during every check the new picture is fetched and the tool does binary comparison if it has changed or not.
 
-In case of changes the old profile picture is moved to *spotify_{user_uri_id}_profile_pic_old.jpeg* file and the new one is saved to *spotify_{user_uri_id}_profile_pic.jpeg* and also to file named *spotify_{user_uri_id}_profile_pic_YYmmdd_HHMM.jpeg* (so we can have history of all profile pictures).
+In case of changes the old profile picture is moved to *spotify_profile_{user_uri_id}_pic_old.jpeg* file and the new one is saved to *spotify_profile_{user_uri_id}_pic.jpeg* and also to the file named *spotify_profile_{user_uri_id}_pic_YYmmdd_HHMM.jpeg* (so we can have history of all profile pictures).
 
 ### Displaying profile pictures in your terminal
 
@@ -267,7 +274,7 @@ If you want to change the check interval to 15 minutes (900 seconds) use **-c** 
 
 ### Controlling the script via signals (only macOS/Linux/Unix)
 
-The tool has several signal handlers implemented which allow to change behaviour of the tool without a need to restart it with new parameters.
+The tool has several signal handlers implemented which allow to change behavior of the tool without a need to restart it with new parameters.
 
 List of supported signals:
 
@@ -293,9 +300,9 @@ Check other supported parameters using **-h**.
 
 You can combine all the parameters mentioned earlier in monitoring mode (listing mode only supports **-l**, **-i**, **-a**, **-f**, **-s**).
 
-## Colouring log output with GRC
+## Coloring log output with GRC
 
-If you use [GRC](https://github.com/garabik/grc) and want to have the output properly coloured you can use the configuration file available [here](grc/conf.monitor_logs)
+If you use [GRC](https://github.com/garabik/grc) and want to have the tool's log output properly colored you can use the configuration file available [here](grc/conf.monitor_logs)
 
 Change your grc configuration (typically *.grc/grc.conf*) and add this part:
 
@@ -305,7 +312,7 @@ Change your grc configuration (typically *.grc/grc.conf*) and add this part:
 conf.monitor_logs
 ```
 
-Now copy the *conf.monitor_logs* to your .grc directory and spotify_profile_monitor log files should be nicely coloured.
+Now copy the *conf.monitor_logs* to your *.grc* directory and spotify_profile_monitor log files should be nicely colored when using *grc* tool.
 
 ## License
 
