@@ -1,6 +1,6 @@
 # spotify_profile_monitor
 
-spotify_profile_monitor is a Python script which allows for real-time monitoring of Spotify users activities and profile changes. 
+spotify_profile_monitor is an OSINT tool written in Python which allows for real-time monitoring of Spotify users activities and profile changes. 
 
 NOTE: If you want to track Spotify friends music activity check out the other tool I developed: [spotify_monitor](https://github.com/misiektoja/spotify_monitor).
 
