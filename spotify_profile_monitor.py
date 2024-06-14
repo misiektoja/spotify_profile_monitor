@@ -1962,6 +1962,7 @@ if __name__ == "__main__":
     parser.add_argument("-s", "--search_username", help="Search for users with specific name to get their Spotify user URI ID", type=str, metavar="SPOTIFY_USERNAME")
     parser.add_argument("-d", "--disable_logging", help="Disable output logging to file 'spotify_profile_monitor_UserURIID.log' file", action='store_true')
     parser.add_argument("-y", "--file_suffix", help="File suffix to be used instead of Spotify user URI ID for different file names like output log file, json files, profile picture jpeg files", type=str, metavar="FILE_SUFFIX")
+    parser.add_argument("-z", "--send_test_email_notification", help="Send test email notification to verify SMTP settings defined in the script", action='store_true')
     args = parser.parse_args()
 
     if len(sys.argv) == 1:
@@ -1980,6 +1981,19 @@ if __name__ == "__main__":
             print("* Error: Cannot detect local timezone, consider setting LOCAL_TIMEZONE manually !")
             sys.exit(1)
 
+    sys.stdout.write("* Checking internet connectivity ... ")
+    sys.stdout.flush()
+    check_internet()
+    print("")
+
+    if args.send_test_email_notification:
+        print("* Sending test email notification ...\n")
+        if send_email("spotify_profile_monitor: test email", "This is test email - your SMTP settings seems to be correct !", "", SMTP_SSL) == 0:
+                print("* Email sent successfully !")
+        else:
+            sys.exit(1)
+        sys.exit(0)
+
     if args.spotify_dc_cookie:
         SP_DC_COOKIE = args.spotify_dc_cookie
 
@@ -1996,11 +2010,6 @@ if __name__ == "__main__":
 
     if args.error_interval:
         SPOTIFY_ERROR_INTERVAL = args.error_interval
-
-    sys.stdout.write("* Checking internet connectivity ... ")
-    sys.stdout.flush()
-    check_internet()
-    print("")
 
     if args.list_tracks_for_playlist:
         try:
