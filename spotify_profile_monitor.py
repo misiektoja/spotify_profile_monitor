@@ -827,6 +827,11 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
 
 # Function comparing two lists of dictionaries
 def compare_two_lists_of_dicts(list1: list, list2: list):
+    if not list1:
+        list1 = []
+    if not list2:
+        list2 = []
+
     diff = [i for i in list1 + list2 if i not in list2]
     return diff
 
