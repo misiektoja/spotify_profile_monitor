@@ -1912,7 +1912,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
         list_of_playlists_old = list_of_playlists
 
-        if playlists_count != playlists_old_count and playlists:
+        if playlists_count != playlists_old_count and (playlists or (not playlists and playlists_count == 0)):
             spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists", "Added Playlist", "Removed playlists", "Removed Playlist", playlists_file, csv_file_name, profile_notification, True, sp_accessToken)
 
             playlists_old_count = playlists_count
