@@ -1798,13 +1798,19 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                     else:
                                         p_tracks_diff_str = str(p_tracks_diff)
 
-                                    if p_update < p_update_old or p_update == p_update_old:
-                                        p_update = int(time.time())
+                                    if p_update and p_update_old:
+                                        if p_update < p_update_old or p_update == p_update_old:
+                                            p_update = int(time.time())
 
+                                    p_after_str = ""
                                     if p_tracks_diff != 0:
-                                        p_message = f"* Playlist '{p_name}': number of tracks changed from {p_tracks_old} to {p_tracks} ({p_tracks_diff_str}) (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}; previous update: {get_short_date_from_ts(p_update_old, True)})\n* Playlist URL: {p_url}\n"
+                                        if p_update and p_update_old:
+                                            p_after_str = f" (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}; previous update: {get_short_date_from_ts(p_update_old, True)})"
+                                        p_message = f"* Playlist '{p_name}': number of tracks changed from {p_tracks_old} to {p_tracks} ({p_tracks_diff_str}){p_after_str}\n* Playlist URL: {p_url}\n"
                                     else:
-                                        p_message = f"* Playlist '{p_name}': list of tracks ({p_tracks}) have changed (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}; previous update: {get_short_date_from_ts(p_update_old, True)})\n* Playlist URL: {p_url}\n"
+                                        if p_update and p_update_old:
+                                            p_after_str = f" (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}; previous update: {get_short_date_from_ts(p_update_old, True)})"
+                                        p_message = f"* Playlist '{p_name}': list of tracks ({p_tracks}) have changed{p_after_str}\n* Playlist URL: {p_url}\n"
                                     print(p_message)
                                 except Exception as e:
                                     print(f"Error while processing data for playlist with URI {p_uri}, skipping for now - {e}")
@@ -1854,10 +1860,15 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                                 print(f"* Cannot write CSV entry - {e}")
                                     p_message_removed_tracks += "\n"
 
+                                p_subject_after_str = ""
                                 if p_tracks_diff != 0:
-                                    m_subject = f"Spotify user {username} number of tracks for playlist '{p_name}' has changed! ({p_tracks_diff_str}, {p_tracks_old} -> {p_tracks}; after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)})"
+                                    if p_update and p_update_old:
+                                        p_subject_after_str = f"; after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}"
+                                    m_subject = f"Spotify user {username} number of tracks for playlist '{p_name}' has changed! ({p_tracks_diff_str}, {p_tracks_old} -> {p_tracks}{p_subject_after_str})"
                                 else:
-                                    m_subject = f"Spotify user {username} list of tracks ({p_tracks}) for playlist '{p_name}' has changed! (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)})"
+                                    if p_update and p_update_old:
+                                        p_subject_after_str = f" (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)})"
+                                    m_subject = f"Spotify user {username} list of tracks ({p_tracks}) for playlist '{p_name}' has changed!{p_subject_after_str}"
                                 m_body = f"{p_message}\n{p_message_added_tracks}{p_message_removed_tracks}Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                 if profile_notification:
                                     print(f"Sending email notification to {RECEIVER_EMAIL}")
