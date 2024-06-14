@@ -292,7 +292,7 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
 
 
 # Function to send email notification
-def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1"):
+def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1", smtp_timeout=15):
     fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
     email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
 
@@ -330,10 +330,10 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
     try:
         if use_ssl:
             ssl_context = ssl.create_default_context()
-            smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT)
+            smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=smtp_timeout)
             smtpObj.starttls(context=ssl_context)
         else:
-            smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT)
+            smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=smtp_timeout)
         smtpObj.login(SMTP_USER, SMTP_PASSWORD)
         email_msg = MIMEMultipart('alternative')
         email_msg["From"] = SENDER_EMAIL
@@ -1988,7 +1988,7 @@ if __name__ == "__main__":
 
     if args.send_test_email_notification:
         print("* Sending test email notification ...\n")
-        if send_email("spotify_profile_monitor: test email", "This is test email - your SMTP settings seems to be correct !", "", SMTP_SSL) == 0:
+        if send_email("spotify_profile_monitor: test email", "This is test email - your SMTP settings seems to be correct !", "", SMTP_SSL, smtp_timeout=5) == 0:
                 print("* Email sent successfully !")
         else:
             sys.exit(1)
