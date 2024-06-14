@@ -1798,9 +1798,12 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                     else:
                                         p_tracks_diff_str = str(p_tracks_diff)
 
+                                    if p_tracks != p_tracks_old and not p_update and p_update_old:
+                                        p_update = datetime.fromtimestamp(int(time.time()))
+
                                     if p_update and p_update_old:
                                         if p_update < p_update_old or p_update == p_update_old:
-                                            p_update = int(time.time())
+                                            p_update = datetime.fromtimestamp(int(time.time()))
 
                                     p_after_str = ""
                                     if p_tracks_diff != 0:
