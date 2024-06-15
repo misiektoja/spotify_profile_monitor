@@ -2,6 +2,22 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 1.4 (15 Jun 2024)
+
+**Features and Improvements**:
+
+- **NEW:** Added new parameter (**-z** / **--send_test_email_notification**) which allows to send test email notification to verify SMTP settings defined in the script
+- **IMPROVE:** Better handling of newly created / empty playlists
+- **IMPROVE:** Better handling of situations when user removes all public playlists
+- **IMPROVE:** Showing how much time passed since last playlist update in case all tracks are removed
+- **IMPROVE:** Possibility to define email sending timeout (default set to 15 secs)
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed an issue of the tool crashing when user had no playlists and created a new one
+- **BUGFIX:** Fixed "SyntaxError: f-string: unmatched (" issue in older Python versions
+- **BUGFIX:** Fixed "SyntaxError: f-string expression part cannot include a backslash" issue in older Python versions
+
 # Changes in 1.3 (03 Jun 2024)
 
 **Features and Improvements**:
