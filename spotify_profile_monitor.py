@@ -877,6 +877,7 @@ def spotify_search_users(access_token, username):
 # Function processing items of all passed playlists and returning list of dictionaries
 def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
     list_of_playlists = []
+    error_while_processing = False
 
     if playlists:
         for playlist in playlists:
@@ -928,6 +929,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
                 except Exception as e:
                     print(f"Error while processing playlist with URI {p_uri}, skipping for now - {e}")
                     print_cur_ts("Timestamp:\t\t")
+                    error_while_processing = True
                     continue
 
                 p_creation_date = None
@@ -944,7 +946,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
                 else:
                     list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date})
 
-    return list_of_playlists
+    return list_of_playlists, error_while_processing
 
 
 # Function printing detailed info about user's playlists
@@ -1049,7 +1051,7 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
 
     if playlists:
         print("\nGetting list of public playlists (be patient, it might take a while) ...\n")
-        list_of_playlists = spotify_process_public_playlists(sp_accessToken, playlists, False)
+        list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, False)
         spotify_print_public_playlists(list_of_playlists)
 
 
@@ -1352,7 +1354,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
         if playlists:
             print("\n* Getting list of public playlists (be patient, it might take a while) ...\n")
-            list_of_playlists = spotify_process_public_playlists(sp_accessToken, playlists, True)
+            list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True)
             spotify_print_public_playlists(list_of_playlists)
         else:
             print()
@@ -1766,10 +1768,11 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                     print_cur_ts("Timestamp:\t\t")
 
         list_of_playlists = []
+        error_while_processing = False
 
         if DETECT_CHANGES_IN_PLAYLISTS:
             if playlists:
-                list_of_playlists = spotify_process_public_playlists(sp_accessToken, playlists, True)
+                list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True)
 
             for playlist in list_of_playlists:
                 if "uri" in playlist:
@@ -1941,7 +1944,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                     print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t")
 
-            list_of_playlists_old = list_of_playlists
+            if not error_while_processing:
+                list_of_playlists_old = list_of_playlists
 
             if playlists_count != playlists_old_count and (playlists or (not playlists and playlists_count == 0)):
                 spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists", "Added Playlist", "Removed playlists", "Removed Playlist", playlists_file, csv_file_name, profile_notification, True, sp_accessToken)
