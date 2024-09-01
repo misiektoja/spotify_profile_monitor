@@ -1209,7 +1209,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                             list_of_removed_f_list += f"- {p_name} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n"
                             try:
                                 if csv_file_name:
-                                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), f_added_csv, username, p_name, "")
+                                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), f_removed_csv, username, p_name, "")
                             except Exception as e:
                                 print(f"* Cannot write CSV entry - {e}")
                     else:
