@@ -111,6 +111,10 @@ re_replace_str = r'( - (\d*)( )*remaster$)|( - (\d*)( )*remastered( version)*( \
 # Default value for network-related timeouts in functions + alarm signal handler; in seconds
 FUNCTION_TIMEOUT = 15
 
+# Sometimes Spotify API has issues and returns info that all user's playlists disappeared
+# We won't notify about such event right away, but only during PLAYLISTS_DISAPPEARED_COUNTER attempt (next check interval)
+PLAYLISTS_DISAPPEARED_COUNTER = 2
+
 TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / SPOTIFY_CHECK_INTERVAL
 
 stdout_bck = None
@@ -1275,6 +1279,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
     playlists_old_count = 0
     playlists = None
     playlists_old = None
+    playlists_zeroed_counter = 0
 
     try:
         if csv_file_name:
@@ -1948,13 +1953,21 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                 list_of_playlists_old = list_of_playlists
 
             if playlists_count != playlists_old_count and (playlists or (not playlists and playlists_count == 0)):
-                spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists", "Added Playlist", "Removed playlists", "Removed Playlist", playlists_file, csv_file_name, profile_notification, True, sp_accessToken)
+                
+                if playlists_count == 0:
+                    playlists_zeroed_counter += 1
+                else:
+                    playlists_zeroed_counter = 0
 
-                playlists_old_count = playlists_count
-                playlists_old = playlists
+                if playlists_zeroed_counter == PLAYLISTS_DISAPPEARED_COUNTER or playlists_count>0:
+                    spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists", "Added Playlist", "Removed playlists", "Removed Playlist", playlists_file, csv_file_name, profile_notification, True, sp_accessToken)
 
-                print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-                print_cur_ts("Timestamp:\t\t")
+                    playlists_old_count = playlists_count
+                    playlists_old = playlists
+                    playlists_zeroed_counter = 0
+
+                    print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print_cur_ts("Timestamp:\t\t")
 
         alive_counter += 1
 
