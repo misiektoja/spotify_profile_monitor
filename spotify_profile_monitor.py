@@ -683,8 +683,11 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
 
 
 # Function returning detailed info about user with specified URI
-def spotify_get_user_info(access_token, user_uri_id):
-    url = f"https://spclient.wg.spotify.com/user-profile-view/v3/profile/{user_uri_id}?playlist_limit={PLAYLISTS_LIMIT}&artist_limit={RECENTLY_PLAYED_ARTISTS_LIMIT}&episode_limit=10&market=from_token"
+def spotify_get_user_info(access_token, user_uri_id, get_playlists):
+    if get_playlists:
+        url = f"https://spclient.wg.spotify.com/user-profile-view/v3/profile/{user_uri_id}?playlist_limit={PLAYLISTS_LIMIT}&artist_limit={RECENTLY_PLAYED_ARTISTS_LIMIT}&episode_limit=10&market=from_token"
+    else:
+            url = f"https://spclient.wg.spotify.com/user-profile-view/v3/profile/{user_uri_id}?playlist_limit=0&artist_limit={RECENTLY_PLAYED_ARTISTS_LIMIT}&episode_limit=10&market=from_token"
     headers = {"Authorization": "Bearer " + access_token}
 
     try:
@@ -698,18 +701,23 @@ def spotify_get_user_info(access_token, user_uri_id):
         sp_user_followings_count = json_response.get("following_count", 0)
         sp_user_image_url = json_response.get("image_url", "")
 
-        sp_user_public_playlists_uris = json_response.get("public_playlists", None)
-        sp_user_public_playlists_count = json_response.get("total_public_playlists_count", 0)
+        if get_playlists:
+            sp_user_public_playlists_uris = json_response.get("public_playlists", None)
+            sp_user_public_playlists_count = json_response.get("total_public_playlists_count", 0)
+        else:
+            sp_user_public_playlists_uris = None
+            sp_user_public_playlists_count = 0
 
         if sp_user_public_playlists_uris:
             sp_user_public_playlists_uris[:] = [d for d in sp_user_public_playlists_uris if d.get('owner_uri', "") == 'spotify:user:' + str(user_uri_id)]
             sp_user_public_playlists_count_tmp = len(sp_user_public_playlists_uris)
             if sp_user_public_playlists_count_tmp > 0:
                 sp_user_public_playlists_count = sp_user_public_playlists_count_tmp
-        remove_key_from_list_of_dicts(sp_user_public_playlists_uris, 'image_url')
-        remove_key_from_list_of_dicts(sp_user_public_playlists_uris, 'is_following')
-        remove_key_from_list_of_dicts(sp_user_public_playlists_uris, 'name')
-        remove_key_from_list_of_dicts(sp_user_public_playlists_uris, 'followers_count')
+
+            remove_key_from_list_of_dicts(sp_user_public_playlists_uris, 'image_url')
+            remove_key_from_list_of_dicts(sp_user_public_playlists_uris, 'is_following')
+            remove_key_from_list_of_dicts(sp_user_public_playlists_uris, 'name')
+            remove_key_from_list_of_dicts(sp_user_public_playlists_uris, 'followers_count')
 
         sp_user_recently_played_artists = json_response.get("recently_played_artists")
         remove_key_from_list_of_dicts(sp_user_recently_played_artists, 'image_url')
@@ -918,7 +926,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
                                 list_of_tracks.append({"artist": p_artist, "track": p_track, "duration": track_duration, "added_at": added_at_str, "uri": track_uri})
 
                 except Exception as e:
-                    print(f"Error while getting info for playlist with URI {p_uri}, skipping for now - {e}")
+                    print(f"Error while processing playlist with URI {p_uri}, skipping for now - {e}")
                     print_cur_ts("Timestamp:\t\t")
                     continue
 
@@ -973,7 +981,7 @@ def spotify_print_public_playlists(list_of_playlists):
 def spotify_get_user_details(sp_accessToken, user_uri_id):
     print(f"Getting detailed info for user with URI ID '{user_uri_id}' ...\n")
 
-    sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id)
+    sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, True)
     sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
     sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
 
@@ -1049,7 +1057,7 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
 def spotify_get_recently_played_artists(sp_accessToken, user_uri_id):
     print(f"Getting list of recently played artists for user with URI ID '{user_uri_id}' ...\n")
 
-    sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id)
+    sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, False)
 
     username = sp_user_data["sp_username"]
     image_url = sp_user_data["sp_user_image_url"]
@@ -1075,7 +1083,7 @@ def spotify_get_recently_played_artists(sp_accessToken, user_uri_id):
 def spotify_get_followers_and_followings(sp_accessToken, user_uri_id):
     print(f"Getting followers & followings for user with URI ID '{user_uri_id}' ...\n")
 
-    sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id)
+    sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, False)
     image_url = sp_user_data["sp_user_image_url"]
     sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
     sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
@@ -1261,6 +1269,10 @@ def compare_images(path1, path2):
 
 # Main function monitoring profile changes of the specified Spotify user URI ID
 def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, csv_exists):
+    playlists_count = 0
+    playlists_old_count = 0
+    playlists = None
+    playlists_old = None
 
     try:
         if csv_file_name:
@@ -1276,7 +1288,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
     try:
         sp_accessToken = spotify_get_access_token(SP_DC_COOKIE)
-        sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id)
+        sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS)
         sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
         sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
     except Exception as e:
@@ -1306,8 +1318,9 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
         if followings_count_tmp > 0:
             followings_count = followings_count_tmp
 
-    playlists_count = sp_user_data["sp_user_public_playlists_count"]
-    playlists = sp_user_data["sp_user_public_playlists_uris"]
+    if DETECT_CHANGES_IN_PLAYLISTS:
+        playlists_count = sp_user_data["sp_user_public_playlists_count"]
+        playlists = sp_user_data["sp_user_public_playlists_uris"]
 
     recently_played_artists = sp_user_data["sp_user_recently_played_artists"]
 
@@ -1359,8 +1372,9 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
     followers_old_count = followers_count
     followings_old_count = followings_count
 
-    playlists_old = playlists
-    playlists_old_count = playlists_count
+    if DETECT_CHANGES_IN_PLAYLISTS:
+        playlists_old = playlists
+        playlists_old_count = playlists_count
 
     list_of_playlists_old = list_of_playlists
 
@@ -1536,8 +1550,10 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
     followings_old = followings
     followers_old_count = followers_count
     followings_old_count = followings_count
-    playlists_old = playlists
-    playlists_old_count = playlists_count
+
+    if DETECT_CHANGES_IN_PLAYLISTS:
+        playlists_old = playlists
+        playlists_old_count = playlists_count
 
     time.sleep(SPOTIFY_CHECK_INTERVAL)
     email_sent = False
@@ -1553,7 +1569,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             signal.alarm(FUNCTION_TIMEOUT)
         try:
             sp_accessToken = spotify_get_access_token(SP_DC_COOKIE)
-            sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id)
+            sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS)
             email_sent = False
             if platform.system() != 'Windows':
                 signal.alarm(0)
@@ -1617,8 +1633,9 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             if followings_count_tmp > 0:
                 followings_count = followings_count_tmp
 
-        playlists_count = sp_user_data["sp_user_public_playlists_count"]
-        playlists = sp_user_data["sp_user_public_playlists_uris"]
+        if DETECT_CHANGES_IN_PLAYLISTS:
+            playlists_count = sp_user_data["sp_user_public_playlists_count"]
+            playlists = sp_user_data["sp_user_public_playlists_uris"]
 
         recently_played_artists = sp_user_data["sp_user_recently_played_artists"]
 
@@ -1924,16 +1941,16 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                     print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t")
 
-        list_of_playlists_old = list_of_playlists
+            list_of_playlists_old = list_of_playlists
 
-        if playlists_count != playlists_old_count and (playlists or (not playlists and playlists_count == 0)) and DETECT_CHANGES_IN_PLAYLISTS:
-            spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists", "Added Playlist", "Removed playlists", "Removed Playlist", playlists_file, csv_file_name, profile_notification, True, sp_accessToken)
+            if playlists_count != playlists_old_count and (playlists or (not playlists and playlists_count == 0)):
+                spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists", "Added Playlist", "Removed playlists", "Removed Playlist", playlists_file, csv_file_name, profile_notification, True, sp_accessToken)
 
-            playlists_old_count = playlists_count
-            playlists_old = playlists
+                playlists_old_count = playlists_count
+                playlists_old = playlists
 
-            print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-            print_cur_ts("Timestamp:\t\t")
+                print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                print_cur_ts("Timestamp:\t\t")
 
         alive_counter += 1
 
