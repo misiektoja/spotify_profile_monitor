@@ -74,6 +74,11 @@ IMGCAT_PATH = ""
 # I used Proxyman proxy on MacOS to intercept Spotify's client traffic
 SP_SHA256 = "your_spotify_client_sha256"
 
+# Do you want to be informed about changes in user's profile public playlists ? (via console & email notifications when -p is enabled)
+# It will cover added/removed tracks in playlists, playlists name and description changes, number of likes for playlists
+# It is enabled by default, you can change it below or disable by using -q parameter
+DETECT_CHANGES_IN_PLAYLISTS = True
+
 # How many user owned public playlists the tool will monitor
 PLAYLISTS_LIMIT = 50
 
@@ -1326,15 +1331,18 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
     print(f"\nFollowers:\t\t{followers_count}")
     print(f"Followings:\t\t{followings_count}")
-    print(f"Public playlists:\t{playlists_count}")
 
     list_of_playlists = []
-    if playlists:
-        print("\n* Getting list of public playlists (be patient, it might take a while) ...\n")
-        list_of_playlists = spotify_process_public_playlists(sp_accessToken, playlists, True)
-        spotify_print_public_playlists(list_of_playlists)
-    else:
-        print()
+
+    if DETECT_CHANGES_IN_PLAYLISTS:
+        print(f"Public playlists:\t{playlists_count}")
+
+        if playlists:
+            print("\n* Getting list of public playlists (be patient, it might take a while) ...\n")
+            list_of_playlists = spotify_process_public_playlists(sp_accessToken, playlists, True)
+            spotify_print_public_playlists(list_of_playlists)
+        else:
+            print()
 
     print_cur_ts("Timestamp:\t\t")
 
@@ -1361,32 +1369,33 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
     playlists_read = []
 
     # playlists
-    if os.path.isfile(playlists_file):
-        try:
-            with open(playlists_file, 'r', encoding="utf-8") as f:
-                playlists_read = json.load(f)
-        except Exception as e:
-            print(f"* Cannot load entries from '{playlists_file}' file - {e}")
-        if playlists_read:
-            playlists_old_count = playlists_read[0]
-            playlists_old = playlists_read[1]
-            playlists_mdate = datetime.fromtimestamp(int(os.path.getmtime(playlists_file))).strftime("%d %b %Y, %H:%M:%S")
-            print(f"* Playlists ({playlists_old_count}) loaded from file '{playlists_file}' ({playlists_mdate})")
-    if not playlists_read:
-        playlists_to_save = []
-        playlists_to_save.append(playlists_count)
-        playlists_to_save.append(playlists)
-        try:
-            with open(playlists_file, 'w', encoding="utf-8") as f:
-                json.dump(playlists_to_save, f, indent=2)
-            print(f"* Playlists ({playlists_count}) saved to file '{playlists_file}'")
-        except Exception as e:
-            print(f"* Cannot save list of playlists to '{playlists_file}' file - {e}")
+    if DETECT_CHANGES_IN_PLAYLISTS:
+        if os.path.isfile(playlists_file):
+            try:
+                with open(playlists_file, 'r', encoding="utf-8") as f:
+                    playlists_read = json.load(f)
+            except Exception as e:
+                print(f"* Cannot load entries from '{playlists_file}' file - {e}")
+            if playlists_read:
+                playlists_old_count = playlists_read[0]
+                playlists_old = playlists_read[1]
+                playlists_mdate = datetime.fromtimestamp(int(os.path.getmtime(playlists_file))).strftime("%d %b %Y, %H:%M:%S")
+                print(f"* Playlists ({playlists_old_count}) loaded from file '{playlists_file}' ({playlists_mdate})")
+        if not playlists_read:
+            playlists_to_save = []
+            playlists_to_save.append(playlists_count)
+            playlists_to_save.append(playlists)
+            try:
+                with open(playlists_file, 'w', encoding="utf-8") as f:
+                    json.dump(playlists_to_save, f, indent=2)
+                print(f"* Playlists ({playlists_count}) saved to file '{playlists_file}'")
+            except Exception as e:
+                print(f"* Cannot save list of playlists to '{playlists_file}' file - {e}")
 
-    if playlists_count != playlists_old_count:
-        spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists", "Added Playlist", "Removed playlists", "Removed Playlist", playlists_file, csv_file_name, False, True, sp_accessToken)
+        if playlists_count != playlists_old_count:
+            spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists", "Added Playlist", "Removed playlists", "Removed Playlist", playlists_file, csv_file_name, False, True, sp_accessToken)
 
-    print_cur_ts("Timestamp:\t\t")
+        print_cur_ts("Timestamp:\t\t")
 
     # followers
     if os.path.isfile(followers_file):
@@ -1740,182 +1749,184 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                     print_cur_ts("Timestamp:\t\t")
 
         list_of_playlists = []
-        if playlists:
-            list_of_playlists = spotify_process_public_playlists(sp_accessToken, playlists, True)
 
-        for playlist in list_of_playlists:
-            if "uri" in playlist:
-                p_uri = playlist.get("uri")
-                p_url = spotify_convert_uri_to_url(p_uri)
-                p_name = playlist.get("name", "")
-                p_descr = html.unescape(playlist.get("desc", ""))
-                p_likes = playlist.get("likes", 0)
-                p_tracks = playlist.get("tracks_count", 0)
-                p_date = playlist.get("date")
-                p_update = playlist.get("update_date")
-                p_tracks_list = playlist.get("list_of_tracks")
-                for playlist_old in list_of_playlists_old:
-                    if "uri" in playlist_old:
-                        if playlist_old.get("uri") == p_uri:
-                            p_name_old = playlist_old.get("name")
-                            p_descr_old = playlist_old.get("desc")
-                            p_likes_old = playlist_old.get("likes")
-                            p_tracks_old = playlist_old.get("tracks_count")
-                            p_update_old = playlist_old.get("update_date")
-                            p_tracks_list_old = playlist_old.get("list_of_tracks")
+        if DETECT_CHANGES_IN_PLAYLISTS:
+            if playlists:
+                list_of_playlists = spotify_process_public_playlists(sp_accessToken, playlists, True)
 
-                            # Number of likes changed
-                            if p_likes != p_likes_old:
-                                p_likes_diff = p_likes - p_likes_old
-                                p_likes_diff_str = ""
-                                if p_likes_diff > 0:
-                                    p_likes_diff_str = "+" + str(p_likes_diff)
-                                else:
-                                    p_likes_diff_str = str(p_likes_diff)
-                                p_message = f"* Playlist '{p_name}': number of likes changed from {p_likes_old} to {p_likes} ({p_likes_diff_str})\n* Playlist URL: {p_url}\n"
-                                print(p_message)
-                                try:
-                                    if csv_file_name:
-                                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Playlist Likes", p_name, p_likes_old, p_likes)
-                                except Exception as e:
-                                    print(f"* Cannot write CSV entry - {e}")
-                                m_subject = f"Spotify user {username} number of likes for playlist '{p_name}' has changed! ({p_likes_diff_str}, {p_likes_old} -> {p_likes})"
-                                m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                if profile_notification:
-                                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                                    send_email(m_subject, m_body, "", SMTP_SSL)
-                                print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-                                print_cur_ts("Timestamp:\t\t")
+            for playlist in list_of_playlists:
+                if "uri" in playlist:
+                    p_uri = playlist.get("uri")
+                    p_url = spotify_convert_uri_to_url(p_uri)
+                    p_name = playlist.get("name", "")
+                    p_descr = html.unescape(playlist.get("desc", ""))
+                    p_likes = playlist.get("likes", 0)
+                    p_tracks = playlist.get("tracks_count", 0)
+                    p_date = playlist.get("date")
+                    p_update = playlist.get("update_date")
+                    p_tracks_list = playlist.get("list_of_tracks")
+                    for playlist_old in list_of_playlists_old:
+                        if "uri" in playlist_old:
+                            if playlist_old.get("uri") == p_uri:
+                                p_name_old = playlist_old.get("name")
+                                p_descr_old = playlist_old.get("desc")
+                                p_likes_old = playlist_old.get("likes")
+                                p_tracks_old = playlist_old.get("tracks_count")
+                                p_update_old = playlist_old.get("update_date")
+                                p_tracks_list_old = playlist_old.get("list_of_tracks")
 
-                            # Number of tracks changed
-                            if p_tracks != p_tracks_old or p_update != p_update_old:
-                                try:
-                                    p_tracks_diff = p_tracks - p_tracks_old
-                                    p_tracks_diff_str = ""
-
-                                    if p_tracks_diff > 0:
-                                        p_tracks_diff_str = "+" + str(p_tracks_diff)
+                                # Number of likes changed
+                                if p_likes != p_likes_old:
+                                    p_likes_diff = p_likes - p_likes_old
+                                    p_likes_diff_str = ""
+                                    if p_likes_diff > 0:
+                                        p_likes_diff_str = "+" + str(p_likes_diff)
                                     else:
-                                        p_tracks_diff_str = str(p_tracks_diff)
+                                        p_likes_diff_str = str(p_likes_diff)
+                                    p_message = f"* Playlist '{p_name}': number of likes changed from {p_likes_old} to {p_likes} ({p_likes_diff_str})\n* Playlist URL: {p_url}\n"
+                                    print(p_message)
+                                    try:
+                                        if csv_file_name:
+                                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Playlist Likes", p_name, p_likes_old, p_likes)
+                                    except Exception as e:
+                                        print(f"* Cannot write CSV entry - {e}")
+                                    m_subject = f"Spotify user {username} number of likes for playlist '{p_name}' has changed! ({p_likes_diff_str}, {p_likes_old} -> {p_likes})"
+                                    m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                    if profile_notification:
+                                        print(f"Sending email notification to {RECEIVER_EMAIL}")
+                                        send_email(m_subject, m_body, "", SMTP_SSL)
+                                    print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                                    print_cur_ts("Timestamp:\t\t")
 
-                                    if p_tracks != p_tracks_old and not p_update and p_update_old:
-                                        p_update = datetime.fromtimestamp(int(time.time()))
+                                # Number of tracks changed
+                                if p_tracks != p_tracks_old or p_update != p_update_old:
+                                    try:
+                                        p_tracks_diff = p_tracks - p_tracks_old
+                                        p_tracks_diff_str = ""
 
-                                    if p_update and p_update_old:
-                                        if p_update < p_update_old or p_update == p_update_old:
+                                        if p_tracks_diff > 0:
+                                            p_tracks_diff_str = "+" + str(p_tracks_diff)
+                                        else:
+                                            p_tracks_diff_str = str(p_tracks_diff)
+
+                                        if p_tracks != p_tracks_old and not p_update and p_update_old:
                                             p_update = datetime.fromtimestamp(int(time.time()))
 
-                                    p_after_str = ""
+                                        if p_update and p_update_old:
+                                            if p_update < p_update_old or p_update == p_update_old:
+                                                p_update = datetime.fromtimestamp(int(time.time()))
+
+                                        p_after_str = ""
+                                        if p_tracks_diff != 0:
+                                            if p_update and p_update_old:
+                                                p_after_str = f" (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}; previous update: {get_short_date_from_ts(p_update_old, True)})"
+                                            p_message = f"* Playlist '{p_name}': number of tracks changed from {p_tracks_old} to {p_tracks} ({p_tracks_diff_str}){p_after_str}\n* Playlist URL: {p_url}\n"
+                                        else:
+                                            if p_update and p_update_old:
+                                                p_after_str = f" (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}; previous update: {get_short_date_from_ts(p_update_old, True)})"
+                                            p_message = f"* Playlist '{p_name}': list of tracks ({p_tracks}) have changed{p_after_str}\n* Playlist URL: {p_url}\n"
+                                        print(p_message)
+                                    except Exception as e:
+                                        print(f"Error while processing data for playlist with URI {p_uri}, skipping for now - {e}")
+                                        print_cur_ts("Timestamp:\t\t")
+                                        continue
+                                    try:
+                                        if csv_file_name:
+                                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Playlist Number of Tracks", p_name, p_tracks_old, p_tracks)
+                                    except Exception as e:
+                                        print(f"* Cannot write CSV entry - {e}")
+                                    removed_tracks = compare_two_lists_of_dicts(p_tracks_list_old, p_tracks_list)
+                                    added_tracks = compare_two_lists_of_dicts(p_tracks_list, p_tracks_list_old)
+                                    p_message_added_tracks = ""
+                                    p_message_removed_tracks = ""
+
+                                    if added_tracks:
+                                        print("Added tracks:\n")
+                                        p_message_added_tracks = "Added tracks:\n\n"
+
+                                        for f_dict in added_tracks:
+                                            if "artist" in f_dict and "track" in f_dict:
+                                                apple_search_url, genius_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
+                                                added_track = f"- {f_dict['artist']} - {f_dict['track']} [ {f_dict['added_at']} ]\n[ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n[ {apple_search_url} ]\n[ {genius_search_url} ]\n"
+                                                p_message_added_tracks += added_track
+                                                print(added_track)
+                                                try:
+                                                    if csv_file_name:
+                                                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Track", p_name, "", f_dict["artist"] + " - " + f_dict["track"])
+                                                except Exception as e:
+                                                    print(f"* Cannot write CSV entry - {e}")
+                                        p_message_added_tracks += "\n"
+
+                                    if removed_tracks:
+                                        print("Removed tracks:\n")
+                                        p_message_removed_tracks = "Removed tracks:\n\n"
+
+                                        for f_dict in removed_tracks:
+                                            if "artist" in f_dict and "track" in f_dict:
+                                                apple_search_url, genius_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
+                                                removed_track = f"- {f_dict['artist']} - {f_dict['track']} [ {f_dict['added_at']} ]\n[ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n[ {apple_search_url} ]\n[ {genius_search_url} ]\n"
+                                                p_message_removed_tracks += removed_track
+                                                print(removed_track)
+                                                try:
+                                                    if csv_file_name:
+                                                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Track", p_name, f_dict["artist"] + " - " + f_dict["track"], "")
+                                                except Exception as e:
+                                                    print(f"* Cannot write CSV entry - {e}")
+                                        p_message_removed_tracks += "\n"
+
+                                    p_subject_after_str = ""
                                     if p_tracks_diff != 0:
                                         if p_update and p_update_old:
-                                            p_after_str = f" (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}; previous update: {get_short_date_from_ts(p_update_old, True)})"
-                                        p_message = f"* Playlist '{p_name}': number of tracks changed from {p_tracks_old} to {p_tracks} ({p_tracks_diff_str}){p_after_str}\n* Playlist URL: {p_url}\n"
+                                            p_subject_after_str = f"; after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}"
+                                        m_subject = f"Spotify user {username} number of tracks for playlist '{p_name}' has changed! ({p_tracks_diff_str}, {p_tracks_old} -> {p_tracks}{p_subject_after_str})"
                                     else:
                                         if p_update and p_update_old:
-                                            p_after_str = f" (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}; previous update: {get_short_date_from_ts(p_update_old, True)})"
-                                        p_message = f"* Playlist '{p_name}': list of tracks ({p_tracks}) have changed{p_after_str}\n* Playlist URL: {p_url}\n"
-                                    print(p_message)
-                                except Exception as e:
-                                    print(f"Error while processing data for playlist with URI {p_uri}, skipping for now - {e}")
+                                            p_subject_after_str = f" (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)})"
+                                        m_subject = f"Spotify user {username} list of tracks ({p_tracks}) for playlist '{p_name}' has changed!{p_subject_after_str}"
+                                    m_body = f"{p_message}\n{p_message_added_tracks}{p_message_removed_tracks}Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                    if profile_notification:
+                                        print(f"Sending email notification to {RECEIVER_EMAIL}")
+                                        send_email(m_subject, m_body, "", SMTP_SSL)
+                                    print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t")
-                                    continue
-                                try:
-                                    if csv_file_name:
-                                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Playlist Number of Tracks", p_name, p_tracks_old, p_tracks)
-                                except Exception as e:
-                                    print(f"* Cannot write CSV entry - {e}")
-                                removed_tracks = compare_two_lists_of_dicts(p_tracks_list_old, p_tracks_list)
-                                added_tracks = compare_two_lists_of_dicts(p_tracks_list, p_tracks_list_old)
-                                p_message_added_tracks = ""
-                                p_message_removed_tracks = ""
 
-                                if added_tracks:
-                                    print("Added tracks:\n")
-                                    p_message_added_tracks = "Added tracks:\n\n"
+                                # Playlist name changed
+                                if p_name != p_name_old:
+                                    p_message = f"* Playlist '{p_name_old}': name changed to new name '{p_name}'\n* Playlist URL: {p_url}\n"
+                                    print(p_message)
+                                    try:
+                                        if csv_file_name:
+                                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Playlist Name", username, p_name_old, p_name)
+                                    except Exception as e:
+                                        print(f"* Cannot write CSV entry - {e}")
+                                    m_subject = f"Spotify user {username} playlist '{p_name_old}' name changed to '{p_name}'!"
+                                    m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                    if profile_notification:
+                                        print(f"Sending email notification to {RECEIVER_EMAIL}")
+                                        send_email(m_subject, m_body, "", SMTP_SSL)
+                                    print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                                    print_cur_ts("Timestamp:\t\t")
 
-                                    for f_dict in added_tracks:
-                                        if "artist" in f_dict and "track" in f_dict:
-                                            apple_search_url, genius_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
-                                            added_track = f"- {f_dict['artist']} - {f_dict['track']} [ {f_dict['added_at']} ]\n[ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n[ {apple_search_url} ]\n[ {genius_search_url} ]\n"
-                                            p_message_added_tracks += added_track
-                                            print(added_track)
-                                            try:
-                                                if csv_file_name:
-                                                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Track", p_name, "", f_dict["artist"] + " - " + f_dict["track"])
-                                            except Exception as e:
-                                                print(f"* Cannot write CSV entry - {e}")
-                                    p_message_added_tracks += "\n"
-
-                                if removed_tracks:
-                                    print("Removed tracks:\n")
-                                    p_message_removed_tracks = "Removed tracks:\n\n"
-
-                                    for f_dict in removed_tracks:
-                                        if "artist" in f_dict and "track" in f_dict:
-                                            apple_search_url, genius_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
-                                            removed_track = f"- {f_dict['artist']} - {f_dict['track']} [ {f_dict['added_at']} ]\n[ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n[ {apple_search_url} ]\n[ {genius_search_url} ]\n"
-                                            p_message_removed_tracks += removed_track
-                                            print(removed_track)
-                                            try:
-                                                if csv_file_name:
-                                                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Track", p_name, f_dict["artist"] + " - " + f_dict["track"], "")
-                                            except Exception as e:
-                                                print(f"* Cannot write CSV entry - {e}")
-                                    p_message_removed_tracks += "\n"
-
-                                p_subject_after_str = ""
-                                if p_tracks_diff != 0:
-                                    if p_update and p_update_old:
-                                        p_subject_after_str = f"; after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}"
-                                    m_subject = f"Spotify user {username} number of tracks for playlist '{p_name}' has changed! ({p_tracks_diff_str}, {p_tracks_old} -> {p_tracks}{p_subject_after_str})"
-                                else:
-                                    if p_update and p_update_old:
-                                        p_subject_after_str = f" (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)})"
-                                    m_subject = f"Spotify user {username} list of tracks ({p_tracks}) for playlist '{p_name}' has changed!{p_subject_after_str}"
-                                m_body = f"{p_message}\n{p_message_added_tracks}{p_message_removed_tracks}Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                if profile_notification:
-                                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                                    send_email(m_subject, m_body, "", SMTP_SSL)
-                                print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-                                print_cur_ts("Timestamp:\t\t")
-
-                            # Playlist name changed
-                            if p_name != p_name_old:
-                                p_message = f"* Playlist '{p_name_old}': name changed to new name '{p_name}'\n* Playlist URL: {p_url}\n"
-                                print(p_message)
-                                try:
-                                    if csv_file_name:
-                                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Playlist Name", username, p_name_old, p_name)
-                                except Exception as e:
-                                    print(f"* Cannot write CSV entry - {e}")
-                                m_subject = f"Spotify user {username} playlist '{p_name_old}' name changed to '{p_name}'!"
-                                m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                if profile_notification:
-                                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                                    send_email(m_subject, m_body, "", SMTP_SSL)
-                                print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-                                print_cur_ts("Timestamp:\t\t")
-
-                            # Playlist description changed
-                            if p_descr != p_descr_old:
-                                p_message = f"* Playlist '{p_name}' description changed from:\n\n'{p_descr_old}'\n\nto:\n\n'{p_descr}'\n\n* Playlist URL: {p_url}\n"
-                                print(p_message)
-                                try:
-                                    if csv_file_name:
-                                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Playlist Description", p_name, p_descr_old, p_descr)
-                                except Exception as e:
-                                    print(f"* Cannot write CSV entry - {e}")
-                                m_subject = f"Spotify user {username} playlist '{p_name}' description has changed !"
-                                m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                if profile_notification:
-                                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                                    send_email(m_subject, m_body, "", SMTP_SSL)
-                                print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-                                print_cur_ts("Timestamp:\t\t")
+                                # Playlist description changed
+                                if p_descr != p_descr_old:
+                                    p_message = f"* Playlist '{p_name}' description changed from:\n\n'{p_descr_old}'\n\nto:\n\n'{p_descr}'\n\n* Playlist URL: {p_url}\n"
+                                    print(p_message)
+                                    try:
+                                        if csv_file_name:
+                                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Playlist Description", p_name, p_descr_old, p_descr)
+                                    except Exception as e:
+                                        print(f"* Cannot write CSV entry - {e}")
+                                    m_subject = f"Spotify user {username} playlist '{p_name}' description has changed !"
+                                    m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                    if profile_notification:
+                                        print(f"Sending email notification to {RECEIVER_EMAIL}")
+                                        send_email(m_subject, m_body, "", SMTP_SSL)
+                                    print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time())-SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                                    print_cur_ts("Timestamp:\t\t")
 
         list_of_playlists_old = list_of_playlists
 
-        if playlists_count != playlists_old_count and (playlists or (not playlists and playlists_count == 0)):
+        if playlists_count != playlists_old_count and (playlists or (not playlists and playlists_count == 0)) and DETECT_CHANGES_IN_PLAYLISTS:
             spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists", "Added Playlist", "Removed playlists", "Removed Playlist", playlists_file, csv_file_name, profile_notification, True, sp_accessToken)
 
             playlists_old_count = playlists_count
@@ -1958,6 +1969,7 @@ if __name__ == "__main__":
     parser.add_argument("-m", "--error_interval", help="Time between error checks, in seconds", type=int)
     parser.add_argument("-b", "--csv_file", help="Write all profile changes to CSV file", type=str, metavar="CSV_FILENAME")
     parser.add_argument("-j", "--do_not_detect_changed_profile_pic", help="Disable detection of changed user's profile picture in monitoring mode", action='store_false')
+    parser.add_argument("-q", "--do_not_monitor_playlists", help="Disable detection of changes in user's public playlists in monitoring mode (like added/removed tracks in playlists, playlists name and description changes, number of likes for playlists)", action='store_false')
     parser.add_argument("-l", "--list_tracks_for_playlist", help="List all tracks for specific Spotify playlist URL", type=str, metavar="SPOTIFY_PLAYLIST_URL")
     parser.add_argument("-i", "--user_profile_details", help="Show profile details for user with specific Spotify URI ID (playlists, followers, followings, recently played artists etc.)", action='store_true')
     parser.add_argument("-a", "--recently_played_artists", help="List recently played artists for user with specific Spotify URI ID", action='store_true')
@@ -2006,6 +2018,9 @@ if __name__ == "__main__":
 
     if args.do_not_detect_changed_profile_pic is False:
         DETECT_CHANGED_PROFILE_PIC = False
+
+    if args.do_not_monitor_playlists is False:
+        DETECT_CHANGES_IN_PLAYLISTS = False
 
     if args.check_interval:
         SPOTIFY_CHECK_INTERVAL = args.check_interval
@@ -2106,6 +2121,7 @@ if __name__ == "__main__":
     print(f"* Spotify timers:\t\t[check interval: {display_time(SPOTIFY_CHECK_INTERVAL)}] [error interval: {display_time(SPOTIFY_ERROR_INTERVAL)}]")
     print(f"* Email notifications:\t\t[profile changes = {profile_notification}] [errors = {args.error_notification}]")
     print(f"* Detect changed profile pic:\t{DETECT_CHANGED_PROFILE_PIC}")
+    print(f"* Detect changes in playlists:\t{DETECT_CHANGES_IN_PLAYLISTS}")
     if not args.disable_logging:
         print(f"* Output logging enabled:\t{not args.disable_logging} ({SP_LOGFILE})")
     else:
