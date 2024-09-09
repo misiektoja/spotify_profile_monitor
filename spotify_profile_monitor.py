@@ -83,7 +83,7 @@ DETECT_CHANGES_IN_PLAYLISTS = True
 PLAYLISTS_LIMIT = 50
 
 # How many recently played artists the tool will display when using -a parameter
-RECENTLY_PLAYED_ARTISTS_LIMIT = 15
+RECENTLY_PLAYED_ARTISTS_LIMIT = 50
 
 # How often do we perform alive check by printing "alive check" message in the output; in seconds
 TOOL_ALIVE_INTERVAL = 21600  # 6 hours
@@ -1047,7 +1047,7 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
                 print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
 
     if recently_played_artists:
-        print("\nRecently played artists:\n")
+        print(f"\nRecently played artists ({RECENTLY_PLAYED_ARTISTS_LIMIT}):\n")
         for f_dict in recently_played_artists:
             if "name" in f_dict and "uri" in f_dict:
                 print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
@@ -1078,7 +1078,7 @@ def spotify_get_recently_played_artists(sp_accessToken, user_uri_id):
     print(f"User profile picture:\t{image_url != ''}")
 
     if recently_played_artists:
-        print("\nRecently played artists:\n")
+        print(f"\nRecently played artists ({RECENTLY_PLAYED_ARTISTS_LIMIT}):\n")
         for f_dict in recently_played_artists:
             if "name" in f_dict and "uri" in f_dict:
                 print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
