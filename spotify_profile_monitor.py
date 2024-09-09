@@ -121,6 +121,7 @@ stdout_bck = None
 csvfieldnames = ['Date', 'Type', 'Name', 'Old', 'New']
 
 profile_notification = False
+followers_followings_notification = True
 file_suffix = ""
 
 # to solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
@@ -1227,6 +1228,9 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                                 print(f"* Cannot write CSV entry - {e}")
                 print()
 
+            if (f_str == "Followers" or f_str == "Followings") and not followers_followings_notification:
+                return
+
             if profile_notification:
 
                 m_subject = f"Spotify user {username} {str(f_str).lower()} number has changed! ({f_diff_str}, {f_old_count} -> {f_count})"
@@ -1997,7 +2001,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser("spotify_profile_monitor")
     parser.add_argument("SPOTIFY_USER_URI_ID", nargs="?", help="Spotify user URI ID", type=str)
     parser.add_argument("-u", "--spotify_dc_cookie", help="Spotify sp_dc cookie to override the value defined within the script (SP_DC_COOKIE)", type=str)
-    parser.add_argument("-p", "--profile_notification", help="Send email notification once user's profile changes", action='store_true')
+    parser.add_argument("-p", "--profile_notification", help="Send email notification once user's profile changes (followers & followings, public playlists and its tracks, likes for playlists, profile picture)", action='store_true')
+    parser.add_argument("-g", "--disable_followers_followings_notification", help="Disable sending email notifications about new followers/followings (it is sent by default when -p / --profile_notification is enabled)", action='store_false')
     parser.add_argument("-e", "--error_notification", help="Disable sending email notifications in case of errors like expired sp_dc", action='store_false')
     parser.add_argument("-c", "--check_interval", help="Time between monitoring checks, in seconds", type=int)
     parser.add_argument("-m", "--error_interval", help="Time between error checks, in seconds", type=int)
@@ -2151,9 +2156,13 @@ if __name__ == "__main__":
         sys.stdout = Logger(SP_LOGFILE)
 
     profile_notification = args.profile_notification
+    followers_followings_notification = args.disable_followers_followings_notification
+
+    if profile_notification is False:
+        followers_followings_notification = False
 
     print(f"* Spotify timers:\t\t[check interval: {display_time(SPOTIFY_CHECK_INTERVAL)}] [error interval: {display_time(SPOTIFY_ERROR_INTERVAL)}]")
-    print(f"* Email notifications:\t\t[profile changes = {profile_notification}] [errors = {args.error_notification}]")
+    print(f"* Email notifications:\t\t[profile changes = {profile_notification}] [followers/followings = {followers_followings_notification}]\n\t\t\t\t[errors = {args.error_notification}]")
     print(f"* Detect changed profile pic:\t{DETECT_CHANGED_PROFILE_PIC}")
     print(f"* Detect changes in playlists:\t{DETECT_CHANGES_IN_PLAYLISTS}")
     if not args.disable_logging:
