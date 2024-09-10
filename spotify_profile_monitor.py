@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.4
+v1.5
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -15,7 +15,7 @@ requests
 urllib3
 """
 
-VERSION = 1.4
+VERSION = 1.5
 
 # ---------------------------
 # CONFIGURATION SECTION START
