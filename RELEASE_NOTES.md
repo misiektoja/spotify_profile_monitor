@@ -2,6 +2,21 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 1.5 (11 Sep 2024)
+
+**Features and Improvements**:
+
+- **NEW:** Possibility to disable detection of changes in user's public playlists (new **-q** / **--do_not_monitor_playlists** parameter)
+- **NEW:** Possibility to disable email notifications for changed followers/followings (new **-g** / **--disable_followers_followings_notification** parameter) 
+- **IMPROVE:** Recently played artists limit increased from 15 to 50 + info about the limit in the output
+- **IMPROVE:** Indentation + linting fixes
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed issue with missed playlists changes notifications in case of intermittent Spotify API issues
+- **BUGFIX:** Fixed bug with wrong CSV file event entry name
+- **BUGFIX:** Fixed issue with Spotify API sometimes returning wrong info that all user's playlists have been removed
+
 # Changes in 1.4 (15 Jun 2024)
 
 **Features and Improvements**:
