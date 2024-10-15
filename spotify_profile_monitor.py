@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.5
+v1.6
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -15,7 +15,7 @@ requests
 urllib3
 """
 
-VERSION = 1.5
+VERSION = 1.6
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -1383,6 +1383,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
     followers_old_count = followers_count
     followings_old_count = followings_count
 
+    username_old = username
+
     if DETECT_CHANGES_IN_PLAYLISTS:
         playlists_old = playlists
         playlists_old_count = playlists_count
@@ -1619,6 +1621,27 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
         username = sp_user_data["sp_username"]
         image_url = sp_user_data["sp_user_image_url"]
+
+        # Spotify username has changed
+        if username != username_old:
+            print(f"* User '{username_old}' has changed username to '{username}'")
+
+            try:
+                if csv_file_name:
+                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Username", username, username_old, username)
+            except Exception as e:
+                print(f"* Cannot write CSV entry - {e}")
+
+            if profile_notification:
+                m_subject = f"Spotify user {username_old} has changed username to {username}"
+                m_body = f"Spotify user '{username_old}' has changed username to '{username}'\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                print(f"Sending email notification to {RECEIVER_EMAIL}")
+                send_email(m_subject, m_body, "", SMTP_SSL)
+
+            username_old = username
+
+            print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+            print_cur_ts("Timestamp:\t\t")
 
         try:
             sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
