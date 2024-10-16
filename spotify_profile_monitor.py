@@ -718,6 +718,8 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists):
             sp_user_public_playlists_count_tmp = len(sp_user_public_playlists_uris)
             if sp_user_public_playlists_count_tmp > 0:
                 sp_user_public_playlists_count = sp_user_public_playlists_count_tmp
+            else:
+                sp_user_public_playlists_count = 0
 
             remove_key_from_list_of_dicts(sp_user_public_playlists_uris, 'image_url')
             remove_key_from_list_of_dicts(sp_user_public_playlists_uris, 'is_following')
