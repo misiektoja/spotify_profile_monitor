@@ -1174,7 +1174,8 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                     try:
                         sp_playlist_data = spotify_get_playlist_info(sp_accessToken, f_dict["uri"], False)
                     except Exception as e:
-                        print(f"Error while getting info for playlist with URI {f_dict['uri']}, skipping for now - {e}")
+                        print(f"- Error while getting info for playlist with URI {f_dict['uri']}, skipping for now - {e}")
+                        list_of_added_f_list += f"- Error while getting info for playlist with URI {f_dict['uri']}\n"
                         print_cur_ts("Timestamp:\t\t")
                         continue
                     p_name = sp_playlist_data.get("sp_playlist_name")
@@ -1208,7 +1209,8 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                             print(f"- Playlist has been removed or set to private [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
                             list_of_removed_f_list += f"- Playlist has been removed or set to private [ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n"
                         else:
-                            print(f"Error while getting info for playlist with URI {f_dict['uri']}, skipping for now - {e}")
+                            print(f"- Error while getting info for playlist with URI {f_dict['uri']}, skipping for now - {e}")
+                            list_of_removed_f_list += f"- Error while getting info for playlist with URI {f_dict['uri']}\n"
                             print_cur_ts("Timestamp:\t\t")
                         continue
                     p_name = sp_playlist_data.get("sp_playlist_name")
