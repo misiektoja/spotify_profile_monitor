@@ -548,12 +548,14 @@ def decrease_check_signal_handler(sig, frame):
 # Function preparing Apple & Genius search URLs for specified track
 def get_apple_genius_search_urls(artist, track):
     genius_search_string = f"{artist} {track}"
+    youtube_music_search_string = urllib.parse.quote_plus(f"{artist} {track}")
     if re.search(re_search_str, genius_search_string, re.IGNORECASE):
         genius_search_string = re.sub(re_replace_str, '', genius_search_string, flags=re.IGNORECASE)
     apple_search_string = urllib.parse.quote(f"{artist} {track}")
     apple_search_url = f"https://music.apple.com/pl/search?term={apple_search_string}"
     genius_search_url = f"https://genius.com/search?q={urllib.parse.quote_plus(genius_search_string)}"
-    return apple_search_url, genius_search_url
+    youtube_music_search_url = f"https://music.youtube.com/search?q={youtube_music_search_string}"
+    return apple_search_url, genius_search_url, youtube_music_search_url
 
 
 # Function getting Spotify access token based on provided sp_dc cookie value
@@ -1902,8 +1904,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
                                         for f_dict in added_tracks:
                                             if "artist" in f_dict and "track" in f_dict:
-                                                apple_search_url, genius_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
-                                                added_track = f"- {f_dict['artist']} - {f_dict['track']} [ {f_dict['added_at']} ]\n[ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n[ {apple_search_url} ]\n[ {genius_search_url} ]\n"
+                                                apple_search_url, genius_search_url, youtube_music_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
+                                                added_track = f"- {f_dict['artist']} - {f_dict['track']} [ {f_dict['added_at']} ]\n[ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n[ {apple_search_url} ]\n[ {youtube_music_search_url} ]\n[ {genius_search_url} ]\n"
                                                 p_message_added_tracks += added_track
                                                 print(added_track)
                                                 try:
@@ -1919,8 +1921,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
                                         for f_dict in removed_tracks:
                                             if "artist" in f_dict and "track" in f_dict:
-                                                apple_search_url, genius_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
-                                                removed_track = f"- {f_dict['artist']} - {f_dict['track']} [ {f_dict['added_at']} ]\n[ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n[ {apple_search_url} ]\n[ {genius_search_url} ]\n"
+                                                apple_search_url, genius_search_url, youtube_music_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
+                                                removed_track = f"- {f_dict['artist']} - {f_dict['track']} [ {f_dict['added_at']} ]\n[ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n[ {apple_search_url} ]\n[ {youtube_music_search_url} ]\n[ {genius_search_url} ]\n"
                                                 p_message_removed_tracks += removed_track
                                                 print(removed_track)
                                                 try:
