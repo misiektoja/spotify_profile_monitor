@@ -1023,19 +1023,26 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
     print(f"User URI ID:\t\t{user_uri_id}")
     print(f"User URL:\t\t{spotify_convert_uri_to_url(f'spotify:user:{user_uri_id}')}")
 
-    print(f"User profile picture:\t{image_url != ''}")
+    print(f"User profile picture:\t{image_url != ''}", end=" ")
 
     profile_pic_file_tmp = f"spotify_{user_uri_id}_profile_pic_tmp_info.jpeg"
-    if image_url and IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
+    if image_url:
         if save_profile_pic(image_url, profile_pic_file_tmp):
-            try:
-                subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file_tmp}'), shell=True)
-            except:
-                pass
+            profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)))
+            print(f"({get_short_date_from_ts(profile_pic_mdate_dt, True)} - {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False)} ago)")
+            if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
+                try:
+                    subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file_tmp}'), shell=True)
+                except:
+                    pass
             try:
                 os.remove(profile_pic_file_tmp)
             except:
                 pass
+        else:
+            print("")
+    else:
+        print("")
 
     print(f"\nFollowers:\t\t{followers_count}")
     if followers:
