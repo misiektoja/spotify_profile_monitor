@@ -2,6 +2,19 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 1.6 (03 Nov 2024)
+
+**Features and Improvements**:
+
+- **NEW:** Detection of Spotify username changes
+- **NEW:** Support for YouTube Music search URLs
+- **IMPROVE:** Displaying last update date of user's profile pic when using -i parameter
+- **IMPROVE:** Added info to email notifications for playlists with errors
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed bug with wrong number of user owned public playlists if there are none
+
 # Changes in 1.5 (11 Sep 2024)
 
 **Features and Improvements**:
