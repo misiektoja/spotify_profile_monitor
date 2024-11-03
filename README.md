@@ -13,12 +13,13 @@ NOTE: If you want to track Spotify friends music activity check out the other to
    - playlists name and description changes
    - number of likes for playlists
    - changed profile pictures
-- Email notifications for different events (added/removed followings + followers + public playlists + its tracks, playlists name and description changes, changed profile pictures, number of likes for playlists, errors)
+   - username changes
+- Email notifications for different events (added/removed followings + followers + public playlists + its tracks, playlists name and description changes, changed profile pictures, username changes, number of likes for playlists, errors)
 - Attaching changed profile pictures directly in email notifications
 - Displaying the profile picture right in your terminal (if you have *imgcat* installed)
 - Additional functionalities on top of the monitoring mode allowing to display detailed info about the user, list of followers & followings, recently played artists and possibility to search for users with specific names
 - Saving all profile changes with timestamps to the CSV file
-- Clickable Spotify, Apple Music and Genius Lyrics search URLs printed in the console & included in email notifications
+- Clickable Spotify, Apple Music, YouTube Music and Genius Lyrics search URLs printed in the console & included in email notifications
 - Possibility to control the running copy of the script via signals
 
 <p align="center">
@@ -40,7 +41,7 @@ The script requires Python 3.x.
 It uses requests, python-dateutil, pytz, tzlocal and urllib3.
 
 It has been tested successfully on:
-- macOS (Ventura & Sonoma)
+- macOS (Ventura, Sonoma & Sequoia)
 - Linux:
    - Raspberry Pi Bullseye & Bookworm
    - Ubuntu 24
