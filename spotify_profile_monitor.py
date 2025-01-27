@@ -1968,7 +1968,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                                 print(added_track, end="")
                                                 try:
                                                     if csv_file_name:
-                                                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Track", p_name, "", f_dict["artist"] + " - " + f_dict["track"])
+                                                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Track", p_name, f_dict['added_by'], f_dict["artist"] + " - " + f_dict["track"])
                                                 except Exception as e:
                                                     print(f"* Cannot write CSV entry - {e}")
 
