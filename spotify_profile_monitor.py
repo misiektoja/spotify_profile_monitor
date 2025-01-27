@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.6
+v1.7
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -15,7 +15,7 @@ requests
 urllib3
 """
 
-VERSION = 1.6
+VERSION = 1.7
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -643,8 +643,8 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
     playlist_id = playlist_uri.split(':', 2)[2]
 
     if get_tracks:
-        url1 = f"https://api.spotify.com/v1/playlists/{playlist_id}?fields=name,description,owner,followers,external_urls,tracks.total"
-        url2 = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks?fields=next,total,items(added_at,track(name,uri,duration_ms)),items(track(artists(name,uri)))"
+        url1 = f"https://api.spotify.com/v1/playlists/{playlist_id}?fields=name,description,owner,followers,external_urls,tracks.total,collaborative"
+        url2 = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks?fields=next,total,items(added_at,track(name,uri,duration_ms),added_by),items(track(artists(name,uri)))"
     else:
         url1 = f"https://api.spotify.com/v1/playlists/{playlist_id}?fields=name,description,owner,followers,external_urls,tracks.total"
         url2 = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks?fields=next,total,items(added_at)"
@@ -664,6 +664,7 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
             response2 = req.get(next_url, headers=headers, timeout=FUNCTION_TIMEOUT)
             response2.raise_for_status()
             json_response2 = response2.json()
+            # print(json.dumps(json_response2))
 
             for track in json_response2.get("items"):
                 sp_playlist_tracks_concatenated_list.append(track)
@@ -671,6 +672,10 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
             next_url = json_response2.get("next")
 
         sp_playlist_name = json_response1.get("name", "")
+
+        # we fetch collaborative field for the future, for now it is always set to false by Spotify as a countermeasure against finding collaborative playlists by scraping
+        sp_playlist_collaborative = json_response1.get("collaborative", "")
+
         sp_playlist_description = json_response1.get("description", "")
         sp_playlist_owner = json_response1["owner"].get("display_name", "")
         sp_playlist_owner_url = json_response1["owner"]["external_urls"].get("spotify")
@@ -683,7 +688,7 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
         sp_playlist_followers_count = int(json_response1["followers"].get("total", 0))
         sp_playlist_url = json_response1["external_urls"].get("spotify") + si
 
-        return {"sp_playlist_name": sp_playlist_name, "sp_playlist_description": sp_playlist_description, "sp_playlist_owner": sp_playlist_owner, "sp_playlist_owner_url": sp_playlist_owner_url, "sp_playlist_tracks_count": sp_playlist_tracks_count, "sp_playlist_tracks": sp_playlist_tracks, "sp_playlist_followers_count": sp_playlist_followers_count, "sp_playlist_url": sp_playlist_url}
+        return {"sp_playlist_name": sp_playlist_name, "sp_playlist_collaborative": sp_playlist_collaborative, "sp_playlist_description": sp_playlist_description, "sp_playlist_owner": sp_playlist_owner, "sp_playlist_owner_url": sp_playlist_owner_url, "sp_playlist_tracks_count": sp_playlist_tracks_count, "sp_playlist_tracks": sp_playlist_tracks, "sp_playlist_followers_count": sp_playlist_followers_count, "sp_playlist_url": sp_playlist_url}
 
     except Exception as e:
         raise
@@ -788,6 +793,8 @@ def spotify_get_user_followers(access_token, user_uri_id):
 def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
     print(f"Listing tracks for playlist '{playlist_url}' ...\n")
 
+    user_id_name_mapping = {}
+
     playlist_uri = spotify_convert_url_to_uri(playlist_url)
 
     sp_playlist_data = spotify_get_playlist_info(sp_accessToken, playlist_uri, True)
@@ -814,6 +821,20 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
                 duration = int(str(duration_ms)[0:-3])
                 duration_sum = duration_sum + duration
                 added_at_dt = convert_utc_str_to_tz_datetime(track.get("added_at"), LOCAL_TIMEZONE)
+                added_by = track.get("added_by")
+                added_by_id = added_by.get("id")
+                added_by_name = ""
+                if user_id_name_mapping.get(added_by_id):
+                    added_by_name = user_id_name_mapping.get(added_by_id)
+                else:
+                    sp_user_data = spotify_get_user_info(sp_accessToken, added_by_id, False)
+                    added_by_name = sp_user_data["sp_username"]
+                    if added_by_name:
+                        user_id_name_mapping[added_by_id] = added_by_name
+
+                if not added_by_name:
+                    added_by_name = added_by_id
+
                 added_at_dt_ts = int(added_at_dt.timestamp())
                 if index == 0:
                     added_at_ts_lowest = added_at_dt_ts
@@ -825,7 +846,7 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
                 added_at_dt_new = datetime.fromtimestamp(int(added_at_dt_ts)).strftime("%d %b %Y, %H:%M:%S")
                 added_at_dt_new_week_day = calendar.day_abbr[datetime.fromtimestamp(int(added_at_dt_ts)).weekday()]
                 artist_track = artist_track[:75]
-                line_new = '%75s    %20s    %3s' % (artist_track, added_at_dt_new, added_at_dt_new_week_day)
+                line_new = '%75s    %20s    %3s     %10s' % (artist_track, added_at_dt_new, added_at_dt_new_week_day, added_by_name)
                 print(line_new)
 
     print(f"\nName:\t\t'{p_name}'")
@@ -845,6 +866,11 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
         print(f"Last update:\t{p_last_track_date} ({p_last_track_date_since} ago)")
 
     print(f"Duration:\t{display_time(duration_sum)}")
+
+    if len(user_id_name_mapping) > 1:
+        print(f"\nCollaborators ({len(user_id_name_mapping)}):\n")
+        for collab_id, collab_name in user_id_name_mapping.items():
+            print(f"- {collab_name} [id: {collab_id}]")
 
 
 # Function comparing two lists of dictionaries
@@ -887,6 +913,7 @@ def spotify_search_users(access_token, username):
 def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
     list_of_playlists = []
     error_while_processing = False
+    user_id_name_mapping = {}
 
     if playlists:
         for playlist in playlists:
@@ -918,6 +945,20 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
                                     track_duration = int(str(duration_ms)[0:-3])
                                     track_uri = track["track"].get("uri")
 
+                                added_by = track.get("added_by")
+                                added_by_id = added_by.get("id")
+                                added_by_name = ""
+                                if user_id_name_mapping.get(added_by_id):
+                                    added_by_name = user_id_name_mapping.get(added_by_id)
+                                else:
+                                    sp_user_data = spotify_get_user_info(sp_accessToken, added_by_id, False)
+                                    added_by_name = sp_user_data["sp_username"]
+                                    if added_by_name:
+                                        user_id_name_mapping[added_by_id] = added_by_name
+
+                                if not added_by_name:
+                                    added_by_name = added_by_id
+
                             if added_at:
                                 added_at_dt = convert_utc_str_to_tz_datetime(added_at, LOCAL_TIMEZONE)
                                 added_at_dt_ts = int(added_at_dt.timestamp())
@@ -933,7 +974,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
                                 added_at_dt_new = datetime.fromtimestamp(int(added_at_dt_ts)).strftime("%d %b %Y, %H:%M:%S")
 
                             if get_tracks and added_at:
-                                list_of_tracks.append({"artist": p_artist, "track": p_track, "duration": track_duration, "added_at": added_at_str, "uri": track_uri})
+                                list_of_tracks.append({"artist": p_artist, "track": p_track, "duration": track_duration, "added_at": added_at_str, "uri": track_uri, "added_by": added_by_name})
 
                 except Exception as e:
                     print(f"Error while processing playlist with URI {p_uri}, skipping for now - {e}")
@@ -950,10 +991,12 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
                 if added_at_ts_highest > 0:
                     p_last_track_date = datetime.fromtimestamp(int(added_at_ts_highest))
 
+                p_collaborators_count = len(user_id_name_mapping)
+
                 if list_of_tracks and get_tracks:
-                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "list_of_tracks": list_of_tracks})
+                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "list_of_tracks": list_of_tracks, "collaborators_count": p_collaborators_count, "collaborators": user_id_name_mapping})
                 else:
-                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date})
+                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "collaborators_count": p_collaborators_count, "collaborators": user_id_name_mapping})
 
     return list_of_playlists, error_while_processing
 
@@ -972,7 +1015,10 @@ def spotify_print_public_playlists(list_of_playlists):
                 p_url = playlist.get("url")
                 p_date = playlist.get("date")
                 p_update = playlist.get("update_date")
-                print(f"- '{p_name}'\n[ {p_url} ]\n[ songs: {p_tracks}, likes: {p_likes} ]")
+                p_collaborators_count = playlist.get("collaborators_count")
+                collaborators = playlist.get("collaborators")
+
+                print(f"- '{p_name}'\n[ {p_url} ]\n[ songs: {p_tracks}, likes: {p_likes}, collaborators: {p_collaborators_count} ]")
                 if p_date:
                     p_date_str = p_date.strftime("%d %b %Y, %H:%M:%S")
                     p_date_week_day = calendar.day_abbr[p_date.weekday()]
@@ -1067,6 +1113,7 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
 
     if playlists:
         print("\nGetting list of public playlists (be patient, it might take a while) ...\n")
+        # if you also want to get the number of collaborators change False to True at the end
         list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, False)
         spotify_print_public_playlists(list_of_playlists)
 
