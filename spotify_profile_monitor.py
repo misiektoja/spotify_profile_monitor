@@ -913,10 +913,10 @@ def spotify_search_users(access_token, username):
 def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
     list_of_playlists = []
     error_while_processing = False
-    user_id_name_mapping = {}
 
     if playlists:
         for playlist in playlists:
+            user_id_name_mapping = {}
             if "uri" in playlist:
                 list_of_tracks = []
                 p_uri = playlist.get("uri")
@@ -996,7 +996,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
                 if list_of_tracks and get_tracks:
                     list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "list_of_tracks": list_of_tracks, "collaborators_count": p_collaborators_count, "collaborators": user_id_name_mapping})
                 else:
-                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "collaborators_count": p_collaborators_count, "collaborators": user_id_name_mapping})
+                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "collaborators_count": p_collaborators_count, "collaborators": {}})
 
     return list_of_playlists, error_while_processing
 
@@ -1876,8 +1876,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                     p_tracks = playlist.get("tracks_count", 0)
                     p_date = playlist.get("date")
                     p_update = playlist.get("update_date")
-                    p_collaborators_count = playlist.get("collaborators_count")
-                    p_collaborators = playlist.get("collaborators")
+                    p_collaborators = playlist.get("collaborators_count")
+                    p_collaborators_list = playlist.get("collaborators")
                     p_tracks_list = playlist.get("list_of_tracks")
                     for playlist_old in list_of_playlists_old:
                         if "uri" in playlist_old:
@@ -1888,8 +1888,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                 p_tracks_old = playlist_old.get("tracks_count")
                                 p_update_old = playlist_old.get("update_date")
                                 p_tracks_list_old = playlist_old.get("list_of_tracks")
-                                p_collaborators_count_old = playlist_old.get("collaborators_count")
-                                p_collaborators_old = playlist_old.get("collaborators")
+                                p_collaborators_old = playlist_old.get("collaborators_count")
+                                p_collaborators_list_old = playlist_old.get("collaborators")
 
                                 # Number of likes changed
                                 if p_likes != p_likes_old:
@@ -1908,6 +1908,72 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                         print(f"* Cannot write CSV entry - {e}")
                                     m_subject = f"Spotify user {username} number of likes for playlist '{p_name}' has changed! ({p_likes_diff_str}, {p_likes_old} -> {p_likes})"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                    if profile_notification:
+                                        print(f"Sending email notification to {RECEIVER_EMAIL}")
+                                        send_email(m_subject, m_body, "", SMTP_SSL)
+                                    print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                                    print_cur_ts("Timestamp:\t\t")
+
+                                # Number of collaborators changed
+                                if p_collaborators != p_collaborators_old:
+                                    p_collaborators_diff = p_collaborators - p_collaborators_old
+                                    p_collaborators_diff_str = ""
+
+                                    if p_collaborators_diff > 0:
+                                        p_collaborators_diff_str = "+" + str(p_collaborators_diff)
+                                    else:
+                                        p_collaborators_diff_str = str(p_collaborators_diff)
+
+                                    p_message = f"* Playlist '{p_name}': number of collaborators changed from {p_collaborators_old} to {p_collaborators} ({p_collaborators_diff_str})\n* Playlist URL: {p_url}\n"
+                                    print(p_message)
+
+                                    try:
+                                        if csv_file_name:
+                                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Collaborators Number", p_name, p_collaborators_old, p_collaborators)
+                                    except Exception as e:
+                                        print(f"* Cannot write CSV entry - {e}")
+
+                                    added_keys = p_collaborators_list.keys() - p_collaborators_list_old.keys()
+                                    removed_keys = p_collaborators_list_old.keys() - p_collaborators_list.keys()
+
+                                    added_collaborators = {key: p_collaborators_list[key] for key in added_keys}
+                                    removed_collaborators = {key: p_collaborators_list_old[key] for key in removed_keys}
+
+                                    p_message_added_collaborators = ""
+                                    p_message_removed_collaborators = ""
+
+                                    if added_collaborators:
+                                        p_message_added_collaborators = "Added collaborators:\n\n"
+
+                                        for collab_id, collab_name in added_collaborators.items():
+                                            added_collab = f"- {collab_name} [ {spotify_convert_uri_to_url(f"spotify:user:{collab_id}")} ]\n"
+                                            p_message_added_collaborators += added_collab
+                                            try:
+                                                if csv_file_name:
+                                                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Collaborator", p_name, "", collab_name)
+                                            except Exception as e:
+                                                print(f"* Cannot write CSV entry - {e}")
+
+                                        p_message_added_collaborators += "\n"
+                                        print(p_message_added_collaborators, end="")
+
+                                    if removed_collaborators:
+                                        p_message_removed_collaborators = "Removed collaborators:\n\n"
+
+                                        for collab_id, collab_name in removed_collaborators.items():
+                                            removed_collab = f"- {collab_name} [ {spotify_convert_uri_to_url(f"spotify:user:{collab_id}")} ]\n"
+                                            p_message_removed_collaborators += removed_collab
+                                            try:
+                                                if csv_file_name:
+                                                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Collaborator", p_name, collab_name, "")
+                                            except Exception as e:
+                                                print(f"* Cannot write CSV entry - {e}")
+
+                                        p_message_removed_collaborators += "\n"
+                                        print(p_message_removed_collaborators, end="")
+
+                                    m_subject = f"Spotify user {username} number of collaborators for playlist '{p_name}' has changed! ({p_collaborators_diff_str}, {p_collaborators_old} -> {p_collaborators})"
+                                    m_body = f"{p_message}\n{p_message_added_collaborators}{p_message_removed_collaborators}Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                     if profile_notification:
                                         print(f"Sending email notification to {RECEIVER_EMAIL}")
                                         send_email(m_subject, m_body, "", SMTP_SSL)
