@@ -974,7 +974,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
                                 added_at_dt_new = datetime.fromtimestamp(int(added_at_dt_ts)).strftime("%d %b %Y, %H:%M:%S")
 
                             if get_tracks and added_at:
-                                list_of_tracks.append({"artist": p_artist, "track": p_track, "duration": track_duration, "added_at": added_at_str, "uri": track_uri, "added_by": added_by_name})
+                                list_of_tracks.append({"artist": p_artist, "track": p_track, "duration": track_duration, "added_at": added_at_str, "uri": track_uri, "added_by": added_by_name, "added_by_id": added_by_id})
 
                 except Exception as e:
                     print(f"Error while processing playlist with URI {p_uri}, skipping for now - {e}")
@@ -1016,7 +1016,7 @@ def spotify_print_public_playlists(list_of_playlists):
                 p_date = playlist.get("date")
                 p_update = playlist.get("update_date")
                 p_collaborators_count = playlist.get("collaborators_count")
-                collaborators = playlist.get("collaborators")
+                p_collaborators = playlist.get("collaborators")
 
                 print(f"- '{p_name}'\n[ {p_url} ]\n[ songs: {p_tracks}, likes: {p_likes}, collaborators: {p_collaborators_count} ]")
                 if p_date:
@@ -1876,6 +1876,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                     p_tracks = playlist.get("tracks_count", 0)
                     p_date = playlist.get("date")
                     p_update = playlist.get("update_date")
+                    p_collaborators_count = playlist.get("collaborators_count")
+                    p_collaborators = playlist.get("collaborators")
                     p_tracks_list = playlist.get("list_of_tracks")
                     for playlist_old in list_of_playlists_old:
                         if "uri" in playlist_old:
@@ -1886,6 +1888,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                 p_tracks_old = playlist_old.get("tracks_count")
                                 p_update_old = playlist_old.get("update_date")
                                 p_tracks_list_old = playlist_old.get("list_of_tracks")
+                                p_collaborators_count_old = playlist_old.get("collaborators_count")
+                                p_collaborators_old = playlist_old.get("collaborators")
 
                                 # Number of likes changed
                                 if p_likes != p_likes_old:
@@ -1959,15 +1963,14 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                         for f_dict in added_tracks:
                                             if "artist" in f_dict and "track" in f_dict:
                                                 apple_search_url, genius_search_url, youtube_music_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
-                                                added_track = f"- {f_dict['artist']} - {f_dict['track']} [ {f_dict['added_at']} ]\n[ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n[ {apple_search_url} ]\n[ {youtube_music_search_url} ]\n[ {genius_search_url} ]\n"
+                                                added_track = f"- {f_dict['artist']} - {f_dict['track']} [ {f_dict['added_at']}, {f_dict['added_by']} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict['uri'])} ]\n[ Apple Music URL: {apple_search_url} ]\n[ YouTube Music URL: {youtube_music_search_url} ]\n[ Genius URL: {genius_search_url} ]\n[ Collaborator URL: {spotify_convert_uri_to_url(f"spotify:user:{f_dict['added_by_id']}")} ]\n\n"
                                                 p_message_added_tracks += added_track
-                                                print(added_track)
+                                                print(added_track, end="")
                                                 try:
                                                     if csv_file_name:
                                                         write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Track", p_name, "", f_dict["artist"] + " - " + f_dict["track"])
                                                 except Exception as e:
                                                     print(f"* Cannot write CSV entry - {e}")
-                                        p_message_added_tracks += "\n"
 
                                     if removed_tracks:
                                         print("Removed tracks:\n")
@@ -1976,15 +1979,14 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                         for f_dict in removed_tracks:
                                             if "artist" in f_dict and "track" in f_dict:
                                                 apple_search_url, genius_search_url, youtube_music_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
-                                                removed_track = f"- {f_dict['artist']} - {f_dict['track']} [ {f_dict['added_at']} ]\n[ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n[ {apple_search_url} ]\n[ {youtube_music_search_url} ]\n[ {genius_search_url} ]\n"
+                                                removed_track = f"- {f_dict['artist']} - {f_dict['track']} [ {f_dict['added_at']}, {f_dict['added_by']} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict['uri'])} ]\n[ Apple Music URL: {apple_search_url} ]\n[ YouTube Music URL: {youtube_music_search_url} ]\n[ Genius URL: {genius_search_url} ]\n[ Collaborator URL: {spotify_convert_uri_to_url(f"spotify:user:{f_dict['added_by_id']}")} ]\n\n"
                                                 p_message_removed_tracks += removed_track
-                                                print(removed_track)
+                                                print(removed_track, end="")
                                                 try:
                                                     if csv_file_name:
                                                         write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Track", p_name, f_dict["artist"] + " - " + f_dict["track"], "")
                                                 except Exception as e:
                                                     print(f"* Cannot write CSV entry - {e}")
-                                        p_message_removed_tracks += "\n"
 
                                     p_subject_after_str = ""
                                     if p_tracks_diff != 0:
