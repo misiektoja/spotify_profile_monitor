@@ -1113,8 +1113,7 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
 
     if playlists:
         print("\nGetting list of public playlists (be patient, it might take a while) ...\n")
-        # if you also want to get the number of collaborators change False to True at the end
-        list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, False)
+        list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True)
         spotify_print_public_playlists(list_of_playlists)
 
 
