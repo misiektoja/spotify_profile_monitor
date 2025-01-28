@@ -2,6 +2,17 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 1.7 (28 Jan 2025)
+
+**Features and Improvements**:
+
+- **NEW:** The tool now provides information about **collaborators** on playlists (if applicable) and adds details about collaborators when new tracks are added. This applies to both monitoring mode (including email notifications) and listing mode (**-i**, **-l**).
+Keep in mind: the tool displays the actual number of collaborators. That means it only counts users who have actually contributed to the playlist. If someone's name is visible in Spotify client, but they haven't added a single track, they don't make the cut (sorry, but the point is Spotify doesn't have an official API for that, so the tool gets its hands dirty by analyzing all the tracks in the playlist).
+
+**Bug fixes**:
+
+- **BUGFIX:** Hopefully fixed a rare bug where the tool would report a changed profile picture even though the timestamp remained the same
+
 # Changes in 1.6 (03 Nov 2024)
 
 **Features and Improvements**:
