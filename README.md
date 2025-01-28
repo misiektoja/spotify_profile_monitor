@@ -1,21 +1,22 @@
 # spotify_profile_monitor
 
-spotify_profile_monitor is an OSINT tool written in Python which allows for real-time monitoring of Spotify users activities and profile changes. 
+spotify_profile_monitor is an OSINT tool written in Python that enables real-time monitoring of Spotify users activities and profile changes. 
 
-NOTE: If you want to track Spotify friends music activity check out the other tool I developed: [spotify_monitor](https://github.com/misiektoja/spotify_monitor).
+NOTE: If you want to track Spotify friends music activity, check out another tool I developed: [spotify_monitor](https://github.com/misiektoja/spotify_monitor).
 
 ## Features
 
 - Real-time tracking of Spotify user activities and profile changes:
-   - added/removed followings and followers
-   - added/removed public playlists
-   - added/removed tracks in playlists
+   - addition/removal of followings and followers
+   - addition/removal of public playlists
+   - addition/removal of tracks in playlists (including collaborator info for newly added tracks)
    - playlists name and description changes
    - number of likes for playlists
-   - changed profile pictures
+   - number of collaborators for playlists
+   - profile picture changes
    - username changes
-- Email notifications for different events (added/removed followings + followers + public playlists + its tracks, playlists name and description changes, changed profile pictures, username changes, number of likes for playlists, errors)
-- Attaching changed profile pictures directly in email notifications
+- Email notifications for different events (addition/removal of followings + followers + public playlists + its tracks, playlists name and description changes, profile picture changes, username changes, number of likes and collaborators for playlists, errors)
+- Attaching changed profile pictures directly to email notifications
 - Displaying the profile picture right in your terminal (if you have *imgcat* installed)
 - Additional functionalities on top of the monitoring mode allowing to display detailed info about the user, list of followers & followings, recently played artists and possibility to search for users with specific names
 - Saving all profile changes with timestamps to the CSV file
@@ -29,10 +30,6 @@ NOTE: If you want to track Spotify friends music activity check out the other to
 ## Change Log
 
 Release notes can be found [here](RELEASE_NOTES.md)
-
-## Disclaimer
-
-I'm not a dev, project done as a hobby. Code is ugly and as-is, but it works (at least for me) ;-)
 
 ## Requirements
 
