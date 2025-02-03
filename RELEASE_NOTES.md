@@ -2,6 +2,13 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 1.8 (03 Feb 2025)
+
+**Features and Improvements**:
+
+- **NEW:** Added new parameter (**-k** / **--get_all_playlists**) which retrieves all public playlists visible in the user's profile, even if they are not owned by them; it is helpful in the case of playlists created by one user added to another user's profile; by default, only public playlists owned by the user are processed
+- **NEW:** Added info about the playlist owner to the output with the list of playlists
+
 # Changes in 1.7 (28 Jan 2025)
 
 **Features and Improvements**:
