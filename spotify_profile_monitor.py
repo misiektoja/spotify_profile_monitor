@@ -933,6 +933,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
                     p_likes = sp_playlist_data.get("sp_playlist_followers_count", 0)
                     p_tracks = sp_playlist_data.get("sp_playlist_tracks_count", 0)
                     p_url = spotify_convert_uri_to_url(p_uri)
+                    p_owner = sp_playlist_data.get("sp_playlist_owner", "")
 
                     p_tracks_list = sp_playlist_data.get("sp_playlist_tracks", None)
                     added_at_ts_lowest = 0
@@ -999,9 +1000,9 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
                 p_collaborators_count = len(user_id_name_mapping)
 
                 if list_of_tracks and get_tracks:
-                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "list_of_tracks": list_of_tracks, "collaborators_count": p_collaborators_count, "collaborators": user_id_name_mapping})
+                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "list_of_tracks": list_of_tracks, "collaborators_count": p_collaborators_count, "collaborators": user_id_name_mapping, "owner": p_owner})
                 else:
-                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "collaborators_count": p_collaborators_count, "collaborators": {}})
+                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "collaborators_count": p_collaborators_count, "collaborators": {}, "owner": p_owner})
 
     return list_of_playlists, error_while_processing
 
@@ -1022,8 +1023,9 @@ def spotify_print_public_playlists(list_of_playlists):
                 p_update = playlist.get("update_date")
                 p_collaborators_count = playlist.get("collaborators_count")
                 p_collaborators = playlist.get("collaborators")
+                p_owner = playlist.get("owner")
 
-                print(f"- '{p_name}'\n[ {p_url} ]\n[ songs: {p_tracks}, likes: {p_likes}, collaborators: {p_collaborators_count} ]")
+                print(f"- '{p_name}'\n[ {p_url} ]\n[ songs: {p_tracks}, likes: {p_likes}, collaborators: {p_collaborators_count} ]\n[ owner: {p_owner} ]")
                 if p_date:
                     p_date_str = p_date.strftime("%d %b %Y, %H:%M:%S")
                     p_date_week_day = calendar.day_abbr[p_date.weekday()]
