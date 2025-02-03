@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.7
+v1.8
 
-OSINT tool implementing real-time tracking of Spotify users activities and profile changes:
+OSINT tool implementing real-time tracking of Spotify users' activities and profile changes:
 https://github.com/misiektoja/spotify_profile_monitor/
 
 Python pip3 requirements:
@@ -15,7 +15,7 @@ requests
 urllib3
 """
 
-VERSION = 1.7
+VERSION = 1.8
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -84,6 +84,10 @@ PLAYLISTS_LIMIT = 50
 
 # How many recently played artists the tool will display when using -a parameter
 RECENTLY_PLAYED_ARTISTS_LIMIT = 50
+
+# By default, only public playlists owned by the user are fetched, you can change this behavior below or by using -k parameter
+# It is helpful in the case of playlists created by another user added to another user profile
+GET_ALL_PLAYLISTS = False
 
 # How often do we perform alive check by printing "alive check" message in the output; in seconds
 TOOL_ALIVE_INTERVAL = 21600  # 6 hours
@@ -721,7 +725,8 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists):
             sp_user_public_playlists_count = 0
 
         if sp_user_public_playlists_uris:
-            sp_user_public_playlists_uris[:] = [d for d in sp_user_public_playlists_uris if d.get('owner_uri', "") == 'spotify:user:' + str(user_uri_id)]
+            if not GET_ALL_PLAYLISTS:
+                sp_user_public_playlists_uris[:] = [d for d in sp_user_public_playlists_uris if d.get('owner_uri', "") == 'spotify:user:' + str(user_uri_id)]
             sp_user_public_playlists_count_tmp = len(sp_user_public_playlists_uris)
             if sp_user_public_playlists_count_tmp > 0:
                 sp_user_public_playlists_count = sp_user_public_playlists_count_tmp
@@ -2160,6 +2165,7 @@ if __name__ == "__main__":
     parser.add_argument("-b", "--csv_file", help="Write all profile changes to CSV file", type=str, metavar="CSV_FILENAME")
     parser.add_argument("-j", "--do_not_detect_changed_profile_pic", help="Disable detection of changed user's profile picture in monitoring mode", action='store_false')
     parser.add_argument("-q", "--do_not_monitor_playlists", help="Disable detection of changes in user's public playlists in monitoring mode (like added/removed tracks in playlists, playlists name and description changes, number of likes for playlists)", action='store_false')
+    parser.add_argument("-k", "--get_all_playlists", help="By default, only public playlists owned by the user are fetched; you can change this behavior with this parameter; it is helpful in the case of playlists created by another user added to another user profile", action='store_true')
     parser.add_argument("-l", "--list_tracks_for_playlist", help="List all tracks for specific Spotify playlist URL", type=str, metavar="SPOTIFY_PLAYLIST_URL")
     parser.add_argument("-i", "--user_profile_details", help="Show profile details for user with specific Spotify URI ID (playlists, followers, followings, recently played artists etc.)", action='store_true')
     parser.add_argument("-a", "--recently_played_artists", help="List recently played artists for user with specific Spotify URI ID", action='store_true')
@@ -2211,6 +2217,9 @@ if __name__ == "__main__":
 
     if args.do_not_monitor_playlists is False:
         DETECT_CHANGES_IN_PLAYLISTS = False
+
+    if args.get_all_playlists is True:
+        GET_ALL_PLAYLISTS = True
 
     if args.check_interval:
         SPOTIFY_CHECK_INTERVAL = args.check_interval
@@ -2316,6 +2325,7 @@ if __name__ == "__main__":
     print(f"* Email notifications:\t\t[profile changes = {profile_notification}] [followers/followings = {followers_followings_notification}]\n\t\t\t\t[errors = {args.error_notification}]")
     print(f"* Detect changed profile pic:\t{DETECT_CHANGED_PROFILE_PIC}")
     print(f"* Detect changes in playlists:\t{DETECT_CHANGES_IN_PLAYLISTS}")
+    print(f"* Get all public playlists:\t{GET_ALL_PLAYLISTS}")
     if not args.disable_logging:
         print(f"* Output logging enabled:\t{not args.disable_logging} ({SP_LOGFILE})")
     else:
