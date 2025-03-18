@@ -113,7 +113,7 @@ SPOTIFY_CHECK_SIGNAL_VALUE = 300  # 5 minutes
 re_search_str = r'remaster|extended|original mix|remix|original soundtrack|radio( |-)edit|\(feat\.|( \(.*version\))|( - .*version)'
 re_replace_str = r'( - (\d*)( )*remaster$)|( - (\d*)( )*remastered( version)*( \d*)*.*$)|( \((\d*)( )*remaster\)$)|( - (\d+) - remaster$)|( - extended$)|( - extended mix$)|( - (.*); extended mix$)|( - extended version$)|( - (.*) remix$)|( - remix$)|( - remixed by .*$)|( - original mix$)|( - .*original soundtrack$)|( - .*radio( |-)edit$)|( \(feat\. .*\)$)|( \(\d+.*Remaster.*\)$)|( \(.*Version\))|( - .*version)'
 
-# Default value for network-related timeouts in functions + alarm signal handler; in seconds
+# Default value for network-related timeouts in functions; in seconds
 FUNCTION_TIMEOUT = 15
 
 # Sometimes Spotify API has issues and returns info that all user's playlists disappeared
@@ -132,6 +132,10 @@ SERVER_TIME_URL = "https://open.spotify.com/server-time"
 
 TOKEN_MAX_RETRIES = 20
 TOKEN_RETRY_TIMEOUT = 1.5
+
+# Default value for alarm signal handler timeout; in seconds
+ALARM_TIMEOUT = int((TOKEN_MAX_RETRIES * TOKEN_RETRY_TIMEOUT) + 5)
+ALARM_RETRY = 10
 
 TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / SPOTIFY_CHECK_INTERVAL
 
@@ -1851,7 +1855,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
         # To overcome this we use alarm signal functionality to kill it inevitably, not available on Windows
         if platform.system() != 'Windows':
             signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(FUNCTION_TIMEOUT)
+            signal.alarm(ALARM_TIMEOUT)
         try:
             sp_accessToken = spotify_get_access_token(SP_DC_COOKIE)
             sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS)
@@ -1861,9 +1865,9 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
         except TimeoutException:
             if platform.system() != 'Windows':
                 signal.alarm(0)
-            print(f"spotify_*() timeout, retrying in {display_time(FUNCTION_TIMEOUT)}")
+            print(f"spotify_*() function timeout after {display_time(ALARM_TIMEOUT)}, retrying in {display_time(ALARM_RETRY)}")
             print_cur_ts("Timestamp:\t\t")
-            time.sleep(FUNCTION_TIMEOUT)
+            time.sleep(ALARM_RETRY)
             continue
         except Exception as e:
             if platform.system() != 'Windows':
