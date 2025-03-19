@@ -16,7 +16,7 @@ urllib3
 pyotp
 """
 
-VERSION = 1.9
+VERSION = "1.9"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -105,6 +105,15 @@ SP_LOGFILE = "spotify_profile_monitor"
 # Value used by signal handlers increasing/decreasing the profile check (SPOTIFY_CHECK_INTERVAL); in seconds
 SPOTIFY_CHECK_SIGNAL_VALUE = 300  # 5 minutes
 
+# How many times should we attempt to obtain a valid access token in a single run of the spotify_get_access_token() function
+TOKEN_MAX_RETRIES = 20
+
+# Time interval between consecutive attempts to obtain the access token
+TOKEN_RETRY_TIMEOUT = 1.5  # 1.5 seconds
+
+# Shall we enable or disable SSL certificate verification while sending https requests
+VERIFY_SSL = True
+
 # -------------------------
 # CONFIGURATION SECTION END
 # -------------------------
@@ -121,17 +130,16 @@ FUNCTION_TIMEOUT = 15
 PLAYLISTS_DISAPPEARED_COUNTER = 2
 
 # Variables for caching functionality of the Spotify access token to avoid unnecessary refreshing
-from typing import Optional
-SP_CACHED_ACCESS_TOKEN: Optional[str] = None
+SP_CACHED_ACCESS_TOKEN = None
 SP_TOKEN_EXPIRES_AT = 0
 SP_CACHED_CLIENT_ID = ""
 SP_CACHED_USER_AGENT = ""
 
+# URL of the Spotify Web Player endpoint to get access token
 TOKEN_URL = "https://open.spotify.com/get_access_token"
-SERVER_TIME_URL = "https://open.spotify.com/server-time"
 
-TOKEN_MAX_RETRIES = 20
-TOKEN_RETRY_TIMEOUT = 1.5
+# URL of the endpoint to get server time needed to create TOTP object
+SERVER_TIME_URL = "https://open.spotify.com/server-time"
 
 # Default value for alarm signal handler timeout; in seconds
 ALARM_TIMEOUT = int((TOKEN_MAX_RETRIES * TOKEN_RETRY_TIMEOUT) + 5)
@@ -186,6 +194,9 @@ import subprocess
 import pyotp
 import base64
 from random import randrange
+import urllib3
+if not VERIFY_SSL:
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 # Logger class to output messages to stdout and log file
@@ -225,7 +236,7 @@ def signal_handler(sig, frame):
 def check_internet():
     url = CHECK_INTERNET_URL
     try:
-        _ = req.get(url, timeout=CHECK_INTERNET_TIMEOUT)
+        _ = req.get(url, timeout=CHECK_INTERNET_TIMEOUT, verify=VERIFY_SSL)
         print("OK")
         return True
     except Exception as e:
@@ -637,8 +648,19 @@ def generate_totp():
         "Accept": "*/*",
     }
 
-    resp = req.get(SERVER_TIME_URL, headers=headers, timeout=FUNCTION_TIMEOUT)
+    try:
+        if platform.system() != 'Windows':
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(FUNCTION_TIMEOUT + 2)
+        resp = req.get(SERVER_TIME_URL, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
+    except (req.RequestException, TimeoutException) as e:
+        raise Exception(f"generate_totp() network request timeout after {display_time(FUNCTION_TIMEOUT + 2)}: {e}")
+    finally:
+        if platform.system() != 'Windows':
+            signal.alarm(0)
+
     resp.raise_for_status()
+
     json_data = resp.json()
     server_time = json_data.get("serverTime")
 
@@ -650,8 +672,35 @@ def generate_totp():
     return totp_obj, server_time
 
 
+# Function sending a lightweight request to check token validity
+def check_token_validity(token: str, client_id: str, user_agent: str) -> bool:
+    # url = "https://spclient.wg.spotify.com/get_status"
+    # url = "https://api.spotify.com/v1/recommendations/available-genre-seeds"
+    url = "https://guc-spclient.spotify.com/presence-view/v1/buddylist"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Client-Id": client_id,
+        "User-Agent": user_agent,
+    }
+
+    if platform.system() != 'Windows':
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(FUNCTION_TIMEOUT + 2)
+    try:
+        response = req.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
+        valid = response.status_code == 200
+    except Exception:
+        valid = False
+    finally:
+        if platform.system() != 'Windows':
+            signal.alarm(0)
+    return valid
+
+
 # Function retrieving a new Spotify access token using the sp_dc cookie, tries first with mode "transport" and if needed with "init"
 def refresh_token(sp_dc: str) -> dict:
+    transport = True
+    init = True
     session = req.Session()
     session.cookies.set("sp_dc", sp_dc)
 
@@ -666,30 +715,63 @@ def refresh_token(sp_dc: str) -> dict:
         "totpVer": 5,
         "ts": timestamp,
     }
+
     ua = get_random_user_agent()
+
     headers = {
         "User-Agent": ua,
         "Accept": "application/json",
         "Cookie": f"sp_dc={sp_dc}",
     }
-    response = session.get(TOKEN_URL, params=params, headers=headers, timeout=FUNCTION_TIMEOUT)
-    response.raise_for_status()
+
+    try:
+        if platform.system() != 'Windows':
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(FUNCTION_TIMEOUT + 2)
+        response = session.get(TOKEN_URL, params=params, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
+    except (req.RequestException, TimeoutException):
+        transport = False
+    finally:
+        if platform.system() != 'Windows':
+            signal.alarm(0)
+
+    try:
+        response.raise_for_status()
+    except req.HTTPError:
+        transport = False
+
     try:
         data = response.json()
-    except Exception as ex:
-        raise Exception("Failed to decode JSON: " + response.text) from ex
-
-    token = data.get("accessToken", "")
-
-    if len(token) != 374:
-        params["reason"] = "init"
-        response = session.get(TOKEN_URL, params=params, headers=headers, timeout=FUNCTION_TIMEOUT)
-        response.raise_for_status()
-        data = response.json()
         token = data.get("accessToken", "")
+    except Exception:
+        transport = False
 
-    if not data or "accessToken" not in data:
-        raise Exception("Unsuccessful token request")
+    if not transport or (transport and not check_token_validity(data.get("accessToken", ""), data.get("clientId", ""), ua)):
+        params["reason"] = "init"
+        try:
+            if platform.system() != 'Windows':
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(FUNCTION_TIMEOUT + 2)
+            response = session.get(TOKEN_URL, params=params, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
+        except (req.RequestException, TimeoutException):
+            init = False
+        finally:
+            if platform.system() != 'Windows':
+                signal.alarm(0)
+
+        try:
+            response.raise_for_status()
+        except req.HTTPError:
+            init = False
+
+        try:
+            data = response.json()
+            token = data.get("accessToken", "")
+        except Exception:
+            init = False
+
+    if not init or not data or "accessToken" not in data:
+        raise Exception("refresh_token(): Unsuccessful token request")
 
     return {
         "access_token": token,
@@ -700,21 +782,8 @@ def refresh_token(sp_dc: str) -> dict:
     }
 
 
-# Function sending a lightweight request to check token validity
-def check_token_validity(token: str, client_id: str, user_agent: str) -> bool:
-    # url = "https://spclient.wg.spotify.com/get_status"
-    url = "https://api.spotify.com/v1/recommendations/available-genre-seeds"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Client-Id": client_id,
-        "User-Agent": user_agent,
-    }
-    response = req.get(url, headers=headers, timeout=FUNCTION_TIMEOUT)
-    return response.status_code == 200
-
-
 # Function getting Spotify access token based on provided SP_DC value
-def spotify_get_access_token(sp_dc: str) -> str:
+def spotify_get_access_token(sp_dc: str):
     global SP_CACHED_ACCESS_TOKEN, SP_TOKEN_EXPIRES_AT, SP_CACHED_CLIENT_ID, SP_CACHED_USER_AGENT
 
     now = time.time()
@@ -722,6 +791,7 @@ def spotify_get_access_token(sp_dc: str) -> str:
     if SP_CACHED_ACCESS_TOKEN and now < SP_TOKEN_EXPIRES_AT and check_token_validity(SP_CACHED_ACCESS_TOKEN, SP_CACHED_CLIENT_ID, SP_CACHED_USER_AGENT):
         return SP_CACHED_ACCESS_TOKEN
 
+    print("-----------------------------------------------------------------------------------------------------------------")
     print("* Fetching a new Spotify access token, it might take a while ...")
 
     max_retries = TOKEN_MAX_RETRIES
@@ -734,33 +804,31 @@ def spotify_get_access_token(sp_dc: str) -> str:
         user_agent = token_data.get("user_agent", get_random_user_agent())
         length = token_data["length"]
 
-        if length != 378:
-            # print(f"Token length {length} is not 378. Retrying in {TOKEN_RETRY_TIMEOUT} seconds...")
-            retry += 1
-            time.sleep(TOKEN_RETRY_TIMEOUT)
-            continue
-
         SP_CACHED_ACCESS_TOKEN = token
         SP_TOKEN_EXPIRES_AT = token_data["expires_at"]
         SP_CACHED_CLIENT_ID = client_id
         SP_CACHED_USER_AGENT = user_agent
 
-        assert SP_CACHED_ACCESS_TOKEN is not None, "SP_CACHED_ACCESS_TOKEN is None"
-        if check_token_validity(SP_CACHED_ACCESS_TOKEN, SP_CACHED_CLIENT_ID, SP_CACHED_USER_AGENT):
-            print("* Token is valid\n")
-            break
-        else:
-            # print(f"Token is invalid, retrying in {TOKEN_RETRY_TIMEOUT} seconds... (attempt {retry + 1} of {max_retries})")
+        if SP_CACHED_ACCESS_TOKEN is None or not check_token_validity(SP_CACHED_ACCESS_TOKEN, SP_CACHED_CLIENT_ID, SP_CACHED_USER_AGENT):
             retry += 1
             time.sleep(TOKEN_RETRY_TIMEOUT)
-
-    if retry == max_retries:
-        print(f"* Token appears to be still invalid after {max_retries} attempts. Returning token anyway\n")
+        else:
+            print("* Token is valid")
+            break
 
     # print("Spotify Access Token:", SP_CACHED_ACCESS_TOKEN)
     # print("Token expires at:", time.ctime(SP_TOKEN_EXPIRES_AT))
 
-    assert SP_CACHED_ACCESS_TOKEN is not None, "SP_CACHED_ACCESS_TOKEN is None"
+    if retry == max_retries:
+        if SP_CACHED_ACCESS_TOKEN is not None:
+            print(f"* Token appears to be still invalid after {max_retries} attempts, returning token anyway")
+            print_cur_ts("Timestamp:\t\t\t")
+            return SP_CACHED_ACCESS_TOKEN
+        else:
+            raise RuntimeError(f"Failed to obtain a valid Spotify access token after {max_retries} attempts")
+    else:
+        print_cur_ts("Timestamp:\t\t\t")
+
     return SP_CACHED_ACCESS_TOKEN
 
 
@@ -852,14 +920,14 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
     si = "?si=1"
 
     try:
-        response1 = req.get(url1, headers=headers, timeout=FUNCTION_TIMEOUT)
+        response1 = req.get(url1, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         response1.raise_for_status()
         json_response1 = response1.json()
 
         sp_playlist_tracks_concatenated_list = []
         next_url = url2
         while next_url:
-            response2 = req.get(next_url, headers=headers, timeout=FUNCTION_TIMEOUT)
+            response2 = req.get(next_url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
             response2.raise_for_status()
             json_response2 = response2.json()
             # print(json.dumps(json_response2))
@@ -905,7 +973,7 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists):
     }
 
     try:
-        response = req.get(url, headers=headers, timeout=FUNCTION_TIMEOUT)
+        response = req.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         response.raise_for_status()
         json_response = response.json()
 
@@ -955,7 +1023,7 @@ def spotify_get_user_followings(access_token, user_uri_id):
     }
 
     try:
-        response = req.get(url, headers=headers, timeout=FUNCTION_TIMEOUT)
+        response = req.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         response.raise_for_status()
         json_response = response.json()
 
@@ -983,7 +1051,7 @@ def spotify_get_user_followers(access_token, user_uri_id):
     }
 
     try:
-        response = req.get(url, headers=headers, timeout=FUNCTION_TIMEOUT)
+        response = req.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         response.raise_for_status()
         json_response = response.json()
 
@@ -1107,7 +1175,7 @@ def spotify_search_users(access_token, username):
     print(f"Searching for users with '{username}' string ...\n")
 
     try:
-        response = req.get(url, headers=headers, timeout=FUNCTION_TIMEOUT)
+        response = req.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         response.raise_for_status()
     except Exception:
         raise
@@ -1407,7 +1475,7 @@ def spotify_get_followers_and_followings(sp_accessToken, user_uri_id):
 
 
 # Function printing and saving changed list of followers/followings/playlists (with email notifications)
-def spotify_print_changed_followers_followings_playlists(username, f_list, f_list_old, f_count, f_old_count, f_str, f_str_by_or_from, f_added_str, f_added_csv, f_removed_str, f_removed_csv, f_file, csv_file_name, profile_notification, is_playlist, sp_accessToken=""):
+def spotify_print_changed_followers_followings_playlists(username, f_list, f_list_old, f_count, f_old_count, f_str, f_str_by_or_from, f_added_str, f_added_csv, f_removed_str, f_removed_csv, f_file, csv_file_name, profile_notification, is_playlist, sp_accessToken=None):
 
     f_diff = f_count - f_old_count
     f_diff_str = ""
@@ -1519,7 +1587,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
 # Function saving user's profile pic to selected file name
 def save_profile_pic(user_image_url, image_file_name):
     try:
-        image_response = req.get(user_image_url, timeout=FUNCTION_TIMEOUT, stream=True)
+        image_response = req.get(user_image_url, timeout=FUNCTION_TIMEOUT, stream=True, verify=VERIFY_SSL)
         image_response.raise_for_status()
         url_time = image_response.headers.get('last-modified')
         url_time_in_tz_ts = 0
@@ -1555,6 +1623,7 @@ def compare_images(path1, path2):
 
 # Main function monitoring profile changes of the specified Spotify user URI ID
 def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, csv_exists):
+    global SP_CACHED_ACCESS_TOKEN
     playlists_count = 0
     playlists_old_count = 0
     playlists = None
@@ -1573,13 +1642,17 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
     email_sent = False
 
+    print(f"Monitoring user {user_uri_id}")
+
     try:
         sp_accessToken = spotify_get_access_token(SP_DC_COOKIE)
         sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS)
         sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
         sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
     except Exception as e:
-        if ('access token' in str(e)) or ('Unauthorized' in str(e)):
+        if "401" in str(e):
+            SP_CACHED_ACCESS_TOKEN = None
+        if ('access token' in str(e)):
             print(f"* Error: sp_dc might have expired!\n{str(e)}")
         elif '404' in str(e):
             print("* Error: user does not exist!")
@@ -1873,7 +1946,9 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             if platform.system() != 'Windows':
                 signal.alarm(0)
             print(f"Error, retrying in {display_time(SPOTIFY_ERROR_INTERVAL)} - {e}")
-            if ('access token' in str(e)) or ('Unauthorized' in str(e)):
+            if "401" in str(e):
+                SP_CACHED_ACCESS_TOKEN = None
+            if ('access token' in str(e)):
                 print(f"* Error: sp_dc might have expired!\n{str(e)}")
                 if error_notification and not email_sent:
                     m_subject = f"spotify_profile_monitor: sp_dc might have expired! (uri: {user_uri_id})"
@@ -2560,10 +2635,6 @@ if __name__ == "__main__":
         signal.signal(signal.SIGUSR1, toggle_profile_changes_notifications_signal_handler)
         signal.signal(signal.SIGTRAP, increase_check_signal_handler)
         signal.signal(signal.SIGABRT, decrease_check_signal_handler)
-
-    out = f"Monitoring user {args.SPOTIFY_USER_URI_ID}"
-    print(out)
-    print("-" * len(out))
 
     spotify_profile_monitor_uri(args.SPOTIFY_USER_URI_ID, error_notification, args.csv_file, csv_exists)
 
