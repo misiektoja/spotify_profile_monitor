@@ -2237,7 +2237,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                         p_message_added_collaborators = "Added collaborators:\n\n"
 
                                         for collab_id, collab_name in added_collaborators.items():
-                                            added_collab = f"- {collab_name} [ {spotify_convert_uri_to_url(f"spotify:user:{collab_id}")} ]\n"
+                                            added_collab = f'- {collab_name} [ {spotify_convert_uri_to_url(f"spotify:user:{collab_id}")} ]\n'
                                             p_message_added_collaborators += added_collab
                                             try:
                                                 if csv_file_name:
@@ -2252,7 +2252,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                         p_message_removed_collaborators = "Removed collaborators:\n\n"
 
                                         for collab_id, collab_name in removed_collaborators.items():
-                                            removed_collab = f"- {collab_name} [ {spotify_convert_uri_to_url(f"spotify:user:{collab_id}")} ]\n"
+                                            removed_collab = f'- {collab_name} [ {spotify_convert_uri_to_url(f"spotify:user:{collab_id}")} ]\n'
                                             p_message_removed_collaborators += removed_collab
                                             try:
                                                 if csv_file_name:
@@ -2320,7 +2320,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                         for f_dict in added_tracks:
                                             if "artist" in f_dict and "track" in f_dict:
                                                 apple_search_url, genius_search_url, youtube_music_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
-                                                added_track = f"- {f_dict['artist']} - {f_dict['track']} [ {f_dict['added_at']}, {f_dict['added_by']} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict['uri'])} ]\n[ Apple Music URL: {apple_search_url} ]\n[ YouTube Music URL: {youtube_music_search_url} ]\n[ Genius URL: {genius_search_url} ]\n[ Collaborator URL: {spotify_convert_uri_to_url(f"spotify:user:{f_dict['added_by_id']}")} ]\n\n"
+                                                tempuri = f'spotify:user:{f_dict["added_by_id"]}'
+                                                added_track = f'- {f_dict["artist"]} - {f_dict["track"]} [ {f_dict["added_at"]}, {f_dict["added_by"]} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict["uri"])} ]\n[ Apple Music URL: {apple_search_url} ]\n[ YouTube Music URL: {youtube_music_search_url} ]\n[ Genius URL: {genius_search_url} ]\n[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
                                                 p_message_added_tracks += added_track
                                                 added_at_dt = datetime.strptime(f_dict['added_at'], "%a %d %b %Y, %H:%M:%S")
                                                 print(added_track, end="")
@@ -2337,7 +2338,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                         for f_dict in removed_tracks:
                                             if "artist" in f_dict and "track" in f_dict:
                                                 apple_search_url, genius_search_url, youtube_music_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
-                                                removed_track = f"- {f_dict['artist']} - {f_dict['track']} [ {f_dict['added_at']}, {f_dict['added_by']} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict['uri'])} ]\n[ Apple Music URL: {apple_search_url} ]\n[ YouTube Music URL: {youtube_music_search_url} ]\n[ Genius URL: {genius_search_url} ]\n[ Collaborator URL: {spotify_convert_uri_to_url(f"spotify:user:{f_dict['added_by_id']}")} ]\n\n"
+                                                tempuri = f'spotify:user:{f_dict["added_by_id"]}'
+                                                removed_track = f'- {f_dict["artist"]} - {f_dict["track"]} [ {f_dict["added_at"]}, {f_dict["added_by"]} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict["uri"])} ]\n[ Apple Music URL: {apple_search_url} ]\n[ YouTube Music URL: {youtube_music_search_url} ]\n[ Genius URL: {genius_search_url} ]\n[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
                                                 p_message_removed_tracks += removed_track
                                                 print(removed_track, end="")
                                                 try:
