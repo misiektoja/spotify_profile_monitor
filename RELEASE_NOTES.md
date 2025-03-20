@@ -2,6 +2,26 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 1.9 (20 Mar 2025)
+
+**Features and Improvements**:
+
+- **NEW:** Added support for TOTP parameters in Spotify Web Player token endpoint, the tool now requires the pyotp pip module (fixes [#1](https://github.com/misiektoja/spotify_profile_monitor/issues/1))
+- **NEW:** New feature displaying the recently updated playlist after the list of all user's playlists
+- **NEW:** Caching mechanism to avoid unnecessary token refreshes
+- **NEW:** Added the possibility to disable SSL certificate verification (VERIFY_SSL global variable)
+- **IMPROVE:** Saving the added track timestamp instead of the time of checking to the CSV file
+- **IMPROVE:** Email notification flags are now automatically disabled if the SMTP configuration is invalid
+- **IMPROVE:** Different recently played artist limits are now used when using the -a & -i parameters (RECENTLY_PLAYED_ARTISTS_LIMIT and RECENTLY_PLAYED_ARTISTS_LIMIT_INFO global variables)
+- **IMPROVE:** Possibility to disable displaying the list of playlists (-q) when using the -i parameter
+- **IMPROVE:** Better exception handling in network-related functions
+- **IMPROVE:** Better overall error handling
+- **IMPROVE:** Code cleanup & linting fixes
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed f-string syntax errors introduced in v1.7 (thanks [@tomballgithub](https://github.com/tomballgithub) for reporting and code fixes!)
+
 # Changes in 1.8 (03 Feb 2025)
 
 **Features and Improvements**:
