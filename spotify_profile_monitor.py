@@ -110,7 +110,7 @@ SP_LOGFILE = "spotify_profile_monitor"
 SPOTIFY_CHECK_SIGNAL_VALUE = 300  # 5 minutes
 
 # How many times should we attempt to obtain a valid access token in a single run of the spotify_get_access_token() function
-TOKEN_MAX_RETRIES = 20
+TOKEN_MAX_RETRIES = 10
 
 # Time interval between consecutive attempts to obtain the access token
 TOKEN_RETRY_TIMEOUT = 0.5  # 0.5 second
@@ -846,8 +846,8 @@ def spotify_get_access_token(sp_dc: str):
     if SP_CACHED_ACCESS_TOKEN and now < SP_TOKEN_EXPIRES_AT and check_token_validity(SP_CACHED_ACCESS_TOKEN, SP_CACHED_CLIENT_ID, SP_CACHED_USER_AGENT):
         return SP_CACHED_ACCESS_TOKEN
 
-    print("-----------------------------------------------------------------------------------------------------------------")
-    print("* Fetching a new Spotify access token, it might take a while ...")
+    # print("-----------------------------------------------------------------------------------------------------------------")
+    # print("* Fetching a new Spotify access token, it might take a while ...")
 
     max_retries = TOKEN_MAX_RETRIES
     retry = 0
@@ -868,7 +868,7 @@ def spotify_get_access_token(sp_dc: str):
             retry += 1
             time.sleep(TOKEN_RETRY_TIMEOUT)
         else:
-            print("* Token is valid")
+            # print("* Token is valid")
             break
 
     # print("Spotify Access Token:", SP_CACHED_ACCESS_TOKEN)
@@ -881,8 +881,8 @@ def spotify_get_access_token(sp_dc: str):
             return SP_CACHED_ACCESS_TOKEN
         else:
             raise RuntimeError(f"Failed to obtain a valid Spotify access token after {max_retries} attempts")
-    else:
-        print_cur_ts("Timestamp:\t\t\t")
+#    else:
+#        print_cur_ts("Timestamp:\t\t\t")
 
     return SP_CACHED_ACCESS_TOKEN
 
@@ -1719,7 +1719,9 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
     email_sent = False
 
-    print(f"Monitoring user {user_uri_id}")
+    out = f"Monitoring user {user_uri_id}"
+    print(out)
+    print("-" * len(out))
 
     try:
         sp_accessToken = spotify_get_access_token(SP_DC_COOKIE)
@@ -1729,7 +1731,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
     except Exception as e:
         if "401" in str(e):
             SP_CACHED_ACCESS_TOKEN = None
-        if ('access token' in str(e)):
+        if ('access token' in str(e)) or ('Unsuccessful token request' in str(e)):
             print(f"* Error: sp_dc might have expired!\n{str(e)}")
         elif '404' in str(e):
             print("* Error: user does not exist!")
@@ -2023,8 +2025,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             print(f"Error, retrying in {display_time(SPOTIFY_ERROR_INTERVAL)} - {e}")
             if "401" in str(e):
                 SP_CACHED_ACCESS_TOKEN = None
-            if ('access token' in str(e)):
-                print(f"* Error: sp_dc might have expired!\n{str(e)}")
+            if ('access token' in str(e)) or ('Unsuccessful token request' in str(e)):
+                print(f"* Error: sp_dc might have expired!")
                 if error_notification and not email_sent:
                     m_subject = f"spotify_profile_monitor: sp_dc might have expired! (uri: {user_uri_id})"
                     m_body = f"sp_dc might have expired!\n{e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
