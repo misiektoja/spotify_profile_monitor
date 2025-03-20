@@ -78,6 +78,7 @@ SP_SHA256 = "your_spotify_client_sha256"
 # Do you want to be informed about changes in user's profile public playlists ? (via console & email notifications when -p is enabled)
 # It will cover added/removed tracks in playlists, playlists name and description changes, number of likes for playlists
 # It is enabled by default, you can change it below or disable by using -q parameter
+# It is also taken into consideration when using -i parameter
 DETECT_CHANGES_IN_PLAYLISTS = True
 
 # How many user owned public playlists the tool will monitor
@@ -85,6 +86,9 @@ PLAYLISTS_LIMIT = 50
 
 # How many recently played artists the tool will display when using -a parameter
 RECENTLY_PLAYED_ARTISTS_LIMIT = 50
+
+# How many recently played artists the tool will display when using -i parameter
+RECENTLY_PLAYED_ARTISTS_LIMIT_INFO = 15
 
 # By default, only public playlists owned by the user are fetched, you can change this behavior below or by using -k parameter
 # It is helpful in the case of playlists created by another user added to another user profile
@@ -1012,11 +1016,11 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
 
 
 # Function returning detailed info about user with specified URI
-def spotify_get_user_info(access_token, user_uri_id, get_playlists):
+def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_played_limit):
     if get_playlists:
-        url = f"https://spclient.wg.spotify.com/user-profile-view/v3/profile/{user_uri_id}?playlist_limit={PLAYLISTS_LIMIT}&artist_limit={RECENTLY_PLAYED_ARTISTS_LIMIT}&episode_limit=10&market=from_token"
+        url = f"https://spclient.wg.spotify.com/user-profile-view/v3/profile/{user_uri_id}?playlist_limit={PLAYLISTS_LIMIT}&artist_limit={recently_played_limit}&episode_limit=10&market=from_token"
     else:
-        url = f"https://spclient.wg.spotify.com/user-profile-view/v3/profile/{user_uri_id}?playlist_limit=0&artist_limit={RECENTLY_PLAYED_ARTISTS_LIMIT}&episode_limit=10&market=from_token"
+        url = f"https://spclient.wg.spotify.com/user-profile-view/v3/profile/{user_uri_id}?playlist_limit=0&artist_limit={recently_played_limit}&episode_limit=10&market=from_token"
     headers = {
         "Authorization": f"Bearer {access_token}",
         "Client-Id": SP_CACHED_CLIENT_ID,
@@ -1157,7 +1161,7 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
                 if user_id_name_mapping.get(added_by_id):
                     added_by_name = user_id_name_mapping.get(added_by_id)
                 else:
-                    sp_user_data = spotify_get_user_info(sp_accessToken, added_by_id, False)
+                    sp_user_data = spotify_get_user_info(sp_accessToken, added_by_id, False, 0)
                     added_by_name = sp_user_data["sp_username"]
                     if added_by_name:
                         user_id_name_mapping[added_by_id] = added_by_name
@@ -1286,7 +1290,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
                                 if user_id_name_mapping.get(added_by_id):
                                     added_by_name = user_id_name_mapping.get(added_by_id)
                                 else:
-                                    sp_user_data = spotify_get_user_info(sp_accessToken, added_by_id, False)
+                                    sp_user_data = spotify_get_user_info(sp_accessToken, added_by_id, False, 0)
                                     added_by_name = sp_user_data["sp_username"]
                                     if added_by_name:
                                         user_id_name_mapping[added_by_id] = added_by_name
@@ -1338,6 +1342,12 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
 
 # Function printing detailed info about user's playlists
 def spotify_print_public_playlists(list_of_playlists):
+    p_update = datetime.min
+    p_update_recent = datetime.min
+    p_name = ""
+    p_name_recent = ""
+    p_url = ""
+    p_url_recent = ""
 
     if list_of_playlists:
         for playlist in list_of_playlists:
@@ -1369,12 +1379,26 @@ def spotify_print_public_playlists(list_of_playlists):
                     print(f"'{p_descr}'")
                 print()
 
+            if p_update is not None and p_update > p_update_recent:
+                p_update_recent = p_update
+                p_name_recent = p_name
+                p_url_recent = p_url
+
+        if p_update_recent is not None and p_update_recent > datetime.min and p_name_recent and p_url_recent:
+            p_update_recent_str = p_update_recent.strftime("%d %b %Y, %H:%M:%S")
+            p_update_recent_week_day = calendar.day_abbr[p_update_recent.weekday()]
+            p_update_recent_since = calculate_timespan(int(time.time()), p_update_recent)
+            print(f"Recently updated playlist:\n\n- '{p_name_recent}'\n[ {p_url_recent} ]\n[ update: {p_update_recent_week_day} {p_update_recent_str} - {p_update_recent_since} ago ]")
+
 
 # Function printing detailed info about user with specified URI ID (-i parameter)
 def spotify_get_user_details(sp_accessToken, user_uri_id):
+    playlists_count = 0
+    playlists = None
+
     print(f"Getting detailed info for user with URI ID '{user_uri_id}' ...\n")
 
-    sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, True)
+    sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS, RECENTLY_PLAYED_ARTISTS_LIMIT_INFO)
     sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
     sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
 
@@ -1396,8 +1420,9 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
         if followings_count_tmp > 0:
             followings_count = followings_count_tmp
 
-    playlists_count = sp_user_data["sp_user_public_playlists_count"]
-    playlists = sp_user_data["sp_user_public_playlists_uris"]
+    if DETECT_CHANGES_IN_PLAYLISTS:
+        playlists_count = sp_user_data["sp_user_public_playlists_count"]
+        playlists = sp_user_data["sp_user_public_playlists_uris"]
 
     recently_played_artists = sp_user_data["sp_user_recently_played_artists"]
 
@@ -1440,24 +1465,25 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
                 print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
 
     if recently_played_artists:
-        print(f"\nRecently played artists ({RECENTLY_PLAYED_ARTISTS_LIMIT}):\n")
+        print(f"\nRecently played artists ({RECENTLY_PLAYED_ARTISTS_LIMIT_INFO}):\n")
         for f_dict in recently_played_artists:
             if "name" in f_dict and "uri" in f_dict:
                 print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
 
-    print(f"\nPublic playlists:\t{playlists_count}")
+    if DETECT_CHANGES_IN_PLAYLISTS:
+        print(f"\nPublic playlists:\t{playlists_count}")
 
-    if playlists:
-        print("\nGetting list of public playlists (be patient, it might take a while) ...\n")
-        list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True)
-        spotify_print_public_playlists(list_of_playlists)
+        if playlists:
+            print("\nGetting list of public playlists (be patient, it might take a while) ...\n")
+            list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True)
+            spotify_print_public_playlists(list_of_playlists)
 
 
 # Function returning recently played artists for user with specified URI (-a parameter)
 def spotify_get_recently_played_artists(sp_accessToken, user_uri_id):
     print(f"Getting list of recently played artists for user with URI ID '{user_uri_id}' ...\n")
 
-    sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, False)
+    sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, False, RECENTLY_PLAYED_ARTISTS_LIMIT)
 
     username = sp_user_data["sp_username"]
     image_url = sp_user_data["sp_user_image_url"]
@@ -1483,7 +1509,7 @@ def spotify_get_recently_played_artists(sp_accessToken, user_uri_id):
 def spotify_get_followers_and_followings(sp_accessToken, user_uri_id):
     print(f"Getting followers & followings for user with URI ID '{user_uri_id}' ...\n")
 
-    sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, False)
+    sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, False, 0)
     image_url = sp_user_data["sp_user_image_url"]
     sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
     sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
@@ -1697,7 +1723,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
     try:
         sp_accessToken = spotify_get_access_token(SP_DC_COOKIE)
-        sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS)
+        sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS, 0)
         sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
         sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
     except Exception as e:
@@ -1765,10 +1791,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             print("\n* Getting list of public playlists (be patient, it might take a while) ...\n")
             list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True)
             spotify_print_public_playlists(list_of_playlists)
-        else:
-            print()
 
-    print_cur_ts("Timestamp:\t\t")
+    print_cur_ts("\nTimestamp:\t\t")
 
     followers_file = f"spotify_profile_{file_suffix}_followers.json"
     followings_file = f"spotify_profile_{file_suffix}_followings.json"
@@ -1982,7 +2006,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             signal.alarm(ALARM_TIMEOUT)
         try:
             sp_accessToken = spotify_get_access_token(SP_DC_COOKIE)
-            sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS)
+            sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS, 0)
             email_sent = False
             if platform.system() != 'Windows':
                 signal.alarm(0)
