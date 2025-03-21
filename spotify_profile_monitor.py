@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v1.9
+v2.0
 
 OSINT tool implementing real-time tracking of Spotify users' activities and profile changes:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -16,7 +16,7 @@ urllib3
 pyotp
 """
 
-VERSION = "1.9"
+VERSION = "2.0"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -1155,14 +1155,17 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
                 duration = int(str(duration_ms)[0:-3])
                 duration_sum = duration_sum + duration
                 added_at_dt = convert_utc_str_to_tz_datetime(track.get("added_at"), LOCAL_TIMEZONE)
-                added_by = track.get("added_by")
-                added_by_id = added_by.get("id")
+                added_by = track.get("added_by", "")
+                added_by_id = added_by.get("id", "")
                 added_by_name = ""
                 if user_id_name_mapping.get(added_by_id):
                     added_by_name = user_id_name_mapping.get(added_by_id)
                 else:
-                    sp_user_data = spotify_get_user_info(sp_accessToken, added_by_id, False, 0)
-                    added_by_name = sp_user_data["sp_username"]
+                    if added_by_id:
+                        sp_user_data = spotify_get_user_info(sp_accessToken, added_by_id, False, 0)
+                        added_by_name = sp_user_data["sp_username"]
+                    else:
+                        added_by_name = "Spotify"
                     if added_by_name:
                         user_id_name_mapping[added_by_id] = added_by_name
 
@@ -1284,14 +1287,17 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
                                     track_duration = int(str(duration_ms)[0:-3])
                                     track_uri = track["track"].get("uri")
 
-                                added_by = track.get("added_by")
-                                added_by_id = added_by.get("id")
+                                added_by = track.get("added_by", "")
+                                added_by_id = added_by.get("id", "")
                                 added_by_name = ""
                                 if user_id_name_mapping.get(added_by_id):
                                     added_by_name = user_id_name_mapping.get(added_by_id)
                                 else:
-                                    sp_user_data = spotify_get_user_info(sp_accessToken, added_by_id, False, 0)
-                                    added_by_name = sp_user_data["sp_username"]
+                                    if added_by_id:
+                                        sp_user_data = spotify_get_user_info(sp_accessToken, added_by_id, False, 0)
+                                        added_by_name = sp_user_data["sp_username"]
+                                    else:
+                                        added_by_name = "Spotify"
                                     if added_by_name:
                                         user_id_name_mapping[added_by_id] = added_by_name
 
