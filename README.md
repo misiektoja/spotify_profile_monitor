@@ -143,7 +143,7 @@ You can also use the built-in functionality to search for usernames (**-s** para
 
 It will list all users with such names with their user URI ID. 
 
-Before using this feature make sure you followed the instructions [here](#spotify-sha256)
+Before using this feature make sure you followed the instructions [here](#spotify-sha256-optional)
 
 ### List of supported parameters
 
