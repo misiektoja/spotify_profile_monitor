@@ -118,6 +118,10 @@ TOKEN_RETRY_TIMEOUT = 0.5  # 0.5 second
 # Shall we enable or disable SSL certificate verification while sending https requests
 VERIFY_SSL = True
 
+# Shall we ignore Spotify-owned playlists from monitoring ? By default it is set to true, so the tool won't report changed tracks and
+# number of likes for them (they are typically dynamically generated with high volume of changes in terms of likes and sometimes tracks as well)
+IGNORE_SPOTIFY_PLAYLISTS = True
+
 # -------------------------
 # CONFIGURATION SECTION END
 # -------------------------
@@ -600,6 +604,23 @@ def get_apple_genius_search_urls(artist, track):
     return apple_search_url, genius_search_url, youtube_music_search_url
 
 
+# Function extracting Spotify ID from URI or URL or returning cleaned name
+def spotify_extract_id_or_name(s):
+    s = s.strip().lower()
+
+    if s.startswith("https://open.spotify.com/"):
+        parsed = urlparse(s)
+        path_parts = parsed.path.strip("/").split("/")
+        if len(path_parts) == 2:
+            return path_parts[1]
+        return s
+
+    if ":" in s:
+        return s.split(":")[-1]
+
+    return s
+
+
 # Function returning random user agent string
 def get_random_user_agent():
     browser = random.choice(['chrome', 'firefox', 'edge', 'safari'])
@@ -999,6 +1020,7 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
 
         sp_playlist_description = json_response1.get("description", "")
         sp_playlist_owner = json_response1["owner"].get("display_name", "")
+        sp_playlist_owner_uri = json_response1["owner"].get("uri", "")
         sp_playlist_owner_url = json_response1["owner"]["external_urls"].get("spotify")
         sp_playlist_tracks_count = json_response1["tracks"].get("total", 0)
         sp_playlist_tracks = sp_playlist_tracks_concatenated_list
@@ -1009,7 +1031,7 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
         sp_playlist_followers_count = int(json_response1["followers"].get("total", 0))
         sp_playlist_url = json_response1["external_urls"].get("spotify") + si
 
-        return {"sp_playlist_name": sp_playlist_name, "sp_playlist_collaborative": sp_playlist_collaborative, "sp_playlist_description": sp_playlist_description, "sp_playlist_owner": sp_playlist_owner, "sp_playlist_owner_url": sp_playlist_owner_url, "sp_playlist_tracks_count": sp_playlist_tracks_count, "sp_playlist_tracks": sp_playlist_tracks, "sp_playlist_followers_count": sp_playlist_followers_count, "sp_playlist_url": sp_playlist_url}
+        return {"sp_playlist_name": sp_playlist_name, "sp_playlist_collaborative": sp_playlist_collaborative, "sp_playlist_description": sp_playlist_description, "sp_playlist_owner": sp_playlist_owner, "sp_playlist_owner_url": sp_playlist_owner_url, "sp_playlist_tracks_count": sp_playlist_tracks_count, "sp_playlist_tracks": sp_playlist_tracks, "sp_playlist_followers_count": sp_playlist_followers_count, "sp_playlist_url": sp_playlist_url, "sp_playlist_owner_uri": sp_playlist_owner_uri}
 
     except Exception:
         raise
@@ -1251,25 +1273,38 @@ def spotify_search_users(access_token, username):
 
 
 # Function processing items of all passed playlists and returning list of dictionaries
-def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
+def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, playlists_to_skip=None):
     list_of_playlists = []
     error_while_processing = False
+
+    if playlists_to_skip is None:
+        playlists_to_skip = []
 
     if playlists:
         for playlist in playlists:
             user_id_name_mapping = {}
             if "uri" in playlist:
                 list_of_tracks = []
-                p_uri = playlist.get("uri")
+                p_owner = playlist.get("owner_name", "")
+                p_owner_uri = playlist.get("owner_uri", "")
+                p_uri = playlist.get("uri", "")
+                p_uri_id = spotify_extract_id_or_name(p_uri)
+                p_owner_name = spotify_extract_id_or_name(p_owner)
+                p_owner_id = spotify_extract_id_or_name(p_owner_uri)
+                # we do not get a list of tracks for playlists that are ignored
+                if (playlists_to_skip and (p_uri_id in playlists_to_skip or p_owner_id in playlists_to_skip or p_owner_name in playlists_to_skip)) or (IGNORE_SPOTIFY_PLAYLISTS and p_owner == "Spotify"):
+                    effective_get_tracks = False
+                else:
+                    effective_get_tracks = get_tracks
                 try:
-                    sp_playlist_data = spotify_get_playlist_info(sp_accessToken, p_uri, get_tracks)
-
+                    sp_playlist_data = spotify_get_playlist_info(sp_accessToken, p_uri, effective_get_tracks)
                     p_name = sp_playlist_data.get("sp_playlist_name", "")
                     p_descr = html.unescape(sp_playlist_data.get("sp_playlist_description", ""))
                     p_likes = sp_playlist_data.get("sp_playlist_followers_count", 0)
                     p_tracks = sp_playlist_data.get("sp_playlist_tracks_count", 0)
                     p_url = spotify_convert_uri_to_url(p_uri)
                     p_owner = sp_playlist_data.get("sp_playlist_owner", "")
+                    p_owner_uri = sp_playlist_data.get("sp_playlist_owner_uri", "")
 
                     p_tracks_list = sp_playlist_data.get("sp_playlist_tracks", None)
                     added_at_ts_lowest = 0
@@ -1279,7 +1314,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
                         for index, track in enumerate(p_tracks_list):
                             added_at = track.get("added_at")
 
-                            if get_tracks:
+                            if effective_get_tracks:
                                 p_artist = track["track"]["artists"][0].get("name", "")
                                 p_track = track["track"].get("name", "")
                                 duration_ms = track["track"].get("duration_ms")
@@ -1318,7 +1353,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
                                     added_at_ts_highest = added_at_dt_ts
                                 added_at_dt_new = datetime.fromtimestamp(int(added_at_dt_ts)).strftime("%d %b %Y, %H:%M:%S")
 
-                            if get_tracks and added_at:
+                            if effective_get_tracks and added_at:
                                 list_of_tracks.append({"artist": p_artist, "track": p_track, "duration": track_duration, "added_at": added_at_str, "uri": track_uri, "added_by": added_by_name, "added_by_id": added_by_id})
 
                 except Exception as e:
@@ -1338,16 +1373,16 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks):
 
                 p_collaborators_count = len(user_id_name_mapping)
 
-                if list_of_tracks and get_tracks:
-                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "list_of_tracks": list_of_tracks, "collaborators_count": p_collaborators_count, "collaborators": user_id_name_mapping, "owner": p_owner})
+                if list_of_tracks and effective_get_tracks:
+                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "list_of_tracks": list_of_tracks, "collaborators_count": p_collaborators_count, "collaborators": user_id_name_mapping, "owner": p_owner, "owner_uri": p_owner_uri})
                 else:
-                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "collaborators_count": p_collaborators_count, "collaborators": {}, "owner": p_owner})
+                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "collaborators_count": p_collaborators_count, "collaborators": {}, "owner": p_owner, "owner_uri": p_owner_uri})
 
     return list_of_playlists, error_while_processing
 
 
 # Function printing detailed info about user's playlists
-def spotify_print_public_playlists(list_of_playlists):
+def spotify_print_public_playlists(list_of_playlists, playlists_to_skip=None):
     p_update = datetime.min
     p_update_recent = datetime.min
     p_name = ""
@@ -1355,10 +1390,13 @@ def spotify_print_public_playlists(list_of_playlists):
     p_url = ""
     p_url_recent = ""
 
+    if playlists_to_skip is None:
+        playlists_to_skip = []
+
     if list_of_playlists:
         for playlist in list_of_playlists:
             if "uri" in playlist:
-                p_uri = playlist.get("uri")
+                p_uri = playlist.get("uri", "")
                 p_name = playlist.get("name", "")
                 p_descr = html.unescape(playlist.get("desc", ""))
                 p_likes = playlist.get("likes", 0)
@@ -1368,9 +1406,17 @@ def spotify_print_public_playlists(list_of_playlists):
                 p_update = playlist.get("update_date")
                 p_collaborators_count = playlist.get("collaborators_count")
                 p_collaborators = playlist.get("collaborators")
-                p_owner = playlist.get("owner")
+                p_owner = playlist.get("owner", "")
+                p_owner_uri = playlist.get("owner_uri", "")
+                p_uri_id = spotify_extract_id_or_name(p_uri)
+                p_owner_name = spotify_extract_id_or_name(p_owner)
+                p_owner_id = spotify_extract_id_or_name(p_owner_uri)
 
-                print(f"- '{p_name}'\n[ {p_url} ]\n[ songs: {p_tracks}, likes: {p_likes}, collaborators: {p_collaborators_count} ]\n[ owner: {p_owner} ]")
+                skipped_from_processing = ""
+                if (playlists_to_skip and (p_uri_id in playlists_to_skip or p_owner_id in playlists_to_skip or p_owner_name in playlists_to_skip)) or (IGNORE_SPOTIFY_PLAYLISTS and p_owner == "Spotify"):
+                    skipped_from_processing = " [ IGNORED ]"
+
+                print(f"- '{p_name}'{skipped_from_processing}\n[ {p_url} ]\n[ songs: {p_tracks}, likes: {p_likes}, collaborators: {p_collaborators_count} ]\n[ owner: {p_owner} ]")
                 if p_date:
                     p_date_str = p_date.strftime("%d %b %Y, %H:%M:%S")
                     p_date_week_day = calendar.day_abbr[p_date.weekday()]
@@ -1705,7 +1751,7 @@ def compare_images(path1, path2):
 
 
 # Main function monitoring profile changes of the specified Spotify user URI ID
-def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, csv_exists):
+def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, csv_exists, playlists_to_skip):
     global SP_CACHED_ACCESS_TOKEN
     playlists_count = 0
     playlists_old_count = 0
@@ -1797,8 +1843,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
         if playlists:
             print("\n* Getting list of public playlists (be patient, it might take a while) ...\n")
-            list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True)
-            spotify_print_public_playlists(list_of_playlists)
+            list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True, playlists_to_skip)
+            spotify_print_public_playlists(list_of_playlists, playlists_to_skip)
 
     print_cur_ts("\nTimestamp:\t\t")
 
@@ -2238,13 +2284,22 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
         if DETECT_CHANGES_IN_PLAYLISTS:
             if playlists:
-                list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True)
+                list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True, playlists_to_skip)
 
             for playlist in list_of_playlists:
                 if "uri" in playlist:
-                    p_uri = playlist.get("uri")
-                    p_url = spotify_convert_uri_to_url(p_uri)
+                    p_uri = playlist.get("uri", "")
+                    p_owner = playlist.get("owner", "")
+                    p_owner_uri = playlist.get("owner_uri", "")
+                    p_uri_id = spotify_extract_id_or_name(p_uri)
+                    p_owner_name = spotify_extract_id_or_name(p_owner)
+                    p_owner_id = spotify_extract_id_or_name(p_owner_uri)
+
+                    # we do not process playlists that are ignored
+                    if (playlists_to_skip and (p_uri_id in playlists_to_skip or p_owner_id in playlists_to_skip or p_owner_name in playlists_to_skip)) or (IGNORE_SPOTIFY_PLAYLISTS and p_owner == "Spotify"):
+                        continue
                     p_name = playlist.get("name", "")
+                    p_url = spotify_convert_uri_to_url(p_uri)
                     p_descr = html.unescape(playlist.get("desc", ""))
                     p_likes = playlist.get("likes", 0)
                     p_tracks = playlist.get("tracks_count", 0)
@@ -2536,6 +2591,7 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--check_interval", help="Time between monitoring checks, in seconds", type=int)
     parser.add_argument("-m", "--error_interval", help="Time between error checks, in seconds", type=int)
     parser.add_argument("-b", "--csv_file", help="Write all profile changes to CSV file", type=str, metavar="CSV_FILENAME")
+    parser.add_argument("-t", "--playlists_to_skip", help="Filename with Spotify playlists to ignore from monitoring (so it won't report changed tracks and number of likes for them); playlists can be blacklisted by its URI and URL, but also owner name, URI and URL", type=str, metavar="IGNORED_PLAYLISTS_FILENAME")
     parser.add_argument("-j", "--do_not_detect_changed_profile_pic", help="Disable detection of changed user's profile picture in monitoring mode", action='store_false')
     parser.add_argument("-q", "--do_not_monitor_playlists", help="Disable detection of changes in user's public playlists in monitoring mode (like added/removed tracks in playlists, playlists name and description changes, number of likes for playlists)", action='store_false')
     parser.add_argument("-k", "--get_all_playlists", help="By default, only public playlists owned by the user are fetched; you can change this behavior with this parameter; it is helpful in the case of playlists created by another user added to another user profile", action='store_true')
@@ -2665,6 +2721,21 @@ if __name__ == "__main__":
             sys.exit(1)
         sys.exit(0)
 
+    if args.playlists_to_skip:
+        try:
+            with open(args.playlists_to_skip, encoding="utf-8") as file:
+                playlists_to_skip = {
+                    spotify_extract_id_or_name(line)
+                    for line in file
+                    if line.strip() and not line.strip().startswith("#")
+                }
+            file.close()
+        except Exception as e:
+            print(f"* Error: file with playlists to ignore cannot be opened - {e}")
+            sys.exit(1)
+    else:
+        playlists_to_skip = []
+
     if args.csv_file:
         csv_enabled = True
         csv_exists = os.path.isfile(args.csv_file)
@@ -2721,7 +2792,7 @@ if __name__ == "__main__":
         signal.signal(signal.SIGTRAP, increase_check_signal_handler)
         signal.signal(signal.SIGABRT, decrease_check_signal_handler)
 
-    spotify_profile_monitor_uri(args.SPOTIFY_USER_URI_ID, error_notification, args.csv_file, csv_exists)
+    spotify_profile_monitor_uri(args.SPOTIFY_USER_URI_ID, error_notification, args.csv_file, csv_exists, playlists_to_skip)
 
     sys.stdout = stdout_bck
     sys.exit(0)
