@@ -2,6 +2,20 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 2.0 (24 Mar 2025)
+
+**Features and Improvements**:
+
+- **NEW:** Added playlist filtering (**-t** / **--playlists_to_skip**) and ignore Spotify‑owned playlists by default (related to [#3](https://github.com/misiektoja/spotify_profile_monitor/issues/3)):
+	- From now on, all Spotify-owned playlists are skipped from processing (unless `IGNORE_SPOTIFY_PLAYLISTS` is set to False)
+	- On top of that, there is a new functionality which allows to indicate a file with additional playlists to be blacklisted
+	- More details in [Playlist blacklisting](README.md#playlist-blacklisting)
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixes mapping of user URI IDs to usernames for Spotify-generated playlists (fixes [#2](https://github.com/misiektoja/spotify_profile_monitor/issues/2))
+- **BUGFIX:** Fixes occasional None return from get_random_user_agent(), avoiding downstream NoneType error
+
 # Changes in 1.9 (20 Mar 2025)
 
 **Features and Improvements**:
