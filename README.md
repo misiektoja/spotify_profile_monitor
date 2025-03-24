@@ -33,7 +33,7 @@ Release notes can be found [here](RELEASE_NOTES.md)
 
 ## Requirements
 
-The script requires Python 3.x.
+The tool requires Python 3.x.
 
 It uses requests, python-dateutil, pytz, tzlocal, urllib3 and pyotp.
 
@@ -76,7 +76,7 @@ Edit the *[spotify_profile_monitor.py](spotify_profile_monitor.py)* file and cha
 
 ### Spotify sp_dc cookie
 
-Log in to the Spotify web client [https://open.spotify.com/](https://open.spotify.com/) in your web browser and copy the value of the sp_dc cookie to the **SP_DC_COOKIE** variable (or use the **-u** parameter).
+Log in to the Spotify web client [https://open.spotify.com/](https://open.spotify.com/) in your web browser and copy the value of the sp_dc cookie to the `SP_DC_COOKIE` variable (or use the **-u** parameter).
 
 You can use Cookie-Editor by cgagnier to obtain it easily (available for all major web browsers): [https://cookie-editor.com/](https://cookie-editor.com/)
 
@@ -88,7 +88,7 @@ It is recommended to create a new Spotify account for use with the tool since we
 
 The tool will attempt to automatically detect your local time zone so it can convert Spotify timestamps to your local time. 
 
-If you wish to specify your time zone manually, change the **LOCAL_TIMEZONE** variable from *'Auto'* to a specific location, e.g.
+If you wish to specify your time zone manually, change the `LOCAL_TIMEZONE` variable from *'Auto'* to a specific location, e.g.
 
 ```
 LOCAL_TIMEZONE='Europe/Warsaw'
@@ -104,7 +104,7 @@ To do this, you need to intercept your Spotify client's network traffic and obta
 
 To simulate the required request, search for the user in the Spotify client. Then, in the intercepting proxy, look for requests with the *searchUsers* or *searchDesktop* operation name.
 
-Display the details of one of these requests and copy the sha256Hash parameter value, then place it in the **SP_SHA256** variable.
+Display the details of one of these requests and copy the sha256Hash parameter value, then place it in the `SP_SHA256` variable.
 
 Example request:
 https://api-partner.spotify.com/pathfinder/v1/query?operationName=searchUsers&variables={"searchTerm":"spotify_user_uri_id","offset":0,"limit":5,"numberOfTopResults":5,"includeAudiobooks":false}&extensions={"persistedQuery":{"version":1,"sha256Hash":"XXXXXXXXXX"}}
@@ -167,7 +167,7 @@ To monitor a specific user for all profile changes, simply type the Spotify user
 ./spotify_profile_monitor.py spotify_user_uri_id
 ```
 
-If you have not changed **SP_DC_COOKIE** variable in the *[spotify_profile_monitor.py](spotify_profile_monitor.py)* file, you can use **-u** parameter:
+If you have not changed `SP_DC_COOKIE` variable in the *[spotify_profile_monitor.py](spotify_profile_monitor.py)* file, you can use **-u** parameter:
 
 ```sh
 ./spotify_profile_monitor.py spotify_user_uri_id -u "your_sp_dc_cookie_value"
@@ -183,6 +183,12 @@ If you want to completely disable detection of changes in user's public playlist
 
 ```sh
 ./spotify_profile_monitor.py spotify_user_uri_id -q
+```
+
+If you want to skip some user's playlists from processing, you can use **-t** parameter (more info [here](#playlist-blacklisting))
+
+```sh
+./spotify_profile_monitor.py spotify_user_uri_id -t ignored_playlists
 ```
 
 The tool will run indefinitely and monitor the user until the script is interrupted (Ctrl+C) or terminated by other means.
@@ -292,7 +298,7 @@ If you want to save all profile changes in the CSV file, use **-b** parameter wi
 
 ### Detection of changed profile pictures
 
-The tool has functionality to detect changed profile pictures. Proper information will be visible in the console (and email notifications when the **-p** parameter is enabled). By default, this feature is enabled, but you can disable it either by setting the **DETECT_CHANGED_PROFILE_PIC** variable to *False* or by enabling the **-j** / **--do_not_detect_changed_profile_pic** parameter.
+The tool has functionality to detect changed profile pictures. Proper information will be visible in the console (and email notifications when the **-p** parameter is enabled). By default, this feature is enabled, but you can disable it either by setting the `DETECT_CHANGED_PROFILE_PIC` variable to *False* or by enabling the **-j** / **--do_not_detect_changed_profile_pic** parameter.
 
 Since the URL of a Spotify user's profile picture appears to change periodically, the tool identifies any updates in the profile picture by performing a binary comparison of the saved JPEG files. Initially it saves the profile pic to *spotify_profile_{user_uri_id}_pic.jpeg* file after the tool is started (in monitoring mode), then during every check the new picture is fetched and the tool does binary comparison if it has changed or not.
 
@@ -302,7 +308,40 @@ In case of changes the old profile picture is moved to *spotify_profile_{user_ur
 
 If you have *imgcat* installed, you can enable the feature for displaying pictures right in your terminal. 
 
-To do this, set the path to your *imgcat* binary in the **IMGCAT_PATH** variable (or leave it empty to disable this functionality).
+To do this, set the path to your *imgcat* binary in the `IMGCAT_PATH` variable (or leave it empty to disable this functionality).
+
+### Playlist blacklisting
+
+By default, all Spotify-owned playlists are skipped from processing, i.e. the tool won't fetch or report changed tracks and the number of likes for them. This is because they are typically dynamically generated with a high volume of changes in terms of likes and sometimes tracks as well. You can change this behavior by setting `IGNORE_SPOTIFY_PLAYLISTS` to False.
+
+On top of that, you can also use the **-t** / **--playlists_to_skip** parameter which allows you to indicate a file with additional playlists to be blacklisted.
+
+The file may include lines referencing playlist URIs and URLs, as well as the playlist owner's name, URI, and URL. Below is an example of an **ignored_playlists** file with acceptable entries:
+
+```sh
+playlist_uri_id
+spotify:playlist:playlist_uri_id
+https://open.spotify.com/playlist/playlist_uri_id
+https://open.spotify.com/playlist/playlist_uri_id?si=1
+Some User Name
+user_uri_id
+spotify:user:user_uri_id
+https://open.spotify.com/user/user_uri_id?si=1
+```
+
+You can comment out specific lines with # if needed.
+
+If certain playlists are blacklisted, there will be an appropriate message. For example:
+
+```
+- 'Afternoon Acoustic' [ IGNORED ]
+[ https://open.spotify.com/playlist/37i9dQZF1DX4E3UdUs7fUx?si=1 ]
+[ songs: 100, likes: 2164491, collaborators: 0 ]
+[ owner: Spotify ]
+[ date: Fri 23 Aug 2024, 17:05:15 - 7 months, 10 hours, 27 minutes ago ]
+[ update: Fri 23 Aug 2024, 17:05:15 - 7 months, 10 hours, 27 minutes ago ]
+'Unwind and let the afternoon unfold.'
+```
 
 ### Check interval 
 
