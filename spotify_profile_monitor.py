@@ -606,6 +606,9 @@ def get_apple_genius_search_urls(artist, track):
 
 # Function extracting Spotify ID from URI or URL or returning cleaned name
 def spotify_extract_id_or_name(s):
+    if not isinstance(s, str) or not s.strip():
+        return ""
+
     s = s.strip().lower()
 
     if s.startswith("https://open.spotify.com/"):
