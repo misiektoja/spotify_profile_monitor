@@ -133,6 +133,10 @@ re_replace_str = r'( - (\d*)( )*remaster$)|( - (\d*)( )*remastered( version)*( \
 # Default value for network-related timeouts in functions; in seconds
 FUNCTION_TIMEOUT = 15
 
+# Default value for alarm signal handler timeout; in seconds
+ALARM_TIMEOUT = int((TOKEN_MAX_RETRIES * TOKEN_RETRY_TIMEOUT) + 5)
+ALARM_RETRY = 10
+
 # Sometimes Spotify API has issues and returns info that all user's playlists disappeared
 # We won't notify about such event right away, but only during PLAYLISTS_DISAPPEARED_COUNTER attempt (next check interval)
 PLAYLISTS_DISAPPEARED_COUNTER = 2
@@ -148,10 +152,6 @@ TOKEN_URL = "https://open.spotify.com/get_access_token"
 
 # URL of the endpoint to get server time needed to create TOTP object
 SERVER_TIME_URL = "https://open.spotify.com/server-time"
-
-# Default value for alarm signal handler timeout; in seconds
-ALARM_TIMEOUT = int((TOKEN_MAX_RETRIES * TOKEN_RETRY_TIMEOUT) + 5)
-ALARM_RETRY = 10
 
 TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / SPOTIFY_CHECK_INTERVAL
 
@@ -204,9 +204,12 @@ import pyotp
 import base64
 import random
 from random import randrange
+
 import urllib3
 if not VERIFY_SSL:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+SESSION = req.Session()
 
 
 # Logger class to output messages to stdout and log file
@@ -999,14 +1002,14 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
     si = "?si=1"
 
     try:
-        response1 = req.get(url1, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
+        response1 = SESSION.get(url1, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         response1.raise_for_status()
         json_response1 = response1.json()
 
         sp_playlist_tracks_concatenated_list = []
         next_url = url2
         while next_url:
-            response2 = req.get(next_url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
+            response2 = SESSION.get(next_url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
             response2.raise_for_status()
             json_response2 = response2.json()
             # print(json.dumps(json_response2))
@@ -1053,7 +1056,7 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
     }
 
     try:
-        response = req.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
+        response = SESSION.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         response.raise_for_status()
         json_response = response.json()
 
@@ -1103,7 +1106,7 @@ def spotify_get_user_followings(access_token, user_uri_id):
     }
 
     try:
-        response = req.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
+        response = SESSION.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         response.raise_for_status()
         json_response = response.json()
 
@@ -1131,7 +1134,7 @@ def spotify_get_user_followers(access_token, user_uri_id):
     }
 
     try:
-        response = req.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
+        response = SESSION.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         response.raise_for_status()
         json_response = response.json()
 
@@ -1258,7 +1261,7 @@ def spotify_search_users(access_token, username):
     print(f"Searching for users with '{username}' string ...\n")
 
     try:
-        response = req.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
+        response = SESSION.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         response.raise_for_status()
     except Exception:
         raise
@@ -1288,18 +1291,18 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
             user_id_name_mapping = {}
             if "uri" in playlist:
                 list_of_tracks = []
-                p_owner = playlist.get("owner_name", "")
-                p_owner_uri = playlist.get("owner_uri", "")
-                p_uri = playlist.get("uri", "")
-                p_uri_id = spotify_extract_id_or_name(p_uri)
-                p_owner_name = spotify_extract_id_or_name(p_owner)
-                p_owner_id = spotify_extract_id_or_name(p_owner_uri)
-                # we do not get a list of tracks for playlists that are ignored
-                if (playlists_to_skip and (p_uri_id in playlists_to_skip or p_owner_id in playlists_to_skip or p_owner_name in playlists_to_skip)) or (IGNORE_SPOTIFY_PLAYLISTS and p_owner == "Spotify"):
-                    effective_get_tracks = False
-                else:
-                    effective_get_tracks = get_tracks
                 try:
+                    p_owner = playlist.get("owner_name", "")
+                    p_owner_uri = playlist.get("owner_uri", "")
+                    p_uri = playlist.get("uri", "")
+                    p_uri_id = spotify_extract_id_or_name(p_uri)
+                    p_owner_name = spotify_extract_id_or_name(p_owner)
+                    p_owner_id = spotify_extract_id_or_name(p_owner_uri)
+                    # we do not get a list of tracks for playlists that are ignored
+                    if (playlists_to_skip and (p_uri_id in playlists_to_skip or p_owner_id in playlists_to_skip or p_owner_name in playlists_to_skip)) or (IGNORE_SPOTIFY_PLAYLISTS and p_owner == "Spotify"):
+                        effective_get_tracks = False
+                    else:
+                        effective_get_tracks = get_tracks
                     sp_playlist_data = spotify_get_playlist_info(sp_accessToken, p_uri, effective_get_tracks)
                     p_name = sp_playlist_data.get("sp_playlist_name", "")
                     p_descr = html.unescape(sp_playlist_data.get("sp_playlist_description", ""))
