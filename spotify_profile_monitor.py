@@ -1183,19 +1183,18 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
                 duration = int(str(duration_ms)[0:-3])
                 duration_sum = duration_sum + duration
                 added_at_dt = convert_utc_str_to_tz_datetime(track.get("added_at"), LOCAL_TIMEZONE)
-                added_by = track.get("added_by", "")
-                added_by_id = added_by.get("id", "")
-                added_by_name = ""
-                if user_id_name_mapping.get(added_by_id):
-                    added_by_name = user_id_name_mapping.get(added_by_id)
-                else:
-                    if added_by_id:
-                        sp_user_data = spotify_get_user_info(sp_accessToken, added_by_id, False, 0)
-                        added_by_name = sp_user_data["sp_username"]
-                    else:
+                added_by = track.get("added_by", {}) or {}
+                added_by_id = added_by.get("id", "") or "Spotify"
+
+                added_by_name = user_id_name_mapping.get(added_by_id)
+                if not added_by_name:
+                    if added_by_id == "Spotify":
                         added_by_name = "Spotify"
-                    if added_by_name:
-                        user_id_name_mapping[added_by_id] = added_by_name
+                    else:
+                        sp_user_data = spotify_get_user_info(sp_accessToken, added_by_id, False, 0)
+                        added_by_name = sp_user_data.get("sp_username", added_by_id)
+
+                    user_id_name_mapping[added_by_id] = added_by_name
 
                 if not added_by_name:
                     added_by_name = added_by_id
@@ -1328,19 +1327,18 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                     track_duration = int(str(duration_ms)[0:-3])
                                     track_uri = track["track"].get("uri")
 
-                                added_by = track.get("added_by", "")
-                                added_by_id = added_by.get("id", "")
-                                added_by_name = ""
-                                if user_id_name_mapping.get(added_by_id):
-                                    added_by_name = user_id_name_mapping.get(added_by_id)
-                                else:
-                                    if added_by_id:
-                                        sp_user_data = spotify_get_user_info(sp_accessToken, added_by_id, False, 0)
-                                        added_by_name = sp_user_data["sp_username"]
-                                    else:
+                                added_by = track.get("added_by", {}) or {}
+                                added_by_id = added_by.get("id", "") or "Spotify"
+
+                                added_by_name = user_id_name_mapping.get(added_by_id)
+                                if not added_by_name:
+                                    if added_by_id == "Spotify":
                                         added_by_name = "Spotify"
-                                    if added_by_name:
-                                        user_id_name_mapping[added_by_id] = added_by_name
+                                    else:
+                                        sp_user_data = spotify_get_user_info(sp_accessToken, added_by_id, False, 0)
+                                        added_by_name = sp_user_data.get("sp_username", added_by_id)
+
+                                    user_id_name_mapping[added_by_id] = added_by_name
 
                                 if not added_by_name:
                                     added_by_name = added_by_id
