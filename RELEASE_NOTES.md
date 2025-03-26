@@ -2,6 +2,12 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 2.0.1 (26 Mar 2025)
+
+**Bug fixes**:
+
+- **BUGFIX:** Added retry-enabled HTTPAdapter to global SESSION to address 'Remote end closed connection without response' errors
+
 # Changes in 2.0 (25 Mar 2025)
 
 **Features and Improvements**:
