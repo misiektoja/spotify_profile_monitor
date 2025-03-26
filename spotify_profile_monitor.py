@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.0
+v2.0.1
 
 OSINT tool implementing real-time tracking of Spotify users' activities and profile changes:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -16,7 +16,7 @@ urllib3
 pyotp
 """
 
-VERSION = "2.0"
+VERSION = "2.0.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -210,6 +210,23 @@ if not VERIFY_SSL:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 SESSION = req.Session()
+
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+retry = Retry(
+    total=5,
+    connect=3,
+    read=3,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["GET", "HEAD", "OPTIONS"],
+    raise_on_status=False
+)
+
+adapter = HTTPAdapter(max_retries=retry, pool_connections=100, pool_maxsize=100)
+SESSION.mount("https://", adapter)
+SESSION.mount("http://", adapter)
 
 
 # Logger class to output messages to stdout and log file
