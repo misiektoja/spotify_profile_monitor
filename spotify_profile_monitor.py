@@ -1251,7 +1251,7 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
     if len(user_id_name_mapping) > 1:
         print(f"\nCollaborators ({len(user_id_name_mapping)}):\n")
         for collab_id, collab_name in user_id_name_mapping.items():
-            print(f"- {collab_name} [id: {collab_id}]")
+            print(f"- {collab_name} [URL: {spotify_convert_uri_to_url(f'spotify:user:{collab_id}')}]")
 
 
 # Function comparing two lists of dictionaries
