@@ -1,5 +1,6 @@
 python_dateutil
 pytz
 tzlocal
+urllib3
 Requests
 pyotp
