@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.0.1
+v2.1
 
 OSINT tool implementing real-time tracking of Spotify users' activities and profile changes:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -16,7 +16,7 @@ urllib3
 pyotp
 """
 
-VERSION = "2.0.1"
+VERSION = "2.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -204,6 +204,7 @@ import pyotp
 import base64
 import random
 from random import randrange
+from collections import Counter
 
 import urllib3
 if not VERIFY_SSL:
@@ -480,7 +481,7 @@ def get_cur_ts(ts_str=""):
 # Function to print the current timestamp in human readable format; eg. Sun 21 Apr 2024, 15:08:45
 def print_cur_ts(ts_str=""):
     print(get_cur_ts(str(ts_str)))
-    print("-----------------------------------------------------------------------------------------------------------------")
+    print("─" * 113)
 
 
 # Function to return the timestamp/datetime object in human readable format (long version); eg. Sun 21 Apr 2024, 15:08:45
@@ -890,7 +891,7 @@ def spotify_get_access_token(sp_dc: str):
     if SP_CACHED_ACCESS_TOKEN and now < SP_TOKEN_EXPIRES_AT and check_token_validity(SP_CACHED_ACCESS_TOKEN, SP_CACHED_CLIENT_ID, SP_CACHED_USER_AGENT):
         return SP_CACHED_ACCESS_TOKEN
 
-    # print("-----------------------------------------------------------------------------------------------------------------")
+    # print("─" * 113)
     # print("* Fetching a new Spotify access token, it might take a while ...")
 
     max_retries = TOKEN_MAX_RETRIES
@@ -1173,6 +1174,7 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
     print(f"Listing tracks for playlist '{playlist_url}' ...\n")
 
     user_id_name_mapping = {}
+    user_track_counts = Counter()
 
     playlist_uri = spotify_convert_url_to_uri(playlist_url)
 
@@ -1216,6 +1218,8 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
                 if not added_by_name:
                     added_by_name = added_by_id
 
+                user_track_counts[added_by_id] += 1
+
                 added_at_dt_ts = int(added_at_dt.timestamp())
                 if index == 0:
                     added_at_ts_lowest = added_at_dt_ts
@@ -1248,10 +1252,17 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
 
     print(f"Duration:\t{display_time(duration_sum)}")
 
+    total_tracks = sum(user_track_counts.values())
+
     if len(user_id_name_mapping) > 1:
+
         print(f"\nCollaborators ({len(user_id_name_mapping)}):\n")
+
         for collab_id, collab_name in user_id_name_mapping.items():
-            print(f"- {collab_name} [URL: {spotify_convert_uri_to_url(f'spotify:user:{collab_id}')}]")
+            count = user_track_counts.get(collab_id, 0)
+            percent = (count / total_tracks * 100) if total_tracks else 0
+            url = spotify_convert_uri_to_url(f"spotify:user:{collab_id}")
+            print(f"- {collab_name} [songs: {count}, {percent:.1f}%] [URL: {url}]")
 
 
 # Function comparing two lists of dictionaries
@@ -1289,7 +1300,7 @@ def spotify_search_users(access_token, username):
             print(f"User URI:\t\t{user['data']['uri']}")
             print(f"User URI ID:\t\t{user['data']['id']}")
             print(f"User URL:\t\t{spotify_convert_uri_to_url(user['data']['uri'])}")
-            print("-----------------------------------------------")
+            print("─" * 80)
     else:
         print("No results")
 
