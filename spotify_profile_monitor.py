@@ -46,9 +46,11 @@ RECEIVER_EMAIL = "your_receiver_email"
 SPOTIFY_CHECK_INTERVAL = 1800  # 30 mins
 
 # How often do we retry in case of errors, you can also use -m parameter; in seconds
-SPOTIFY_ERROR_INTERVAL = 180  # 3 mins
+SPOTIFY_ERROR_INTERVAL = 300  # 5 mins
 
 # Specify your local time zone so we convert Spotify timestamps to your time (for example: 'Europe/Warsaw')
+# You can get the list of all time zones supported by pytz like this:
+# python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
 # If you leave it as 'Auto' we will try to automatically detect the local timezone
 LOCAL_TIMEZONE = 'Auto'
 
@@ -153,6 +155,9 @@ TOKEN_URL = "https://open.spotify.com/get_access_token"
 # URL of the endpoint to get server time needed to create TOTP object
 SERVER_TIME_URL = "https://open.spotify.com/server-time"
 
+# Width of horizontal line (─)
+HORIZONTAL_LINE = 113
+
 TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / SPOTIFY_CHECK_INTERVAL
 
 stdout_bck = None
@@ -172,7 +177,7 @@ from time import time_ns
 import string
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from dateutil import relativedelta
 import calendar
 import requests as req
@@ -190,7 +195,7 @@ import pytz
 try:
     from tzlocal import get_localzone
 except ImportError:
-    pass
+    get_localzone = None
 import platform
 import html
 import urllib
@@ -205,6 +210,8 @@ import base64
 import random
 from random import randrange
 from collections import Counter
+from dateutil.parser import isoparse
+from email.utils import parsedate_to_datetime
 
 import urllib3
 if not VERIFY_SSL:
@@ -302,30 +309,51 @@ def display_time(seconds, granularity=2):
 
 
 # Function to calculate time span between two timestamps in seconds
+# Accepts timestamp integers, floats and datetime objects
 def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True, show_minutes=True, show_seconds=True, granularity=3):
     result = []
     intervals = ['years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds']
     ts1 = timestamp1
     ts2 = timestamp2
 
-    if type(timestamp1) is int:
-        dt1 = datetime.fromtimestamp(int(ts1))
-    elif type(timestamp1) is float:
+    if isinstance(timestamp1, str):
+        try:
+            timestamp1 = isoparse(timestamp1)
+        except Exception:
+            return ""
+
+    if isinstance(timestamp1, int):
+        dt1 = datetime.fromtimestamp(int(ts1), tz=timezone.utc)
+    elif isinstance(timestamp1, float):
         ts1 = int(round(ts1))
-        dt1 = datetime.fromtimestamp(ts1)
-    elif type(timestamp1) is datetime:
+        dt1 = datetime.fromtimestamp(ts1, tz=timezone.utc)
+    elif isinstance(timestamp1, datetime):
         dt1 = timestamp1
+        if dt1.tzinfo is None:
+            dt1 = pytz.utc.localize(dt1)
+        else:
+            dt1 = dt1.astimezone(pytz.utc)
         ts1 = int(round(dt1.timestamp()))
     else:
         return ""
 
-    if type(timestamp2) is int:
-        dt2 = datetime.fromtimestamp(int(ts2))
-    elif type(timestamp2) is float:
+    if isinstance(timestamp2, str):
+        try:
+            timestamp2 = isoparse(timestamp2)
+        except Exception:
+            return ""
+
+    if isinstance(timestamp2, int):
+        dt2 = datetime.fromtimestamp(int(ts2), tz=timezone.utc)
+    elif isinstance(timestamp2, float):
         ts2 = int(round(ts2))
-        dt2 = datetime.fromtimestamp(ts2)
-    elif type(timestamp2) is datetime:
+        dt2 = datetime.fromtimestamp(ts2, tz=timezone.utc)
+    elif isinstance(timestamp2, datetime):
         dt2 = timestamp2
+        if dt2.tzinfo is None:
+            dt2 = pytz.utc.localize(dt2)
+        else:
+            dt2 = dt2.astimezone(pytz.utc)
         ts2 = int(round(dt2.timestamp()))
     else:
         return ""
@@ -340,21 +368,19 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
         date_diff = relativedelta.relativedelta(dt1, dt2)
         years = date_diff.years
         months = date_diff.months
-        weeks = date_diff.weeks
-        if not show_weeks:
+        days_total = date_diff.days
+
+        if show_weeks:
+            weeks = days_total // 7
+            days = days_total % 7
+        else:
             weeks = 0
-        days = date_diff.days
-        if weeks > 0:
-            days = days - (weeks * 7)
-        hours = date_diff.hours
-        if (not show_hours and ts_diff > 86400):
-            hours = 0
-        minutes = date_diff.minutes
-        if (not show_minutes and ts_diff > 3600):
-            minutes = 0
-        seconds = date_diff.seconds
-        if (not show_seconds and ts_diff > 60):
-            seconds = 0
+            days = days_total
+
+        hours = date_diff.hours if show_hours or ts_diff <= 86400 else 0
+        minutes = date_diff.minutes if show_minutes or ts_diff <= 3600 else 0
+        seconds = date_diff.seconds if show_seconds or ts_diff <= 60 else 0
+
         date_list = [years, months, weeks, days, hours, minutes, seconds]
 
         for index, interval in enumerate(date_list):
@@ -363,6 +389,7 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
                 if interval == 1:
                     name = name.rstrip('s')
                 result.append(f"{interval} {name}")
+
         return ', '.join(result[:granularity])
     else:
         return '0 seconds'
@@ -455,118 +482,180 @@ def write_csv_entry(csv_file_name, timestamp, object_type, object_name, old, new
         raise
 
 
-# Function to convert UTC string returned by Spotify to datetime object in specified timezone
-def convert_utc_str_to_tz_datetime(utc_string, timezone, version=1):
+def convert_to_local_naive(dt: datetime | None = None):
+    tz = pytz.timezone(LOCAL_TIMEZONE)
+
+    if dt is not None:
+        if dt.tzinfo is None:
+            dt = pytz.utc.localize(dt)
+
+        dt_local = dt.astimezone(tz)
+
+        return dt_local.replace(tzinfo=None)
+    else:
+        return None
+
+
+def now_local_naive():
+    return datetime.now(pytz.timezone(LOCAL_TIMEZONE)).replace(microsecond=0, tzinfo=None)
+
+
+def now_local():
+    return datetime.now(pytz.timezone(LOCAL_TIMEZONE))
+
+
+def convert_iso_str_to_datetime(dt_str):
+    if not dt_str:
+        return None
+
     try:
-        if version == 1:
-            utc_string_sanitize = utc_string.split('Z', 1)[0]
-            dt_utc = datetime.strptime(utc_string_sanitize, '%Y-%m-%dT%H:%M:%S')
-        else:
-            utc_string_sanitize = utc_string.split(' GMT', 1)[0]
-            dt_utc = datetime.strptime(utc_string_sanitize, '%a, %d %b %Y %H:%M:%S')
-
-        old_tz = pytz.timezone("UTC")
-        new_tz = pytz.timezone(timezone)
-        dt_new_tz = old_tz.localize(dt_utc).astimezone(new_tz)
-        return dt_new_tz
+        utc_dt = isoparse(dt_str)
+        if utc_dt.tzinfo is None:
+            utc_dt = pytz.utc.localize(utc_dt)
+        return utc_dt.astimezone(pytz.timezone(LOCAL_TIMEZONE))
     except Exception:
-        return datetime.fromtimestamp(0)
+        return None
 
 
-# Function to return the timestamp in human readable format; eg. Sun 21 Apr 2024, 15:08:45
+# Function to return the current date/time in human readable format; eg. Sun 21 Apr 2024, 15:08:45
 def get_cur_ts(ts_str=""):
-    return (f'{ts_str}{calendar.day_abbr[(datetime.fromtimestamp(int(time.time()))).weekday()]}, {datetime.fromtimestamp(int(time.time())).strftime("%d %b %Y, %H:%M:%S")}')
+    return (f'{ts_str}{calendar.day_abbr[(now_local_naive()).weekday()]}, {now_local_naive().strftime("%d %b %Y, %H:%M:%S")}')
 
 
 # Function to print the current timestamp in human readable format; eg. Sun 21 Apr 2024, 15:08:45
 def print_cur_ts(ts_str=""):
     print(get_cur_ts(str(ts_str)))
-    print("─" * 113)
+    print("─" * HORIZONTAL_LINE)
 
 
 # Function to return the timestamp/datetime object in human readable format (long version); eg. Sun 21 Apr 2024, 15:08:45
 def get_date_from_ts(ts):
-    if type(ts) is datetime:
-        ts_new = int(round(ts.timestamp()))
-    elif type(ts) is int:
-        ts_new = ts
-    elif type(ts) is float:
-        ts_new = int(round(ts))
+    tz = pytz.timezone(LOCAL_TIMEZONE)
+
+    if isinstance(ts, str):
+        try:
+            ts = isoparse(ts)
+        except Exception:
+            return ""
+
+    if isinstance(ts, datetime):
+        if ts.tzinfo is None:
+            ts = pytz.utc.localize(ts)
+        ts_new = ts.astimezone(tz)
+
+    elif isinstance(ts, int):
+        ts_new = datetime.fromtimestamp(ts, tz)
+
+    elif isinstance(ts, float):
+        ts_rounded = int(round(ts))
+        ts_new = datetime.fromtimestamp(ts_rounded, tz)
+
     else:
         return ""
 
-    return (f'{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime("%d %b %Y, %H:%M:%S")}')
+    return (f'{calendar.day_abbr[ts_new.weekday()]} {ts_new.strftime("%d %b %Y, %H:%M:%S")}')
 
 
 # Function to return the timestamp/datetime object in human readable format (short version); eg.
 # Sun 21 Apr 15:08
 # Sun 21 Apr 24, 15:08 (if show_year == True and current year is different)
+# Sun 21 Apr 25, 15:08 (if always_show_year == True and current year can be the same)
 # Sun 21 Apr (if show_hour == False)
-def get_short_date_from_ts(ts, show_year=False, show_hour=True):
-    if type(ts) is datetime:
-        ts_new = int(round(ts.timestamp()))
-    elif type(ts) is int:
-        ts_new = ts
-    elif type(ts) is float:
-        ts_new = int(round(ts))
+# Sun 21 Apr 15:08:32 (if show_seconds == True)
+# 21 Apr 15:08 (if show_weekday == False)
+def get_short_date_from_ts(ts, show_year=False, show_hour=True, show_weekday=True, show_seconds=False, always_show_year=False):
+    tz = pytz.timezone(LOCAL_TIMEZONE)
+    if always_show_year:
+        show_year = True
+
+    if isinstance(ts, str):
+        try:
+            ts = isoparse(ts)
+        except Exception:
+            return ""
+
+    if isinstance(ts, datetime):
+        if ts.tzinfo is None:
+            ts = pytz.utc.localize(ts)
+        ts_new = ts.astimezone(tz)
+
+    elif isinstance(ts, int):
+        ts_new = datetime.fromtimestamp(ts, tz)
+
+    elif isinstance(ts, float):
+        ts_rounded = int(round(ts))
+        ts_new = datetime.fromtimestamp(ts_rounded, tz)
+
     else:
         return ""
 
     if show_hour:
-        hour_strftime = " %H:%M"
+        hour_strftime = " %H:%M:%S" if show_seconds else " %H:%M"
     else:
         hour_strftime = ""
 
-    if show_year and int(datetime.fromtimestamp(ts_new).strftime("%Y")) != int(datetime.now().strftime("%Y")):
-        if show_hour:
-            hour_prefix = ","
-        else:
-            hour_prefix = ""
-        return (f'{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime(f"%d %b %y{hour_prefix}{hour_strftime}")}')
+    weekday_str = f"{calendar.day_abbr[ts_new.weekday()]} " if show_weekday else ""
+
+    if (show_year and ts_new.year != datetime.now(tz).year) or always_show_year:
+        hour_prefix = "," if show_hour else ""
+        return f'{weekday_str}{ts_new.strftime(f"%d %b %y{hour_prefix}{hour_strftime}")}'
     else:
-        return (f'{calendar.day_abbr[(datetime.fromtimestamp(ts_new)).weekday()]} {datetime.fromtimestamp(ts_new).strftime(f"%d %b{hour_strftime}")}')
+        return f'{weekday_str}{ts_new.strftime(f"%d %b{hour_strftime}")}'
 
 
 # Function to return the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
 def get_hour_min_from_ts(ts, show_seconds=False):
-    if type(ts) is datetime:
-        ts_new = int(round(ts.timestamp()))
-    elif type(ts) is int:
-        ts_new = ts
-    elif type(ts) is float:
-        ts_new = int(round(ts))
+    tz = pytz.timezone(LOCAL_TIMEZONE)
+
+    if isinstance(ts, str):
+        try:
+            ts = isoparse(ts)
+        except Exception:
+            return ""
+
+    if isinstance(ts, datetime):
+        if ts.tzinfo is None:
+            ts = pytz.utc.localize(ts)
+        ts_new = ts.astimezone(tz)
+
+    elif isinstance(ts, int):
+        ts_new = datetime.fromtimestamp(ts, tz)
+
+    elif isinstance(ts, float):
+        ts_rounded = int(round(ts))
+        ts_new = datetime.fromtimestamp(ts_rounded, tz)
+
     else:
         return ""
 
-    if show_seconds:
-        out_strf = "%H:%M:%S"
-    else:
-        out_strf = "%H:%M"
-    return (str(datetime.fromtimestamp(ts_new).strftime(out_strf)))
+    out_strf = "%H:%M:%S" if show_seconds else "%H:%M"
+    return ts_new.strftime(out_strf)
 
 
 # Function to return the range between two timestamps/datetime objects; eg. Sun 21 Apr 14:09 - 14:15
 def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
-    if type(ts1) is datetime:
+    tz = pytz.timezone(LOCAL_TIMEZONE)
+
+    if isinstance(ts1, datetime):
         ts1_new = int(round(ts1.timestamp()))
-    elif type(ts1) is int:
+    elif isinstance(ts1, int):
         ts1_new = ts1
-    elif type(ts1) is float:
+    elif isinstance(ts1, float):
         ts1_new = int(round(ts1))
     else:
         return ""
 
-    if type(ts2) is datetime:
+    if isinstance(ts2, datetime):
         ts2_new = int(round(ts2.timestamp()))
-    elif type(ts2) is int:
+    elif isinstance(ts2, int):
         ts2_new = ts2
-    elif type(ts2) is float:
+    elif isinstance(ts2, float):
         ts2_new = int(round(ts2))
     else:
         return ""
 
-    ts1_strf = datetime.fromtimestamp(ts1_new).strftime("%Y%m%d")
-    ts2_strf = datetime.fromtimestamp(ts2_new).strftime("%Y%m%d")
+    ts1_strf = datetime.fromtimestamp(ts1_new, tz).strftime("%Y%m%d")
+    ts2_strf = datetime.fromtimestamp(ts2_new, tz).strftime("%Y%m%d")
 
     if ts1_strf == ts2_strf:
         if short:
@@ -578,7 +667,12 @@ def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
             out_str = f"{get_short_date_from_ts(ts1_new)}{between_sep}{get_short_date_from_ts(ts2_new)}"
         else:
             out_str = f"{get_date_from_ts(ts1_new)}{between_sep}{get_date_from_ts(ts2_new)}"
-    return (str(out_str))
+
+    return str(out_str)
+
+
+def is_valid_timezone(tz_name):
+    return tz_name in pytz.all_timezones
 
 
 # Signal handler for SIGUSR1 allowing to switch email notifications about profile changes
@@ -891,7 +985,7 @@ def spotify_get_access_token(sp_dc: str):
     if SP_CACHED_ACCESS_TOKEN and now < SP_TOKEN_EXPIRES_AT and check_token_validity(SP_CACHED_ACCESS_TOKEN, SP_CACHED_CLIENT_ID, SP_CACHED_USER_AGENT):
         return SP_CACHED_ACCESS_TOKEN
 
-    # print("─" * 113)
+    # print("─" * HORIZONTAL_LINE)
     # print("* Fetching a new Spotify access token, it might take a while ...")
 
     max_retries = TOKEN_MAX_RETRIES
@@ -1171,6 +1265,7 @@ def spotify_get_user_followers(access_token, user_uri_id):
 
 # Function listing tracks for playlist with specified URI (-l parameter)
 def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
+    added_at_dt: datetime | None = None
     print(f"Listing tracks for playlist '{playlist_url}' ...\n")
 
     user_id_name_mapping = {}
@@ -1201,7 +1296,8 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
                 artist_track = f"{p_artist} - {p_track}"
                 duration = int(str(duration_ms)[0:-3])
                 duration_sum = duration_sum + duration
-                added_at_dt = convert_utc_str_to_tz_datetime(track.get("added_at"), LOCAL_TIMEZONE)
+                added_at_dt = convert_iso_str_to_datetime(track.get("added_at"))
+
                 added_by = track.get("added_by", {}) or {}
                 added_by_id = added_by.get("id", "") or "Spotify"
 
@@ -1220,19 +1316,20 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
 
                 user_track_counts[added_by_id] += 1
 
-                added_at_dt_ts = int(added_at_dt.timestamp())
-                if index == 0:
-                    added_at_ts_lowest = added_at_dt_ts
-                    added_at_ts_highest = added_at_dt_ts
-                if added_at_dt_ts < added_at_ts_lowest:
-                    added_at_ts_lowest = added_at_dt_ts
-                if added_at_dt_ts > added_at_ts_highest:
-                    added_at_ts_highest = added_at_dt_ts
-                added_at_dt_new = datetime.fromtimestamp(int(added_at_dt_ts)).strftime("%d %b %Y, %H:%M:%S")
-                added_at_dt_new_week_day = calendar.day_abbr[datetime.fromtimestamp(int(added_at_dt_ts)).weekday()]
-                artist_track = artist_track[:75]
-                line_new = '%75s    %20s    %3s     %10s' % (artist_track, added_at_dt_new, added_at_dt_new_week_day, added_by_name)
-                print(line_new)
+                if added_at_dt:
+                    added_at_dt_ts = int(added_at_dt.timestamp())
+                    if index == 0:
+                        added_at_ts_lowest = added_at_dt_ts
+                        added_at_ts_highest = added_at_dt_ts
+                    if added_at_dt_ts < added_at_ts_lowest:
+                        added_at_ts_lowest = added_at_dt_ts
+                    if added_at_dt_ts > added_at_ts_highest:
+                        added_at_ts_highest = added_at_dt_ts
+                    added_at_dt_str = get_short_date_from_ts(added_at_dt, show_weekday=False, show_seconds=True, always_show_year=True)
+                    added_at_dt_week_day = calendar.day_abbr[added_at_dt.weekday()]
+                    artist_track = artist_track[:75]
+                    line_new = '%75s    %20s    %3s     %10s' % (artist_track, added_at_dt_str, added_at_dt_week_day, added_by_name)
+                    print(line_new)
 
     print(f"\nName:\t\t'{p_name}'")
     if p_descr:
@@ -1287,6 +1384,8 @@ def spotify_search_users(access_token, username):
 
     print(f"Searching for users with '{username}' string ...\n")
 
+    print("─" * HORIZONTAL_LINE)
+
     try:
         response = SESSION.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         response.raise_for_status()
@@ -1300,7 +1399,7 @@ def spotify_search_users(access_token, username):
             print(f"User URI:\t\t{user['data']['uri']}")
             print(f"User URI ID:\t\t{user['data']['id']}")
             print(f"User URL:\t\t{spotify_convert_uri_to_url(user['data']['uri'])}")
-            print("─" * 80)
+            print("─" * HORIZONTAL_LINE)
     else:
         print("No results")
 
@@ -1309,6 +1408,7 @@ def spotify_search_users(access_token, username):
 def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, playlists_to_skip=None):
     list_of_playlists = []
     error_while_processing = False
+    added_at_dt: datetime | None = None
 
     if playlists_to_skip is None:
         playlists_to_skip = []
@@ -1372,21 +1472,20 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                     added_by_name = added_by_id
 
                             if added_at:
-                                added_at_dt = convert_utc_str_to_tz_datetime(added_at, LOCAL_TIMEZONE)
-                                added_at_dt_ts = int(added_at_dt.timestamp())
-                                added_at_str = get_date_from_ts(added_at_dt_ts)
+                                added_at_dt = convert_iso_str_to_datetime(added_at)
+                                if added_at_dt:
+                                    added_at_dt_ts = int(added_at_dt.timestamp())
 
-                                if index == 0:
-                                    added_at_ts_lowest = added_at_dt_ts
-                                    added_at_ts_highest = added_at_dt_ts
-                                if added_at_dt_ts < added_at_ts_lowest:
-                                    added_at_ts_lowest = added_at_dt_ts
-                                if added_at_dt_ts > added_at_ts_highest:
-                                    added_at_ts_highest = added_at_dt_ts
-                                added_at_dt_new = datetime.fromtimestamp(int(added_at_dt_ts)).strftime("%d %b %Y, %H:%M:%S")
+                                    if index == 0:
+                                        added_at_ts_lowest = added_at_dt_ts
+                                        added_at_ts_highest = added_at_dt_ts
+                                    if added_at_dt_ts < added_at_ts_lowest:
+                                        added_at_ts_lowest = added_at_dt_ts
+                                    if added_at_dt_ts > added_at_ts_highest:
+                                        added_at_ts_highest = added_at_dt_ts
 
                             if effective_get_tracks and added_at:
-                                list_of_tracks.append({"artist": p_artist, "track": p_track, "duration": track_duration, "added_at": added_at_str, "uri": track_uri, "added_by": added_by_name, "added_by_id": added_by_id})
+                                list_of_tracks.append({"artist": p_artist, "track": p_track, "duration": track_duration, "added_at": added_at_dt, "uri": track_uri, "added_by": added_by_name, "added_by_id": added_by_id})
 
                 except Exception as e:
                     print(f"Error while processing playlist with URI {p_uri}, skipping for now - {e}")
@@ -1398,10 +1497,10 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                 p_last_track_date = None
 
                 if added_at_ts_lowest > 0:
-                    p_creation_date = datetime.fromtimestamp(int(added_at_ts_lowest))
+                    p_creation_date = datetime.fromtimestamp(int(added_at_ts_lowest), pytz.timezone(LOCAL_TIMEZONE))
 
                 if added_at_ts_highest > 0:
-                    p_last_track_date = datetime.fromtimestamp(int(added_at_ts_highest))
+                    p_last_track_date = datetime.fromtimestamp(int(added_at_ts_highest), pytz.timezone(LOCAL_TIMEZONE))
 
                 p_collaborators_count = len(user_id_name_mapping)
 
@@ -1415,8 +1514,8 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
 
 # Function printing detailed info about user's playlists
 def spotify_print_public_playlists(list_of_playlists, playlists_to_skip=None):
-    p_update = datetime.min
-    p_update_recent = datetime.min
+    p_update = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
+    p_update_recent = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
     p_name = ""
     p_name_recent = ""
     p_url = ""
@@ -1450,15 +1549,9 @@ def spotify_print_public_playlists(list_of_playlists, playlists_to_skip=None):
 
                 print(f"- '{p_name}'{skipped_from_processing}\n[ {p_url} ]\n[ songs: {p_tracks}, likes: {p_likes}, collaborators: {p_collaborators_count} ]\n[ owner: {p_owner} ]")
                 if p_date:
-                    p_date_str = p_date.strftime("%d %b %Y, %H:%M:%S")
-                    p_date_week_day = calendar.day_abbr[p_date.weekday()]
-                    p_date_since = calculate_timespan(int(time.time()), p_date)
-                    print(f"[ date: {p_date_week_day} {p_date_str} - {p_date_since} ago ]")
+                    print(f"[ date: {get_date_from_ts(p_date)} - {calculate_timespan(now_local(), p_date)} ago ]")
                 if p_update:
-                    p_update_str = p_update.strftime("%d %b %Y, %H:%M:%S")
-                    p_update_week_day = calendar.day_abbr[p_update.weekday()]
-                    p_update_since = calculate_timespan(int(time.time()), p_update)
-                    print(f"[ update: {p_update_week_day} {p_update_str} - {p_update_since} ago ]")
+                    print(f"[ update: {get_date_from_ts(p_update)} - {calculate_timespan(now_local(), p_update)} ago ]")
                 if p_descr:
                     print(f"'{p_descr}'")
                 print()
@@ -1468,11 +1561,8 @@ def spotify_print_public_playlists(list_of_playlists, playlists_to_skip=None):
                 p_name_recent = p_name
                 p_url_recent = p_url
 
-        if p_update_recent is not None and p_update_recent > datetime.min and p_name_recent and p_url_recent:
-            p_update_recent_str = p_update_recent.strftime("%d %b %Y, %H:%M:%S")
-            p_update_recent_week_day = calendar.day_abbr[p_update_recent.weekday()]
-            p_update_recent_since = calculate_timespan(int(time.time()), p_update_recent)
-            print(f"Recently updated playlist:\n\n- '{p_name_recent}'\n[ {p_url_recent} ]\n[ update: {p_update_recent_week_day} {p_update_recent_str} - {p_update_recent_since} ago ]")
+        if p_update_recent is not None and p_update_recent > datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE)) and p_name_recent and p_url_recent:
+            print(f"Recently updated playlist:\n\n- '{p_name_recent}'\n[ {p_url_recent} ]\n[ update: {get_date_from_ts(p_update_recent)} - {calculate_timespan(now_local(), p_update_recent)} ago ]")
 
 
 # Function printing detailed info about user with specified URI ID (-i parameter)
@@ -1519,8 +1609,8 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
     profile_pic_file_tmp = f"spotify_{user_uri_id}_profile_pic_tmp_info.jpeg"
     if image_url:
         if save_profile_pic(image_url, profile_pic_file_tmp):
-            profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)))
-            print(f"({get_short_date_from_ts(profile_pic_mdate_dt, True)} - {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False)} ago)")
+            profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)), pytz.timezone(LOCAL_TIMEZONE))
+            print(f"({get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} - {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)")
             if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
                 try:
                     subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file_tmp}'), shell=True)
@@ -1656,7 +1746,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
 
     try:
         if csv_file_name:
-            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), f_str, username, f_old_count, f_count)
+            write_csv_entry(csv_file_name, now_local_naive(), f_str, username, f_old_count, f_count)
     except Exception as e:
         print(f"* Cannot write CSV entry - {e}")
 
@@ -1684,7 +1774,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                     list_of_added_f_list += f"- {p_name} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n"
                     try:
                         if csv_file_name:
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), f_added_csv, username, "", p_name)
+                            write_csv_entry(csv_file_name, now_local_naive(), f_added_csv, username, "", p_name)
                     except Exception as e:
                         print(f"* Cannot write CSV entry - {e}")
             else:
@@ -1693,7 +1783,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                     list_of_added_f_list += f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n"
                     try:
                         if csv_file_name:
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), f_added_csv, username, "", f_dict["name"])
+                            write_csv_entry(csv_file_name, now_local_naive(), f_added_csv, username, "", f_dict["name"])
                     except Exception as e:
                         print(f"* Cannot write CSV entry - {e}")
         print()
@@ -1719,7 +1809,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                     list_of_removed_f_list += f"- {p_name} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n"
                     try:
                         if csv_file_name:
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), f_removed_csv, username, p_name, "")
+                            write_csv_entry(csv_file_name, now_local_naive(), f_removed_csv, username, p_name, "")
                     except Exception as e:
                         print(f"* Cannot write CSV entry - {e}")
             else:
@@ -1728,7 +1818,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                     list_of_removed_f_list += f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n"
                     try:
                         if csv_file_name:
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), f_removed_csv, username, f_dict["name"], "")
+                            write_csv_entry(csv_file_name, now_local_naive(), f_removed_csv, username, f_dict["name"], "")
                     except Exception as e:
                         print(f"* Cannot write CSV entry - {e}")
         print()
@@ -1751,9 +1841,10 @@ def save_profile_pic(user_image_url, image_file_name):
         image_response = req.get(user_image_url, timeout=FUNCTION_TIMEOUT, stream=True, verify=VERIFY_SSL)
         image_response.raise_for_status()
         url_time = image_response.headers.get('last-modified')
+
         url_time_in_tz_ts = 0
         if url_time:
-            url_time_in_tz = convert_utc_str_to_tz_datetime(url_time, LOCAL_TIMEZONE, 2)
+            url_time_in_tz = parsedate_to_datetime(url_time).astimezone(pytz.timezone(LOCAL_TIMEZONE))
             url_time_in_tz_ts = int(url_time_in_tz.timestamp())
 
         if image_response.status_code == 200:
@@ -1916,8 +2007,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             if playlists_read:
                 playlists_old_count = playlists_read[0]
                 playlists_old = playlists_read[1]
-                playlists_mdate = datetime.fromtimestamp(int(os.path.getmtime(playlists_file))).strftime("%d %b %Y, %H:%M:%S")
-                print(f"* Playlists ({playlists_old_count}) loaded from file '{playlists_file}' ({playlists_mdate})")
+                playlists_mdate = datetime.fromtimestamp(int(os.path.getmtime(playlists_file)), pytz.timezone(LOCAL_TIMEZONE))
+                print(f"* Playlists ({playlists_old_count}) loaded from file '{playlists_file}' ({get_short_date_from_ts(playlists_mdate, show_weekday=False, always_show_year=True)})")
         if not playlists_read:
             playlists_to_save = []
             playlists_to_save.append(playlists_count)
@@ -1944,8 +2035,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
         if followers_read:
             followers_old_count = followers_read[0]
             followers_old = followers_read[1]
-            followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(followers_file))).strftime("%d %b %Y, %H:%M:%S")
-            print(f"* Followers ({followers_old_count}) loaded from file '{followers_file}' ({followers_mdate})")
+            followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(followers_file)), pytz.timezone(LOCAL_TIMEZONE))
+            print(f"* Followers ({followers_old_count}) loaded from file '{followers_file}' ({get_short_date_from_ts(followers_mdate, show_weekday=False, always_show_year=True)})")
     if not followers_read:
         followers_to_save = []
         followers_to_save.append(followers_count)
@@ -1972,8 +2063,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
         if followings_read:
             followings_old_count = followings_read[0]
             followings_old = followings_read[1]
-            followings_mdate = datetime.fromtimestamp(int(os.path.getmtime(followings_file))).strftime("%d %b %Y, %H:%M:%S")
-            print(f"* Followings ({followings_old_count}) loaded from file '{followings_file}' ({followings_mdate})")
+            followings_mdate = datetime.fromtimestamp(int(os.path.getmtime(followings_file)), pytz.timezone(LOCAL_TIMEZONE))
+            print(f"* Followings ({followings_old_count}) loaded from file '{followings_file}' ({get_short_date_from_ts(followings_mdate, show_weekday=False, always_show_year=True)})")
     if not followings_read:
         followings_to_save = []
         followings_to_save.append(followings_count)
@@ -1996,13 +2087,13 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
         # user has no profile pic, but it exists in the filesystem
         if not image_url and os.path.isfile(profile_pic_file):
-            profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)))
-            print(f"* User {username} has removed profile picture added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ! (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})")
+            profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), pytz.timezone(LOCAL_TIMEZONE))
+            print(f"* User {username} has removed profile picture added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})")
             os.replace(profile_pic_file, profile_pic_file_old)
 
             try:
                 if csv_file_name:
-                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Removed", username, profile_pic_mdate_dt, "")
+                    write_csv_entry(csv_file_name, now_local_naive(), "Profile Picture Removed", username, convert_to_local_naive(profile_pic_mdate_dt), "")
             except Exception as e:
                 print(f"* Cannot write CSV entry - {e}")
 
@@ -2011,9 +2102,9 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
         # user has profile pic, but it does not exist in the filesystem
         elif image_url and not os.path.isfile(profile_pic_file):
             if save_profile_pic(image_url, profile_pic_file):
-                profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)))
+                profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), pytz.timezone(LOCAL_TIMEZONE))
                 print(f"* User {username} profile picture saved to '{profile_pic_file}'")
-                print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False)} ago)")
+                print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)")
 
                 try:
                     if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
@@ -2024,7 +2115,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
                 try:
                     if csv_file_name:
-                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Created", username, "", profile_pic_mdate_dt)
+                        write_csv_entry(csv_file_name, now_local_naive(), "Profile Picture Created", username, "", convert_to_local_naive(profile_pic_mdate_dt))
                 except Exception as e:
                     print(f"* Cannot write CSV entry - {e}")
 
@@ -2035,17 +2126,17 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
         # user has profile pic and it exists in the filesystem, but we check if it has not changed
         elif image_url and os.path.isfile(profile_pic_file):
-            profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)))
+            profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), pytz.timezone(LOCAL_TIMEZONE))
             if save_profile_pic(image_url, profile_pic_file_tmp):
-                profile_pic_tmp_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)))
+                profile_pic_tmp_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)), pytz.timezone(LOCAL_TIMEZONE))
 
                 if not compare_images(profile_pic_file, profile_pic_file_tmp) and profile_pic_mdate_dt != profile_pic_tmp_mdate_dt:
-                    print(f"* User {username} has changed profile picture ! (previous one added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} - {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)")
-                    print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)")
+                    print(f"* User {username} has changed profile picture ! (previous one added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} - {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)")
+                    print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)")
 
                     try:
                         if csv_file_name:
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Changed", username, profile_pic_mdate_dt, profile_pic_tmp_mdate_dt)
+                            write_csv_entry(csv_file_name, now_local_naive(), "Profile Picture Changed", username, convert_to_local_naive(profile_pic_mdate_dt), convert_to_local_naive(profile_pic_tmp_mdate_dt))
                     except Exception as e:
                         print(f"* Cannot write CSV entry - {e}")
 
@@ -2060,7 +2151,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
                 else:
                     print(f"* Profile picture '{profile_pic_file}' already exists")
-                    print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False)} ago)")
+                    print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)")
                     try:
                         os.remove(profile_pic_file_tmp)
                     except Exception:
@@ -2140,7 +2231,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
             try:
                 if csv_file_name:
-                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Username", username, username_old, username)
+                    write_csv_entry(csv_file_name, now_local_naive(), "Username", username, username_old, username)
             except Exception as e:
                 print(f"* Cannot write CSV entry - {e}")
 
@@ -2209,19 +2300,19 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
             # user has no profile pic, but it exists in the filesystem
             if not image_url and os.path.isfile(profile_pic_file):
-                profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)))
-                print(f"* User {username} has removed profile picture added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ! (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n")
+                profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), pytz.timezone(LOCAL_TIMEZONE))
+                print(f"* User {username} has removed profile picture added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n")
                 os.replace(profile_pic_file, profile_pic_file_old)
 
                 try:
                     if csv_file_name:
-                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Removed", username, profile_pic_mdate_dt, "")
+                        write_csv_entry(csv_file_name, now_local_naive(), "Profile Picture Removed", username, convert_to_local_naive(profile_pic_mdate_dt), "")
                 except Exception as e:
                     print(f"* Cannot write CSV entry - {e}")
 
                 if profile_notification:
-                    m_subject = f"Spotify user {username} has removed profile picture ! (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
-                    m_body = f"Spotify user {username} has removed profile picture added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    m_subject = f"Spotify user {username} has removed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
+                    m_body = f"Spotify user {username} has removed profile picture added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
@@ -2233,9 +2324,9 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                 print(f"* User {username} has set profile picture !")
                 m_body_html_pic_saved_text = ""
                 if save_profile_pic(image_url, profile_pic_file):
-                    profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)))
+                    profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), pytz.timezone(LOCAL_TIMEZONE))
                     print(f"* User profile picture saved to '{profile_pic_file}'")
-                    print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False)} ago)\n")
+                    print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)\n")
                     m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
 
                     try:
@@ -2247,14 +2338,14 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
                     try:
                         if csv_file_name:
-                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Created", username, "", profile_pic_mdate_dt)
+                            write_csv_entry(csv_file_name, now_local_naive(), "Profile Picture Created", username, "", convert_to_local_naive(profile_pic_mdate_dt))
                     except Exception as e:
                         print(f"* Cannot write CSV entry - {e}")
 
                     if profile_notification:
-                        m_subject = f"Spotify user {username} has set profile picture ! ({get_short_date_from_ts(profile_pic_mdate_dt, True)})"
-                        m_body = f"Spotify user {username} has set profile picture !\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        m_body_html = f"Spotify user <b>{username}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, True)}</b> ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                        m_subject = f"Spotify user {username} has set profile picture ! ({get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)})"
+                        m_body = f"Spotify user {username} has set profile picture !\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                        m_body_html = f"Spotify user <b>{username}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
                         print(f"Sending email notification to {RECEIVER_EMAIL}")
 
                         send_email(m_subject, m_body, m_body_html, SMTP_SSL, profile_pic_file, "profile_pic")
@@ -2267,18 +2358,18 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
             # user has profile pic and it exists in the filesystem, but we check if it has not changed
             elif image_url and os.path.isfile(profile_pic_file):
-                profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)))
+                profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), pytz.timezone(LOCAL_TIMEZONE))
                 if save_profile_pic(image_url, profile_pic_file_tmp):
-                    profile_pic_tmp_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)))
+                    profile_pic_tmp_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)), pytz.timezone(LOCAL_TIMEZONE))
 
                     if not compare_images(profile_pic_file, profile_pic_file_tmp) and profile_pic_mdate_dt != profile_pic_tmp_mdate_dt:
-                        print(f"* User {username} has changed profile picture ! (previous one added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} - {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)")
-                        print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n")
+                        print(f"* User {username} has changed profile picture ! (previous one added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} - {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)")
+                        print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n")
                         m_body_html_pic_saved_text = ""
 
                         try:
                             if csv_file_name:
-                                write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Profile Picture Changed", username, profile_pic_mdate_dt, profile_pic_tmp_mdate_dt)
+                                write_csv_entry(csv_file_name, now_local_naive(), "Profile Picture Changed", username, convert_to_local_naive(profile_pic_mdate_dt), convert_to_local_naive(profile_pic_tmp_mdate_dt))
                         except Exception as e:
                             print(f"* Cannot write CSV entry - {e}")
 
@@ -2293,9 +2384,9 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
                         if profile_notification:
                             m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
-                            m_subject = f"Spotify user {username} has changed profile picture ! (after {calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
-                            m_body = f"Spotify user {username} has changed profile picture !\n\nPrevious one added on {get_short_date_from_ts(profile_pic_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)} ({calculate_timespan(int(time.time()), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                            m_body_html = f"Spotify user <b>{username}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, True)}</b> ({calculate_timespan(int(time.time()), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, True)}</b> ({calculate_timespan(int(time.time()), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                            m_subject = f"Spotify user {username} has changed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
+                            m_body = f"Spotify user {username} has changed profile picture !\n\nPrevious one added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                            m_body_html = f"Spotify user <b>{username}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
                             print(f"Sending email notification to {RECEIVER_EMAIL}")
                             send_email(m_subject, m_body, m_body_html, SMTP_SSL, profile_pic_file, "profile_pic")
 
@@ -2364,7 +2455,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                     print(p_message)
                                     try:
                                         if csv_file_name:
-                                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Playlist Likes", p_name, p_likes_old, p_likes)
+                                            write_csv_entry(csv_file_name, now_local_naive(), "Playlist Likes", p_name, p_likes_old, p_likes)
                                     except Exception as e:
                                         print(f"* Cannot write CSV entry - {e}")
                                     m_subject = f"Spotify user {username} number of likes for playlist '{p_name}' has changed! ({p_likes_diff_str}, {p_likes_old} -> {p_likes})"
@@ -2390,7 +2481,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
                                     try:
                                         if csv_file_name:
-                                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Collaborators Number", p_name, p_collaborators_old, p_collaborators)
+                                            write_csv_entry(csv_file_name, now_local_naive(), "Collaborators Number", p_name, p_collaborators_old, p_collaborators)
                                     except Exception as e:
                                         print(f"* Cannot write CSV entry - {e}")
 
@@ -2411,7 +2502,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                             p_message_added_collaborators += added_collab
                                             try:
                                                 if csv_file_name:
-                                                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Added Collaborator", p_name, "", collab_name)
+                                                    write_csv_entry(csv_file_name, now_local_naive(), "Added Collaborator", p_name, "", collab_name)
                                             except Exception as e:
                                                 print(f"* Cannot write CSV entry - {e}")
 
@@ -2426,7 +2517,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                             p_message_removed_collaborators += removed_collab
                                             try:
                                                 if csv_file_name:
-                                                    write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Collaborator", p_name, collab_name, "")
+                                                    write_csv_entry(csv_file_name, now_local_naive(), "Removed Collaborator", p_name, collab_name, "")
                                             except Exception as e:
                                                 print(f"* Cannot write CSV entry - {e}")
 
@@ -2444,6 +2535,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                 # Number of tracks changed
                                 if p_tracks != p_tracks_old or p_update != p_update_old:
                                     try:
+
                                         p_tracks_diff = p_tracks - p_tracks_old
                                         p_tracks_diff_str = ""
 
@@ -2453,11 +2545,11 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                             p_tracks_diff_str = str(p_tracks_diff)
 
                                         if p_tracks != p_tracks_old and not p_update and p_update_old:
-                                            p_update = datetime.fromtimestamp(int(time.time()))
+                                            p_update = now_local()
 
                                         if p_update and p_update_old:
                                             if p_update < p_update_old or p_update == p_update_old:
-                                                p_update = datetime.fromtimestamp(int(time.time()))
+                                                p_update = now_local()
 
                                         p_after_str = ""
                                         if p_tracks_diff != 0:
@@ -2475,7 +2567,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                         continue
                                     try:
                                         if csv_file_name:
-                                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Playlist Number of Tracks", p_name, p_tracks_old, p_tracks)
+                                            write_csv_entry(csv_file_name, now_local_naive(), "Playlist Number of Tracks", p_name, p_tracks_old, p_tracks)
                                     except Exception as e:
                                         print(f"* Cannot write CSV entry - {e}")
                                     removed_tracks = compare_two_lists_of_dicts(p_tracks_list_old, p_tracks_list)
@@ -2491,13 +2583,13 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                             if "artist" in f_dict and "track" in f_dict:
                                                 apple_search_url, genius_search_url, youtube_music_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
                                                 tempuri = f'spotify:user:{f_dict["added_by_id"]}'
-                                                added_track = f'- {f_dict["artist"]} - {f_dict["track"]} [ {f_dict["added_at"]}, {f_dict["added_by"]} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict["uri"])} ]\n[ Apple Music URL: {apple_search_url} ]\n[ YouTube Music URL: {youtube_music_search_url} ]\n[ Genius URL: {genius_search_url} ]\n[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
+                                                added_track = f'- {f_dict["artist"]} - {f_dict["track"]} [ {get_date_from_ts(f_dict["added_at"])}, {f_dict["added_by"]} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict["uri"])} ]\n[ Apple Music URL: {apple_search_url} ]\n[ YouTube Music URL: {youtube_music_search_url} ]\n[ Genius URL: {genius_search_url} ]\n[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
                                                 p_message_added_tracks += added_track
-                                                added_at_dt = datetime.strptime(f_dict['added_at'], "%a %d %b %Y, %H:%M:%S")
+                                                added_at_dt = f_dict['added_at']
                                                 print(added_track, end="")
                                                 try:
                                                     if csv_file_name:
-                                                        write_csv_entry(csv_file_name, added_at_dt, "Added Track", p_name, f_dict['added_by'], f_dict["artist"] + " - " + f_dict["track"])
+                                                        write_csv_entry(csv_file_name, convert_to_local_naive(added_at_dt), "Added Track", p_name, f_dict['added_by'], f_dict["artist"] + " - " + f_dict["track"])
                                                 except Exception as e:
                                                     print(f"* Cannot write CSV entry - {e}")
 
@@ -2509,12 +2601,12 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                             if "artist" in f_dict and "track" in f_dict:
                                                 apple_search_url, genius_search_url, youtube_music_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
                                                 tempuri = f'spotify:user:{f_dict["added_by_id"]}'
-                                                removed_track = f'- {f_dict["artist"]} - {f_dict["track"]} [ {f_dict["added_at"]}, {f_dict["added_by"]} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict["uri"])} ]\n[ Apple Music URL: {apple_search_url} ]\n[ YouTube Music URL: {youtube_music_search_url} ]\n[ Genius URL: {genius_search_url} ]\n[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
+                                                removed_track = f'- {f_dict["artist"]} - {f_dict["track"]} [ {get_date_from_ts(f_dict["added_at"])}, {f_dict["added_by"]} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict["uri"])} ]\n[ Apple Music URL: {apple_search_url} ]\n[ YouTube Music URL: {youtube_music_search_url} ]\n[ Genius URL: {genius_search_url} ]\n[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
                                                 p_message_removed_tracks += removed_track
                                                 print(removed_track, end="")
                                                 try:
                                                     if csv_file_name:
-                                                        write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Removed Track", p_name, f_dict["artist"] + " - " + f_dict["track"], "")
+                                                        write_csv_entry(csv_file_name, now_local_naive(), "Removed Track", p_name, f_dict["artist"] + " - " + f_dict["track"], "")
                                                 except Exception as e:
                                                     print(f"* Cannot write CSV entry - {e}")
 
@@ -2540,7 +2632,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                     print(p_message)
                                     try:
                                         if csv_file_name:
-                                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Playlist Name", username, p_name_old, p_name)
+                                            write_csv_entry(csv_file_name, now_local_naive(), "Playlist Name", username, p_name_old, p_name)
                                     except Exception as e:
                                         print(f"* Cannot write CSV entry - {e}")
                                     m_subject = f"Spotify user {username} playlist '{p_name_old}' name changed to '{p_name}'!"
@@ -2557,7 +2649,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                     print(p_message)
                                     try:
                                         if csv_file_name:
-                                            write_csv_entry(csv_file_name, datetime.fromtimestamp(int(time.time())), "Playlist Description", p_name, p_descr_old, p_descr)
+                                            write_csv_entry(csv_file_name, now_local_naive(), "Playlist Description", p_name, p_descr_old, p_descr)
                                     except Exception as e:
                                         print(f"* Cannot write CSV entry - {e}")
                                     m_subject = f"Spotify user {username} playlist '{p_name}' description has changed !"
@@ -2643,14 +2735,19 @@ if __name__ == "__main__":
 
     local_tz = None
     if LOCAL_TIMEZONE == "Auto":
-        try:
-            local_tz = get_localzone()
-        except NameError:
-            pass
+        if get_localzone is not None:
+            try:
+                local_tz = get_localzone()
+            except Exception:
+                pass
         if local_tz:
             LOCAL_TIMEZONE = str(local_tz)
         else:
-            print("* Error: Cannot detect local timezone, consider setting LOCAL_TIMEZONE manually !")
+            print("* Error: Cannot detect local timezone, consider setting LOCAL_TIMEZONE to your local timezone manually !")
+            sys.exit(1)
+    else:
+        if not is_valid_timezone(LOCAL_TIMEZONE):
+            print(f"* Error: Configured LOCAL_TIMEZONE '{LOCAL_TIMEZONE}' is not valid. Please use a valid pytz timezone name.")
             sys.exit(1)
 
     sys.stdout.write("* Checking internet connectivity ... ")
