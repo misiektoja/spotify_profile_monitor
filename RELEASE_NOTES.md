@@ -2,6 +2,23 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 2.1 (07 Apr 2025)
+
+**Features and Improvements**:
+
+- **IMPROVE:** Display URL of collaborator user instead of just ID (thanks [@filipw-ctrl](https://github.com/filipw-ctrl))
+- **IMPROVE:** Added display of the number of tracks contributed by each collaborator with percentage breakdown to better visualize individual contributions
+- **IMPROVE:** Implemented caching for playlist info to reduce redundant API calls
+- **IMPROVE:** Improved detection and handling of completely removed or private playlists
+- **IMPROVE:** Enhanced error messages for better debugging and clarity
+- **IMPROVE:** Updated horizontal line for improved output aesthetics
+
+**Bug fixes**:
+
+- **BUGFIX:** Refactored playlist processing to handle erratic Spotify API behavior (e.g. sudden playlist removal/addition) (fixes [#7](https://github.com/misiektoja/spotify_profile_monitor/issues/7))
+- **BUGFIX:** Fixed issue where Spotify username changes caused incorrect detection of playlist changes on the user profile
+- **BUGFIX:** Fixed issue where manually defined LOCAL_TIMEZONE wasn't applied during timestamp conversion
+
 # Changes in 2.0.1 (26 Mar 2025)
 
 **Bug fixes**:
