@@ -1042,6 +1042,13 @@ def remove_key_from_list_of_dicts(list_of_dicts, del_key):
                 del items[del_key]
 
 
+# Removes the specified key from the list of dictionaries, but preserves the original list
+def remove_key_from_list_of_dicts_copy(list_of_dicts, del_key):
+    if not list_of_dicts:
+        return []
+    return [{k: v for k, v in d.items() if k != del_key} for d in list_of_dicts]
+
+
 # Converts Spotify URI (e.g. spotify:user:username) to URL (e.g. https://open.spotify.com/user/username)
 def spotify_convert_uri_to_url(uri):
     # add si parameter so link opens in native Spotify app after clicking
@@ -1551,7 +1558,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                 list_of_tracks.append({"artist": p_artist, "track": p_track, "duration": track_duration, "added_at": added_at_dt, "uri": track_uri, "added_by": added_by_name, "added_by_id": added_by_id})
 
                 except Exception as e:
-                    print(f"Unexpected error while building playlist data {spotify_format_playlist_reference(p_uri)} - {e}")
+                    print(f"Unexpected error while building playlist data for: {spotify_format_playlist_reference(p_uri)} - {e}")
                     print_cur_ts("Timestamp:\t\t")
                     error_while_processing = True
                     continue
@@ -1796,8 +1803,11 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
 
     f_diff_str = "+" + str(f_diff) if f_diff > 0 else str(f_diff)
 
-    removed_f_list = compare_two_lists_of_dicts(f_list_old, f_list)
-    added_f_list = compare_two_lists_of_dicts(f_list, f_list_old)
+    f_list_stripped = remove_key_from_list_of_dicts_copy(f_list, "owner_name")
+    f_list_old_stripped = remove_key_from_list_of_dicts_copy(f_list_old, "owner_name")
+
+    removed_f_list = compare_two_lists_of_dicts(f_list_old_stripped, f_list_stripped)
+    added_f_list = compare_two_lists_of_dicts(f_list_stripped, f_list_old_stripped)
 
     list_of_added_f_list = ""
     list_of_removed_f_list = ""
