@@ -158,6 +158,15 @@ SERVER_TIME_URL = "https://open.spotify.com/server-time"
 # Width of horizontal line (─)
 HORIZONTAL_LINE = 113
 
+# Cache for playlist info to avoid redundant API calls
+PLAYLIST_INFO_CACHE = {}
+
+# Cache TTL for playlist info
+PLAYLIST_INFO_CACHE_TTL = (SPOTIFY_CHECK_INTERVAL * 2 if SPOTIFY_CHECK_INTERVAL > 43200 else 43200)  # 12h
+
+# Tracks temporarily glitched playlists to suppress false alerts
+GLITCH_CACHE = {}
+
 TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / SPOTIFY_CHECK_INTERVAL
 
 stdout_bck = None
@@ -270,7 +279,7 @@ def signal_handler(sig, frame):
     sys.exit(0)
 
 
-# Function to check internet connectivity
+# Checks internet connectivity
 def check_internet():
     url = CHECK_INTERNET_URL
     try:
@@ -282,7 +291,7 @@ def check_internet():
         sys.exit(1)
 
 
-# Function to convert absolute value of seconds to human readable format
+# Converts absolute value of seconds to human readable format
 def display_time(seconds, granularity=2):
     intervals = (
         ('years', 31556952),  # approximation
@@ -308,8 +317,7 @@ def display_time(seconds, granularity=2):
         return '0 seconds'
 
 
-# Function to calculate time span between two timestamps in seconds
-# Accepts timestamp integers, floats and datetime objects
+# Calculates time span between two timestamps, accepts timestamp integers, floats and datetime objects
 def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True, show_minutes=True, show_seconds=True, granularity=3):
     result = []
     intervals = ['years', 'months', 'weeks', 'days', 'hours', 'minutes', 'seconds']
@@ -395,7 +403,7 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
         return '0 seconds'
 
 
-# Function to send email notification
+# Sends email notification
 def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1", smtp_timeout=15):
     fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
     email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
@@ -471,7 +479,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
     return 0
 
 
-# Function to write CSV entry
+# Writes CSV entry
 def write_csv_entry(csv_file_name, timestamp, object_type, object_name, old, new):
     try:
         csv_file = open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8")
@@ -482,6 +490,7 @@ def write_csv_entry(csv_file_name, timestamp, object_type, object_name, old, new
         raise
 
 
+# Converts a datetime to local timezone and removes timezone info (naive)
 def convert_to_local_naive(dt: datetime | None = None):
     tz = pytz.timezone(LOCAL_TIMEZONE)
 
@@ -496,14 +505,17 @@ def convert_to_local_naive(dt: datetime | None = None):
         return None
 
 
+# Returns current local time without timezone info (naive)
 def now_local_naive():
     return datetime.now(pytz.timezone(LOCAL_TIMEZONE)).replace(microsecond=0, tzinfo=None)
 
 
+# Returns current local time with timezone info (aware)
 def now_local():
     return datetime.now(pytz.timezone(LOCAL_TIMEZONE))
 
 
+# Converts ISO datetime string to localized datetime (aware)
 def convert_iso_str_to_datetime(dt_str):
     if not dt_str:
         return None
@@ -517,18 +529,18 @@ def convert_iso_str_to_datetime(dt_str):
         return None
 
 
-# Function to return the current date/time in human readable format; eg. Sun 21 Apr 2024, 15:08:45
+# Returns the current date/time in human readable format; eg. Sun 21 Apr 2024, 15:08:45
 def get_cur_ts(ts_str=""):
     return (f'{ts_str}{calendar.day_abbr[(now_local_naive()).weekday()]}, {now_local_naive().strftime("%d %b %Y, %H:%M:%S")}')
 
 
-# Function to print the current timestamp in human readable format; eg. Sun 21 Apr 2024, 15:08:45
+# Prints the current timestamp in human readable format; eg. Sun 21 Apr 2024, 15:08:45
 def print_cur_ts(ts_str=""):
     print(get_cur_ts(str(ts_str)))
     print("─" * HORIZONTAL_LINE)
 
 
-# Function to return the timestamp/datetime object in human readable format (long version); eg. Sun 21 Apr 2024, 15:08:45
+# Returns the timestamp/datetime object in human readable format (long version); eg. Sun 21 Apr 2024, 15:08:45
 def get_date_from_ts(ts):
     tz = pytz.timezone(LOCAL_TIMEZONE)
 
@@ -556,7 +568,7 @@ def get_date_from_ts(ts):
     return (f'{calendar.day_abbr[ts_new.weekday()]} {ts_new.strftime("%d %b %Y, %H:%M:%S")}')
 
 
-# Function to return the timestamp/datetime object in human readable format (short version); eg.
+# Returns the timestamp/datetime object in human readable format (short version); eg.
 # Sun 21 Apr 15:08
 # Sun 21 Apr 24, 15:08 (if show_year == True and current year is different)
 # Sun 21 Apr 25, 15:08 (if always_show_year == True and current year can be the same)
@@ -603,7 +615,7 @@ def get_short_date_from_ts(ts, show_year=False, show_hour=True, show_weekday=Tru
         return f'{weekday_str}{ts_new.strftime(f"%d %b{hour_strftime}")}'
 
 
-# Function to return the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
+# Returns the timestamp/datetime object in human readable format (only hour, minutes and optionally seconds): eg. 15:08:12
 def get_hour_min_from_ts(ts, show_seconds=False):
     tz = pytz.timezone(LOCAL_TIMEZONE)
 
@@ -632,7 +644,7 @@ def get_hour_min_from_ts(ts, show_seconds=False):
     return ts_new.strftime(out_strf)
 
 
-# Function to return the range between two timestamps/datetime objects; eg. Sun 21 Apr 14:09 - 14:15
+# Returns the range between two timestamps/datetime objects; eg. Sun 21 Apr 14:09 - 14:15
 def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
     tz = pytz.timezone(LOCAL_TIMEZONE)
 
@@ -671,6 +683,7 @@ def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
     return str(out_str)
 
 
+# Checks if the given timezone name is valid
 def is_valid_timezone(tz_name):
     return tz_name in pytz.all_timezones
 
@@ -706,7 +719,7 @@ def decrease_check_signal_handler(sig, frame):
     print_cur_ts("Timestamp:\t\t")
 
 
-# Function preparing Apple & Genius search URLs for specified track
+# Returns Apple & Genius search URLs for specified track
 def get_apple_genius_search_urls(artist, track):
     genius_search_string = f"{artist} {track}"
     youtube_music_search_string = quote_plus(f"{artist} {track}")
@@ -719,7 +732,7 @@ def get_apple_genius_search_urls(artist, track):
     return apple_search_url, genius_search_url, youtube_music_search_url
 
 
-# Function extracting Spotify ID from URI or URL or returning cleaned name
+# Extracts Spotify ID from URI or URL and return cleaned name
 def spotify_extract_id_or_name(s):
     if not isinstance(s, str) or not s.strip():
         return ""
@@ -739,7 +752,7 @@ def spotify_extract_id_or_name(s):
     return s
 
 
-# Function returning random user agent string
+# Returns random user agent string
 def get_random_user_agent():
     browser = random.choice(['chrome', 'firefox', 'edge', 'safari'])
 
@@ -816,13 +829,13 @@ def get_random_user_agent():
             )
 
 
-# Function removing spaces from a hex string and converting it into a corresponding bytes object
+# Removes spaces from a hex string and converts it into a corresponding bytes object
 def hex_to_bytes(data: str) -> bytes:
     data = data.replace(" ", "")
     return bytes.fromhex(data)
 
 
-# Function creating a TOTP object using a secret derived from transformed cipher bytes
+# Creates a TOTP object using a secret derived from transformed cipher bytes
 def generate_totp(ua: str):
     secret_cipher_bytes = [
         12, 56, 76, 33, 88, 44, 88, 33,
@@ -866,7 +879,7 @@ def generate_totp(ua: str):
     return totp_obj, server_time
 
 
-# Function sending a lightweight request to check token validity
+# Sends a lightweight request to check Spotify token validity
 def check_token_validity(token: str, client_id: str, user_agent: str) -> bool:
     url = "https://api.spotify.com/v1/me"
     headers = {
@@ -889,7 +902,7 @@ def check_token_validity(token: str, client_id: str, user_agent: str) -> bool:
     return valid
 
 
-# Function retrieving a new Spotify access token using the sp_dc cookie, tries first with mode "transport" and if needed with "init"
+# Retrieves a new Spotify access token using the sp_dc cookie, tries first with mode "transport" and if needed with "init"
 def refresh_token(sp_dc: str) -> dict:
     transport = True
     init = True
@@ -976,7 +989,7 @@ def refresh_token(sp_dc: str) -> dict:
     }
 
 
-# Function getting Spotify access token based on provided SP_DC value
+# Fetches Spotify access token based on provided SP_DC value
 def spotify_get_access_token(sp_dc: str):
     global SP_CACHED_ACCESS_TOKEN, SP_TOKEN_EXPIRES_AT, SP_CACHED_CLIENT_ID, SP_CACHED_USER_AGENT
 
@@ -984,9 +997,6 @@ def spotify_get_access_token(sp_dc: str):
 
     if SP_CACHED_ACCESS_TOKEN and now < SP_TOKEN_EXPIRES_AT and check_token_validity(SP_CACHED_ACCESS_TOKEN, SP_CACHED_CLIENT_ID, SP_CACHED_USER_AGENT):
         return SP_CACHED_ACCESS_TOKEN
-
-    # print("─" * HORIZONTAL_LINE)
-    # print("* Fetching a new Spotify access token, it might take a while ...")
 
     max_retries = TOKEN_MAX_RETRIES
     retry = 0
@@ -1020,13 +1030,11 @@ def spotify_get_access_token(sp_dc: str):
             return SP_CACHED_ACCESS_TOKEN
         else:
             raise RuntimeError(f"Failed to obtain a valid Spotify access token after {max_retries} attempts")
-#    else:
-#        print_cur_ts("Timestamp:\t\t\t")
 
     return SP_CACHED_ACCESS_TOKEN
 
 
-# Function removing specified key from list of dictionaries
+# Removes the specified key from the list of dictionaries
 def remove_key_from_list_of_dicts(list_of_dicts, del_key):
     if list_of_dicts:
         for items in list_of_dicts:
@@ -1034,7 +1042,7 @@ def remove_key_from_list_of_dicts(list_of_dicts, del_key):
                 del items[del_key]
 
 
-# Function converting Spotify URI (e.g. spotify:user:username) to URL (e.g. https://open.spotify.com/user/username)
+# Converts Spotify URI (e.g. spotify:user:username) to URL (e.g. https://open.spotify.com/user/username)
 def spotify_convert_uri_to_url(uri):
     # add si parameter so link opens in native Spotify app after clicking
     si = "?si=1"
@@ -1060,7 +1068,7 @@ def spotify_convert_uri_to_url(uri):
     return url
 
 
-# Function converting Spotify URL (e.g. https://open.spotify.com/user/username) to URI (e.g. spotify:user:username)
+# Converts Spotify URL (e.g. https://open.spotify.com/user/username) to URI (e.g. spotify:user:username)
 def spotify_convert_url_to_uri(url):
 
     uri = ""
@@ -1094,7 +1102,27 @@ def spotify_convert_url_to_uri(url):
     return uri
 
 
-# Function returning detailed info about playlist with specified URI (with possibility to get its tracks as well)
+# Checks if a playlist has been completely removed and/or set as private
+def is_playlist_private(access_token, playlist_uri):
+    playlist_id = playlist_uri.split(':', 2)[2]
+    url = f"https://api.spotify.com/v1/playlists/{playlist_id}?fields=id"
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Client-Id": SP_CACHED_CLIENT_ID,
+        "User-Agent": SP_CACHED_USER_AGENT,
+    }
+
+    try:
+        response = SESSION.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
+        if response.status_code == 404:
+            return True
+        return False
+    except Exception as e:
+        return False
+
+
+# Returns detailed info about playlist with specified URI (with possibility to get its tracks as well)
 def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
     playlist_id = playlist_uri.split(':', 2)[2]
 
@@ -1155,7 +1183,7 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
         raise
 
 
-# Function returning detailed info about user with specified URI
+# Returns detailed info about user with specified URI
 def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_played_limit):
     if get_playlists:
         url = f"https://spclient.wg.spotify.com/user-profile-view/v3/profile/{user_uri_id}?playlist_limit={PLAYLISTS_LIMIT}&artist_limit={recently_played_limit}&episode_limit=10&market=from_token"
@@ -1208,7 +1236,7 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
         raise
 
 
-# Function returning followings for user with specified URI
+# Returns followings for user with specified URI
 def spotify_get_user_followings(access_token, user_uri_id):
     url = f"https://spclient.wg.spotify.com/user-profile-view/v3/profile/{user_uri_id}/following?market=from_token"
     headers = {
@@ -1236,7 +1264,7 @@ def spotify_get_user_followings(access_token, user_uri_id):
         raise
 
 
-# Function returning followers for user with specified URI
+# Returns followers for user with specified URI
 def spotify_get_user_followers(access_token, user_uri_id):
     url = f"https://spclient.wg.spotify.com/user-profile-view/v3/profile/{user_uri_id}/followers?market=from_token"
     headers = {
@@ -1263,7 +1291,7 @@ def spotify_get_user_followers(access_token, user_uri_id):
         raise
 
 
-# Function listing tracks for playlist with specified URI (-l parameter)
+# Lists tracks for playlist with specified URI (-l parameter)
 def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
     added_at_dt: datetime | None = None
     print(f"Listing tracks for playlist '{playlist_url}' ...\n")
@@ -1362,7 +1390,7 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
             print(f"- {collab_name} [songs: {count}, {percent:.1f}%] [URL: {url}]")
 
 
-# Function comparing two lists of dictionaries
+# Compares two lists of dictionaries
 def compare_two_lists_of_dicts(list1: list, list2: list):
     if not list1:
         list1 = []
@@ -1373,7 +1401,7 @@ def compare_two_lists_of_dicts(list1: list, list2: list):
     return diff
 
 
-# Function searching for Spotify users (-s parameter)
+# Searches for Spotify users (-s parameter)
 def spotify_search_users(access_token, username):
     url = f"https://api-partner.spotify.com/pathfinder/v1/query?operationName=searchUsers&variables=%7B%22searchTerm%22%3A%22{username}%22%2C%22offset%22%3A0%2C%22limit%22%3A5%2C%22numberOfTopResults%22%3A5%2C%22includeAudiobooks%22%3Afalse%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22{SP_SHA256}%22%7D%7D"
     headers = {
@@ -1404,8 +1432,20 @@ def spotify_search_users(access_token, username):
         print("No results")
 
 
-# Function processing items of all passed playlists and returning list of dictionaries
+# Returns playlist name and URL if available, otherwise just URL
+def spotify_format_playlist_reference(uri):
+    playlist_url = spotify_convert_uri_to_url(uri)
+    cached = PLAYLIST_INFO_CACHE.get(uri)
+    cached_name = cached.get("name") if cached and cached.get("name") else ""
+    if cached_name:
+        return f"{cached_name} [ {playlist_url} ]"
+    else:
+        return f"[ {playlist_url} ]"
+
+
+# Processes items from all the provided playlists and returns a list of dictionaries
 def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, playlists_to_skip=None):
+    global PLAYLIST_INFO_CACHE
     list_of_playlists = []
     error_while_processing = False
     added_at_dt: datetime | None = None
@@ -1425,12 +1465,35 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     p_uri_id = spotify_extract_id_or_name(p_uri)
                     p_owner_name = spotify_extract_id_or_name(p_owner)
                     p_owner_id = spotify_extract_id_or_name(p_owner_uri)
+
                     # we do not get a list of tracks for playlists that are ignored
                     if (playlists_to_skip and (p_uri_id in playlists_to_skip or p_owner_id in playlists_to_skip or p_owner_name in playlists_to_skip)) or (IGNORE_SPOTIFY_PLAYLISTS and p_owner == "Spotify"):
                         effective_get_tracks = False
                     else:
                         effective_get_tracks = get_tracks
-                    sp_playlist_data = spotify_get_playlist_info(sp_accessToken, p_uri, effective_get_tracks)
+
+                    try:
+                        sp_playlist_data = spotify_get_playlist_info(sp_accessToken, p_uri, effective_get_tracks)
+                        PLAYLIST_INFO_CACHE[p_uri] = {
+                            "status": "ok",
+                            "timestamp": time.time(),
+                            # "data": sp_playlist_data,
+                            "name": sp_playlist_data.get("sp_playlist_name", "")
+                        }
+                    except Exception as e:
+                        existing = PLAYLIST_INFO_CACHE.get(p_uri, {})
+                        existing.update({
+                            "status": "error",
+                            "timestamp": time.time(),
+                            "error": str(e)
+                        })
+                        PLAYLIST_INFO_CACHE[p_uri] = existing
+
+                        print(f"Error while processing playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f" - {e}" if e else ""))
+                        print_cur_ts("Timestamp:\t\t")
+                        error_while_processing = True
+                        continue
+
                     p_name = sp_playlist_data.get("sp_playlist_name", "")
                     p_descr = html.unescape(sp_playlist_data.get("sp_playlist_description", ""))
                     p_likes = sp_playlist_data.get("sp_playlist_followers_count", 0)
@@ -1488,19 +1551,13 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                 list_of_tracks.append({"artist": p_artist, "track": p_track, "duration": track_duration, "added_at": added_at_dt, "uri": track_uri, "added_by": added_by_name, "added_by_id": added_by_id})
 
                 except Exception as e:
-                    print(f"Error while processing playlist with URI {p_uri}, skipping for now - {e}")
+                    print(f"Unexpected error while building playlist data {spotify_format_playlist_reference(p_uri)} - {e}")
                     print_cur_ts("Timestamp:\t\t")
                     error_while_processing = True
                     continue
 
-                p_creation_date = None
-                p_last_track_date = None
-
-                if added_at_ts_lowest > 0:
-                    p_creation_date = datetime.fromtimestamp(int(added_at_ts_lowest), pytz.timezone(LOCAL_TIMEZONE))
-
-                if added_at_ts_highest > 0:
-                    p_last_track_date = datetime.fromtimestamp(int(added_at_ts_highest), pytz.timezone(LOCAL_TIMEZONE))
+                p_creation_date = datetime.fromtimestamp(int(added_at_ts_lowest), pytz.timezone(LOCAL_TIMEZONE)) if added_at_ts_lowest > 0 else None
+                p_last_track_date = datetime.fromtimestamp(int(added_at_ts_highest), pytz.timezone(LOCAL_TIMEZONE)) if added_at_ts_highest > 0 else None
 
                 p_collaborators_count = len(user_id_name_mapping)
 
@@ -1512,7 +1569,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
     return list_of_playlists, error_while_processing
 
 
-# Function printing detailed info about user's playlists
+# Prints detailed info about user's playlists
 def spotify_print_public_playlists(list_of_playlists, playlists_to_skip=None):
     p_update = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
     p_update_recent = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
@@ -1565,7 +1622,7 @@ def spotify_print_public_playlists(list_of_playlists, playlists_to_skip=None):
             print(f"Recently updated playlist:\n\n- '{p_name_recent}'\n[ {p_url_recent} ]\n[ update: {get_date_from_ts(p_update_recent)} - {calculate_timespan(now_local(), p_update_recent)} ago ]")
 
 
-# Function printing detailed info about user with specified URI ID (-i parameter)
+# Prints detailed info about the user with the specified URI ID (-i parameter)
 def spotify_get_user_details(sp_accessToken, user_uri_id):
     playlists_count = 0
     playlists = None
@@ -1653,7 +1710,7 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
             spotify_print_public_playlists(list_of_playlists)
 
 
-# Function returning recently played artists for user with specified URI (-a parameter)
+# Returns recently played artists for a user with the specified URI (-a parameter)
 def spotify_get_recently_played_artists(sp_accessToken, user_uri_id):
     print(f"Getting list of recently played artists for user with URI ID '{user_uri_id}' ...\n")
 
@@ -1679,7 +1736,7 @@ def spotify_get_recently_played_artists(sp_accessToken, user_uri_id):
         print("\nRecently played artists list is empty\n")
 
 
-# Function printing followers & followings for user with specified URI (-f parameter)
+# Prints followers & followings for a user with specified URI (-f parameter)
 def spotify_get_followers_and_followings(sp_accessToken, user_uri_id):
     print(f"Getting followers & followings for user with URI ID '{user_uri_id}' ...\n")
 
@@ -1725,53 +1782,48 @@ def spotify_get_followers_and_followings(sp_accessToken, user_uri_id):
                 print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
 
 
-# Function printing and saving changed list of followers/followings/playlists (with email notifications)
+# Prints and saves changed list of followers/followings/playlists (with email notifications)
 def spotify_print_changed_followers_followings_playlists(username, f_list, f_list_old, f_count, f_old_count, f_str, f_str_by_or_from, f_added_str, f_added_csv, f_removed_str, f_removed_csv, f_file, csv_file_name, profile_notification, is_playlist, sp_accessToken=None):
+    global GLITCH_CACHE
+    global PLAYLIST_INFO_CACHE
+
+    if is_playlist:
+        now = time.time()
+        GLITCH_CACHE = {uri: ts for uri, ts in GLITCH_CACHE.items() if now - ts < SPOTIFY_CHECK_INTERVAL}
+        PLAYLIST_INFO_CACHE = {uri: entry for uri, entry in PLAYLIST_INFO_CACHE.items() if now - entry.get("timestamp", 0) < PLAYLIST_INFO_CACHE_TTL}
 
     f_diff = f_count - f_old_count
-    f_diff_str = ""
-    if f_diff > 0:
-        f_diff_str = "+" + str(f_diff)
-    else:
-        f_diff_str = str(f_diff)
-    print(f"* {f_str} number changed {f_str_by_or_from} user {username} from {f_old_count} to {f_count} ({f_diff_str})\n")
-    f_list_to_save = []
-    f_list_to_save.append(f_count)
-    f_list_to_save.append(f_list)
-    try:
-        with open(f_file, 'w', encoding="utf-8") as f:
-            json.dump(f_list_to_save, f, indent=2)
-    except Exception as e:
-        print(f"* Cannot save list of {str(f_str).lower()} to '{f_file}' file - {e}")
 
-    try:
-        if csv_file_name:
-            write_csv_entry(csv_file_name, now_local_naive(), f_str, username, f_old_count, f_count)
-    except Exception as e:
-        print(f"* Cannot write CSV entry - {e}")
+    f_diff_str = "+" + str(f_diff) if f_diff > 0 else str(f_diff)
 
     removed_f_list = compare_two_lists_of_dicts(f_list_old, f_list)
     added_f_list = compare_two_lists_of_dicts(f_list, f_list_old)
+
     list_of_added_f_list = ""
     list_of_removed_f_list = ""
     added_f_list_mbody = ""
     removed_f_list_mbody = ""
+
+    if added_f_list or removed_f_list:
+        print(f"* {f_str} number changed {f_str_by_or_from} user {username} from {f_old_count} to {f_count} ({f_diff_str})\n")
+
     if added_f_list:
         print(f"{f_added_str}:\n")
         added_f_list_mbody = f"\n{f_added_str}:\n\n"
         for f_dict in added_f_list:
             if is_playlist:
                 if "uri" in f_dict:
-                    try:
-                        sp_playlist_data = spotify_get_playlist_info(sp_accessToken, f_dict["uri"], False)
-                    except Exception as e:
-                        print(f"- Error while getting info for playlist with URI {f_dict['uri']}, skipping for now - {e}")
-                        list_of_added_f_list += f"- Error while getting info for playlist with URI {f_dict['uri']}\n"
-                        print_cur_ts("Timestamp:\t\t")
+
+                    uri = f_dict["uri"]
+                    cached = PLAYLIST_INFO_CACHE.get(uri)
+                    if not cached or cached.get("status") != "ok":
+                        print(f"- Skipping playlist {spotify_format_playlist_reference(uri)} due to cached error or missing data")
+                        list_of_added_f_list += f"- Skipping playlist {spotify_format_playlist_reference(uri)} due to error\n"
                         continue
-                    p_name = sp_playlist_data.get("sp_playlist_name")
-                    print(f"- {p_name} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
-                    list_of_added_f_list += f"- {p_name} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n"
+                    p_name = cached.get("name", "Unknown")
+                    print(f"- {p_name} [ {spotify_convert_uri_to_url(uri)} ]")
+                    list_of_added_f_list += f"- {p_name} [ {spotify_convert_uri_to_url(uri)} ]\n"
+
                     try:
                         if csv_file_name:
                             write_csv_entry(csv_file_name, now_local_naive(), f_added_csv, username, "", p_name)
@@ -1793,20 +1845,42 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
         for f_dict in removed_f_list:
             if is_playlist:
                 if "uri" in f_dict:
-                    try:
-                        sp_playlist_data = spotify_get_playlist_info(sp_accessToken, f_dict["uri"], False)
-                    except Exception as e:
-                        if 'Not Found' in str(e):
-                            print(f"- Playlist has been removed or set to private [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
-                            list_of_removed_f_list += f"- Playlist has been removed or set to private [ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n"
-                        else:
-                            print(f"- Error while getting info for playlist with URI {f_dict['uri']}, skipping for now - {e}")
-                            list_of_removed_f_list += f"- Error while getting info for playlist with URI {f_dict['uri']}\n"
-                            print_cur_ts("Timestamp:\t\t")
+
+                    uri = f_dict["uri"]
+
+                    if uri in GLITCH_CACHE:
+                        print(f"- Skipping playlist {spotify_format_playlist_reference(uri)} due to recent glitch")
                         continue
-                    p_name = sp_playlist_data.get("sp_playlist_name")
-                    print(f"- {p_name} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
-                    list_of_removed_f_list += f"- {p_name} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n"
+
+                    cached = PLAYLIST_INFO_CACHE.get(uri)
+
+                    if not cached or cached.get("status") != "ok":
+                        error_str = cached.get("error", "") if cached else ""
+
+                        if "not found" in error_str.lower():
+                            print(f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private")
+                            list_of_removed_f_list += f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private\n"
+
+                        elif any(keyword in error_str.lower() for keyword in ["502", "server error", "bad gateway"]):
+                            print(f"- Suspected temporary glitch for playlist {spotify_format_playlist_reference(uri)}" + (f" - {error_str}" if error_str else ""))
+                            GLITCH_CACHE[uri] = time.time()
+                            print_cur_ts("Timestamp:\t\t")
+                            continue
+
+                        else:
+                            print(f"- Error while getting info for playlist {spotify_format_playlist_reference(uri)}, skipping for now" + (f" - {error_str}" if error_str else ""))
+                            list_of_removed_f_list += f"- Error while getting info for playlist {spotify_format_playlist_reference(uri)}\n"
+                            print_cur_ts("Timestamp:\t\t")
+                            continue
+
+                    if is_playlist_private(sp_accessToken, uri):
+                        print(f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private")
+                        list_of_removed_f_list += f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private\n"
+                    else:
+                        print(f"- {spotify_format_playlist_reference(uri)}")
+                        list_of_removed_f_list += f"- {spotify_format_playlist_reference(uri)}\n"
+
+                    p_name = cached.get("name", "Unknown")
                     try:
                         if csv_file_name:
                             write_csv_entry(csv_file_name, now_local_naive(), f_removed_csv, username, p_name, "")
@@ -1823,8 +1897,28 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                         print(f"* Cannot write CSV entry - {e}")
         print()
 
+    if is_playlist and f_diff != 0 and not list_of_added_f_list.strip() and not list_of_removed_f_list.strip():
+        print("Added", list_of_added_f_list.strip())
+        print("Removed", list_of_removed_f_list.strip())
+        return True
+
+    f_list_to_save = []
+    f_list_to_save.append(f_count)
+    f_list_to_save.append(f_list)
+    try:
+        with open(f_file, 'w', encoding="utf-8") as f:
+            json.dump(f_list_to_save, f, indent=2)
+    except Exception as e:
+        print(f"* Cannot save list of {str(f_str).lower()} to '{f_file}' file - {e}")
+
+    try:
+        if csv_file_name:
+            write_csv_entry(csv_file_name, now_local_naive(), f_str, username, f_old_count, f_count)
+    except Exception as e:
+        print(f"* Cannot write CSV entry - {e}")
+
     if (f_str == "Followers" or f_str == "Followings") and not followers_followings_notification:
-        return
+        return False
 
     if profile_notification:
 
@@ -1834,8 +1928,10 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
         print(f"Sending email notification to {RECEIVER_EMAIL}")
         send_email(m_subject, m_body, "", SMTP_SSL)
 
+    return False
 
-# Function saving user's profile pic to selected file name
+
+# Saves user's profile pic to selected file name
 def save_profile_pic(user_image_url, image_file_name):
     try:
         image_response = req.get(user_image_url, timeout=FUNCTION_TIMEOUT, stream=True, verify=VERIFY_SSL)
@@ -1858,7 +1954,7 @@ def save_profile_pic(user_image_url, image_file_name):
         return False
 
 
-# Function comparing two image files
+# Compares two image files
 def compare_images(path1, path2):
     try:
         with open(path1, 'rb') as f1, open(path2, 'rb') as f2:
@@ -1873,7 +1969,7 @@ def compare_images(path1, path2):
         return False
 
 
-# Main function monitoring profile changes of the specified Spotify user URI ID
+# Main function that monitors profile changes of the specified Spotify user URI ID
 def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, csv_exists, playlists_to_skip):
     global SP_CACHED_ACCESS_TOKEN
     playlists_count = 0
@@ -2021,7 +2117,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                 print(f"* Cannot save list of playlists to '{playlists_file}' file - {e}")
 
         if playlists_count != playlists_old_count:
-            spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists", "Added Playlist", "Removed playlists", "Removed Playlist", playlists_file, csv_file_name, False, True, sp_accessToken)
+            spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists to profile", "Added Playlist", "Removed playlists from profile", "Removed Playlist", playlists_file, csv_file_name, False, True, sp_accessToken)
 
         print_cur_ts("Timestamp:\t\t")
 
@@ -2175,7 +2271,6 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
     # Main loop
     while True:
-
         # Sometimes Spotify network functions halt even though we specified the timeout
         # To overcome this we use alarm signal functionality to kill it inevitably, not available on Windows
         if platform.system() != 'Windows':
@@ -2562,7 +2657,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                             p_message = f"* Playlist '{p_name}': list of tracks ({p_tracks}) have changed{p_after_str}\n* Playlist URL: {p_url}\n"
                                         print(p_message)
                                     except Exception as e:
-                                        print(f"Error while processing data for playlist with URI {p_uri}, skipping for now - {e}")
+                                        print(f"Error while processing data for playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f" - {e}" if e else ""))
                                         print_cur_ts("Timestamp:\t\t")
                                         continue
                                     try:
@@ -2671,12 +2766,15 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                     playlists_zeroed_counter = 0
 
                 if playlists_zeroed_counter == PLAYLISTS_DISAPPEARED_COUNTER or playlists_count > 0:
-                    spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists", "Added Playlist", "Removed playlists", "Removed Playlist", playlists_file, csv_file_name, profile_notification, True, sp_accessToken)
+                    glitch_detected = spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists to profile", "Added Playlist", "Removed playlists from profile", "Removed Playlist", playlists_file, csv_file_name, profile_notification, True, sp_accessToken)
 
-                    playlists_old_count = playlists_count
-                    playlists_old = playlists
-                    playlists_zeroed_counter = 0
+                    if not glitch_detected:
+                        playlists_old_count = playlists_count
+                        playlists_old = playlists
+                        playlists_zeroed_counter = 0
 
+                    else:
+                        print("* Possible Spotify API glitch detected, not reporting the number of changed playlists temporarily!\n")
                     print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                     print_cur_ts("Timestamp:\t\t")
 
