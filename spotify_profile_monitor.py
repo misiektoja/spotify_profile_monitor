@@ -109,7 +109,7 @@ CHECK_INTERNET_TIMEOUT = 5
 # Base name of the log file. The tool will save its output to spotify_profile_monitor_{user_uri_id/file_suffix}.log file
 SP_LOGFILE = "spotify_profile_monitor"
 
-# Value used by signal handlers to increase/decrease profile check interval (SPOTIFY_INACTIVITY_CHECK); in seconds
+# Value used by signal handlers to increase or decrease profile check interval (SPOTIFY_CHECK_INTERVAL); in seconds
 SPOTIFY_CHECK_SIGNAL_VALUE = 300  # 5 minutes
 
 # Maximum number of attempts to get a valid access token in a single run of the spotify_get_access_token() function
@@ -198,6 +198,7 @@ import json
 import os
 from datetime import datetime, timezone
 from dateutil import relativedelta
+from dateutil.parser import isoparse
 import calendar
 import requests as req
 import shutil
@@ -217,7 +218,6 @@ except ImportError:
     get_localzone = None
 import platform
 import html
-import urllib
 from urllib.parse import quote_plus, quote, urlparse
 import re
 import ipaddress
@@ -227,9 +227,7 @@ import subprocess
 import pyotp
 import base64
 import random
-from random import randrange
 from collections import Counter
-from dateutil.parser import isoparse
 from email.utils import parsedate_to_datetime
 
 import urllib3
@@ -295,10 +293,11 @@ def check_internet(url=CHECK_INTERNET_URL, timeout=CHECK_INTERNET_TIMEOUT, verif
         _ = req.get(url, timeout=timeout, verify=verify)
         return True
     except req.RequestException as e:
-        print(f"No connectivity, please check your network: {e}")
+        print(f"* No connectivity, please check your network:\n\n{e}")
         return False
 
 
+# Clears the terminal screen
 def clear_screen(enabled=True):
     if not enabled:
         return
@@ -472,11 +471,6 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
         email_msg["To"] = RECEIVER_EMAIL
         email_msg["Subject"] = str(Header(subject, 'utf-8'))
 
-        if image_file:
-            fp = open(image_file, 'rb')
-            img_part = MIMEImage(fp.read())
-            fp.close()
-
         if body:
             part1 = MIMEText(body, 'plain')
             part1 = MIMEText(body.encode('utf-8'), 'plain', _charset='utf-8')
@@ -488,17 +482,20 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
             email_msg.attach(part2)
 
         if image_file:
+            with open(image_file, 'rb') as fp:
+                img_part = MIMEImage(fp.read())
             img_part.add_header('Content-ID', f'<{image_name}>')
             email_msg.attach(img_part)
 
         smtpObj.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_msg.as_string())
         smtpObj.quit()
     except Exception as e:
-        print(f"Error sending email - {e}")
+        print(f"Error sending email: {e}")
         return 1
     return 0
 
 
+# Initializes the CSV file
 def init_csv_file(csv_file_name, format_type=1):
     try:
         csv_fields = csvfieldnames if format_type == 1 else csvfieldnames_export
@@ -507,7 +504,7 @@ def init_csv_file(csv_file_name, format_type=1):
                 writer = csv.DictWriter(f, fieldnames=csv_fields, quoting=csv.QUOTE_NONNUMERIC)
                 writer.writeheader()
     except Exception as e:
-        raise RuntimeError(f"Could not initialize CSV file '{csv_file_name}' - {e}")
+        raise RuntimeError(f"Could not initialize CSV file '{csv_file_name}': {e}")
 
 
 # Writes CSV entry
@@ -572,7 +569,7 @@ def get_cur_ts(ts_str=""):
     return (f'{ts_str}{calendar.day_abbr[(now_local_naive()).weekday()]}, {now_local_naive().strftime("%d %b %Y, %H:%M:%S")}')
 
 
-# Prints the current timestamp in human readable format; eg. Sun 21 Apr 2024, 15:08:45
+# Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
 def print_cur_ts(ts_str=""):
     print(get_cur_ts(str(ts_str)))
     print("─" * HORIZONTAL_LINE)
@@ -732,8 +729,8 @@ def toggle_profile_changes_notifications_signal_handler(sig, frame):
     profile_notification = not profile_notification
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
-    print(f"* Email notifications: [profile changes = {profile_notification}]")
-    print_cur_ts("Timestamp:\t\t")
+    print(f"* Email notifications:\t\t[profile changes = {profile_notification}]")
+    print_cur_ts("Timestamp:\t\t\t")
 
 
 # Signal handler for SIGTRAP allowing to increase profile check timer by SPOTIFY_CHECK_SIGNAL_VALUE seconds
@@ -742,8 +739,8 @@ def increase_check_signal_handler(sig, frame):
     SPOTIFY_CHECK_INTERVAL = SPOTIFY_CHECK_INTERVAL + SPOTIFY_CHECK_SIGNAL_VALUE
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
-    print(f"* Spotify timers: [check interval: {display_time(SPOTIFY_CHECK_INTERVAL)}]")
-    print_cur_ts("Timestamp:\t\t")
+    print(f"* Spotify timers:\t\t[check interval: {display_time(SPOTIFY_CHECK_INTERVAL)}]")
+    print_cur_ts("Timestamp:\t\t\t")
 
 
 # Signal handler for SIGABRT allowing to decrease profile check timer by SPOTIFY_CHECK_SIGNAL_VALUE seconds
@@ -753,8 +750,8 @@ def decrease_check_signal_handler(sig, frame):
         SPOTIFY_CHECK_INTERVAL = SPOTIFY_CHECK_INTERVAL - SPOTIFY_CHECK_SIGNAL_VALUE
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
-    print(f"* Spotify timers: [check interval: {display_time(SPOTIFY_CHECK_INTERVAL)}]")
-    print_cur_ts("Timestamp:\t\t")
+    print(f"* Spotify timers:\t\t[check interval: {display_time(SPOTIFY_CHECK_INTERVAL)}]")
+    print_cur_ts("Timestamp:\t\t\t")
 
 
 # Returns Apple & Genius search URLs for specified track
@@ -791,7 +788,7 @@ def spotify_extract_id_or_name(s):
 
 
 # Returns random user agent string
-def get_random_user_agent():
+def get_random_user_agent() -> str:
     browser = random.choice(['chrome', 'firefox', 'edge', 'safari'])
 
     if browser == 'chrome':
@@ -865,6 +862,10 @@ def get_random_user_agent():
                 f"AppleWebKit/{webkit_major}.{webkit_minor}.{webkit_patch} (KHTML, like Gecko) "
                 f"Version/{safari_version}.0 Safari/{webkit_major}.{webkit_minor}.{webkit_patch}"
             )
+        else:
+            return ""
+    else:
+        return ""
 
 
 # Removes spaces from a hex string and converts it into a corresponding bytes object
@@ -946,11 +947,12 @@ def refresh_token(sp_dc: str) -> dict:
     init = True
     session = req.Session()
     session.cookies.set("sp_dc", sp_dc)
+    data: dict = {}
+    token = ""
 
     ua = get_random_user_agent()
     totp_obj, server_time = generate_totp(ua)
     client_time = int(time_ns() / 1000 / 1000)
-    timestamp = int(time.time())
     otp_value = totp_obj.at(server_time)
 
     params = {
@@ -970,50 +972,39 @@ def refresh_token(sp_dc: str) -> dict:
     }
 
     try:
-        if platform.system() != 'Windows':
+        if platform.system() != "Windows":
             signal.signal(signal.SIGALRM, timeout_handler)
             signal.alarm(FUNCTION_TIMEOUT + 2)
+
         response = session.get(TOKEN_URL, params=params, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
-    except (req.RequestException, TimeoutException):
-        transport = False
-    finally:
-        if platform.system() != 'Windows':
-            signal.alarm(0)
-
-    try:
         response.raise_for_status()
-    except req.HTTPError:
-        transport = False
-
-    try:
         data = response.json()
         token = data.get("accessToken", "")
-    except Exception:
-        transport = False
 
-    if not transport or (transport and not check_token_validity(data.get("accessToken", ""), data.get("clientId", ""), ua)):
+    except (req.RequestException, TimeoutException, req.HTTPError, ValueError):
+        transport = False
+    finally:
+        if platform.system() != "Windows":
+            signal.alarm(0)
+
+    if not transport or (transport and not check_token_validity(token, data.get("clientId", ""), ua)):
         params["reason"] = "init"
+
         try:
-            if platform.system() != 'Windows':
+            if platform.system() != "Windows":
                 signal.signal(signal.SIGALRM, timeout_handler)
                 signal.alarm(FUNCTION_TIMEOUT + 2)
+
             response = session.get(TOKEN_URL, params=params, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
-        except (req.RequestException, TimeoutException):
-            init = False
-        finally:
-            if platform.system() != 'Windows':
-                signal.alarm(0)
-
-        try:
             response.raise_for_status()
-        except req.HTTPError:
-            init = False
-
-        try:
             data = response.json()
             token = data.get("accessToken", "")
-        except Exception:
+
+        except (req.RequestException, TimeoutException, req.HTTPError, ValueError):
             init = False
+        finally:
+            if platform.system() != "Windows":
+                signal.alarm(0)
 
     if not init or not data or "accessToken" not in data:
         raise Exception("refresh_token(): Unsuccessful token request")
@@ -1175,7 +1166,7 @@ def spotify_get_current_user(access_token) -> dict | None:
 
         return user_info
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"* Error: {e}")
         return None
     finally:
         if platform.system() != 'Windows':
@@ -1390,12 +1381,9 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
         if csv_file_name:
             init_csv_file(csv_file_name, format_type)
     except Exception as e:
-        print(f"* Error - {e}")
+        print(f"* Error: {e}")
 
-    if csv_file_name:
-        list_operation = "* Listing & saving"
-    else:
-        list_operation = "* Listing"
+    list_operation = "* Listing & saving" if csv_file_name else "* Listing"
 
     print(f"{list_operation} tracks for playlist '{playlist_url}' ...\n")
 
@@ -1475,27 +1463,27 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
                     if csv_file_name:
                         write_csv_entry(csv_file_name, convert_to_local_naive(added_at_dt), *(("Added Track", p_name, added_by_name, artist_track) if format_type == 1 else ("", p_name, p_artist, p_track)), format_type)
                 except Exception as e:
-                    print(f"* Cannot write CSV entry - {e}")
+                    print(f"* Error: {e}")
 
-    print(f"\nName:\t\t'{p_name}'")
+    print(f"\nName:\t\t\t'{p_name}'")
     if p_descr:
-        print(f"Description:\t'{p_descr}'")
+        print(f"Description:\t\t'{p_descr}'")
 
     songs_display = f"{p_tracks} ({p_tracks_before_filtering - p_tracks} filtered out)" if p_tracks_before_filtering > p_tracks else f"{p_tracks}"
 
-    print(f"URL:\t\t{playlist_url}\nSongs:\t\t{songs_display}\nLikes:\t\t{p_likes}")
+    print(f"URL:\t\t\t{playlist_url}\nSongs:\t\t\t{songs_display}\nLikes:\t\t\t{p_likes}")
 
     if added_at_ts_lowest > 0:
         p_creation_date = get_date_from_ts(int(added_at_ts_lowest))
         p_creation_date_since = calculate_timespan(int(time.time()), int(added_at_ts_lowest))
-        print(f"Creation date:\t{p_creation_date} ({p_creation_date_since} ago)")
+        print(f"Creation date:\t\t{p_creation_date} ({p_creation_date_since} ago)")
 
     if added_at_ts_highest > 0:
         p_last_track_date = get_date_from_ts(int(added_at_ts_highest))
         p_last_track_date_since = calculate_timespan(int(time.time()), int(added_at_ts_highest))
-        print(f"Last update:\t{p_last_track_date} ({p_last_track_date_since} ago)")
+        print(f"Last update:\t\t{p_last_track_date} ({p_last_track_date_since} ago)")
 
-    print(f"Duration:\t{display_time(duration_sum)}")
+    print(f"Duration:\t\t{display_time(duration_sum)}")
 
     total_tracks = sum(user_track_counts.values())
 
@@ -1519,11 +1507,10 @@ def spotify_get_user_liked_tracks(access_token):
         "Client-Id": SP_CACHED_CLIENT_ID,
         "User-Agent": SP_CACHED_USER_AGENT,
     }
-    # add si parameter so link opens in native Spotify app after clicking
-    si = "?si=1"
 
     try:
         sp_playlist_tracks_concatenated_list = []
+        json_response: dict = {}
         next_url = url
 
         while next_url:
@@ -1532,7 +1519,7 @@ def spotify_get_user_liked_tracks(access_token):
             json_response = response.json()
             # print(json.dumps(json_response, indent=2, sort_keys=True))
 
-            for track in json_response.get("items"):
+            for track in json_response.get("items", []):
                 sp_playlist_tracks_concatenated_list.append(track)
 
             next_url = json_response.get("next")
@@ -1568,12 +1555,9 @@ def spotify_list_liked_tracks(sp_accessToken, csv_file_name, format_type=2):
         if csv_file_name:
             init_csv_file(csv_file_name, format_type)
     except Exception as e:
-        print(f"* Error - {e}")
+        print(f"* Error: {e}")
 
-    if csv_file_name:
-        list_operation = "* Listing & saving"
-    else:
-        list_operation = "* Listing"
+    list_operation = "* Listing & saving" if csv_file_name else "* Listing"
 
     print(f"{list_operation} liked tracks by the user owning the token ...\n")
 
@@ -1624,23 +1608,23 @@ def spotify_list_liked_tracks(sp_accessToken, csv_file_name, format_type=2):
                     if csv_file_name:
                         write_csv_entry(csv_file_name, convert_to_local_naive(added_at_dt), *(("Added Track", "Liked Songs", username, artist_track) if format_type == 1 else ("", "Liked Songs", p_artist, p_track)), format_type)
                 except Exception as e:
-                    print(f"* Cannot write CSV entry - {e}")
+                    print(f"* Error: {e}")
 
     songs_display = f"{p_tracks} ({p_tracks_before_filtering - p_tracks} filtered out)" if p_tracks_before_filtering > p_tracks else f"{p_tracks}"
 
-    print(f"Songs:\t\t{songs_display}")
+    print(f"Songs:\t\t\t{songs_display}")
 
     if added_at_ts_lowest > 0:
         p_creation_date = get_date_from_ts(int(added_at_ts_lowest))
         p_creation_date_since = calculate_timespan(int(time.time()), int(added_at_ts_lowest))
-        print(f"Creation date:\t{p_creation_date} ({p_creation_date_since} ago)")
+        print(f"Creation date:\t\t{p_creation_date} ({p_creation_date_since} ago)")
 
     if added_at_ts_highest > 0:
         p_last_track_date = get_date_from_ts(int(added_at_ts_highest))
         p_last_track_date_since = calculate_timespan(int(time.time()), int(added_at_ts_highest))
-        print(f"Last update:\t{p_last_track_date} ({p_last_track_date_since} ago)")
+        print(f"Last update:\t\t{p_last_track_date} ({p_last_track_date_since} ago)")
 
-    print(f"Duration:\t{display_time(duration_sum)}")
+    print(f"Duration:\t\t{display_time(duration_sum)}")
 
 
 # Compares two lists of dictionaries
@@ -1663,7 +1647,7 @@ def spotify_search_users(sp_accessToken, username):
         "User-Agent": SP_CACHED_USER_AGENT,
     }
 
-    print(f"Searching for users with '{username}' string ...\n")
+    print(f"* Searching for users with '{username}' string ...\n")
 
     user_info = spotify_get_current_user(sp_accessToken)
     if user_info:
@@ -1713,6 +1697,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
     if playlists:
         for playlist in playlists:
             user_id_name_mapping = {}
+            p_uri = ""
             if "uri" in playlist:
                 list_of_tracks = []
                 try:
@@ -1746,8 +1731,8 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                         })
                         PLAYLIST_INFO_CACHE[p_uri] = existing
 
-                        print(f"Error while processing playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f" - {e}" if e else ""))
-                        print_cur_ts("Timestamp:\t\t")
+                        print(f"* Error while processing playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f": {e}" if e else ""))
+                        print_cur_ts("Timestamp:\t\t\t")
                         error_while_processing = True
                         continue
 
@@ -1767,6 +1752,8 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     if p_tracks_list is not None:
                         for index, track in enumerate(p_tracks_list or []):
                             added_at = track.get("added_at")
+                            p_artist = p_track = added_by_name = added_by_id = track_uri = ""
+                            track_duration = 0
 
                             if effective_get_tracks:
                                 track_info = track.get("track")
@@ -1807,12 +1794,12 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                     if added_at_dt_ts > added_at_ts_highest:
                                         added_at_ts_highest = added_at_dt_ts
 
-                            if effective_get_tracks and added_at:
+                            if effective_get_tracks and added_at and p_artist and p_track:
                                 list_of_tracks.append({"artist": p_artist, "track": p_track, "duration": track_duration, "added_at": added_at_dt, "uri": track_uri, "added_by": added_by_name, "added_by_id": added_by_id})
 
                 except Exception as e:
-                    print(f"Unexpected error while building playlist data for: {spotify_format_playlist_reference(p_uri)} - {e}")
-                    print_cur_ts("Timestamp:\t\t")
+                    print(f"* Unexpected error while building playlist data for: {spotify_format_playlist_reference(p_uri)}: {e}")
+                    print_cur_ts("Timestamp:\t\t\t")
                     error_while_processing = True
                     continue
 
@@ -1887,7 +1874,7 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
     playlists_count = 0
     playlists = None
 
-    print(f"Getting detailed info for user with URI ID '{user_uri_id}' ...\n")
+    print(f"* Getting detailed info for user with URI ID '{user_uri_id}' ...\n")
 
     user_info = spotify_get_current_user(sp_accessToken)
     if user_info:
@@ -1960,7 +1947,7 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
                 print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
 
     if recently_played_artists:
-        print(f"\nRecently played artists ({RECENTLY_PLAYED_ARTISTS_LIMIT_INFO}):\n")
+        print(f"\nPlayed artists:\t\t{len(recently_played_artists)} (limit {RECENTLY_PLAYED_ARTISTS_LIMIT_INFO})\n")
         for f_dict in recently_played_artists:
             if "name" in f_dict and "uri" in f_dict:
                 print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
@@ -1976,7 +1963,7 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
 
 # Returns recently played artists for a user with the specified URI (-a parameter)
 def spotify_get_recently_played_artists(sp_accessToken, user_uri_id):
-    print(f"Getting list of recently played artists for user with URI ID '{user_uri_id}' ...\n")
+    print(f"* Getting list of recently played artists for user with URI ID '{user_uri_id}' ...\n")
 
     user_info = spotify_get_current_user(sp_accessToken)
     if user_info:
@@ -1996,7 +1983,7 @@ def spotify_get_recently_played_artists(sp_accessToken, user_uri_id):
     print(f"User profile picture:\t{image_url != ''}")
 
     if recently_played_artists:
-        print(f"\nRecently played artists ({RECENTLY_PLAYED_ARTISTS_LIMIT}):\n")
+        print(f"\nPlayed artists:\t\t{len(recently_played_artists)} (limit {RECENTLY_PLAYED_ARTISTS_LIMIT})\n")
         for f_dict in recently_played_artists:
             if "name" in f_dict and "uri" in f_dict:
                 print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
@@ -2006,7 +1993,7 @@ def spotify_get_recently_played_artists(sp_accessToken, user_uri_id):
 
 # Prints followers & followings for a user with specified URI (-f parameter)
 def spotify_get_followers_and_followings(sp_accessToken, user_uri_id):
-    print(f"Getting followers & followings for user with URI ID '{user_uri_id}' ...\n")
+    print(f"* Getting followers & followings for user with URI ID '{user_uri_id}' ...\n")
 
     user_info = spotify_get_current_user(sp_accessToken)
     if user_info:
@@ -2040,13 +2027,13 @@ def spotify_get_followers_and_followings(sp_accessToken, user_uri_id):
 
     print(f"User profile picture:\t{image_url != ''}")
 
-    print("\nFollowers:\t\t", followers_count)
+    print(f"\nFollowers:\t\t{followers_count}")
     if followers:
         print()
         for f_dict in followers:
             if "name" in f_dict and "uri" in f_dict:
                 print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
-    print("\nFollowings:\t\t", followings_count)
+    print(f"\nFollowings:\t\t{followings_count}")
     if followings:
         print()
         for f_dict in followings:
@@ -2103,7 +2090,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                         if csv_file_name:
                             write_csv_entry(csv_file_name, now_local_naive(), f_added_csv, username, "", p_name)
                     except Exception as e:
-                        print(f"* Cannot write CSV entry - {e}")
+                        print(f"* Error: {e}")
             else:
                 if "name" in f_dict and "uri" in f_dict:
                     print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
@@ -2112,7 +2099,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                         if csv_file_name:
                             write_csv_entry(csv_file_name, now_local_naive(), f_added_csv, username, "", f_dict["name"])
                     except Exception as e:
-                        print(f"* Cannot write CSV entry - {e}")
+                        print(f"* Error: {e}")
         print()
     if removed_f_list:
         print(f"{f_removed_str}:\n")
@@ -2137,15 +2124,15 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                             list_of_removed_f_list += f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private\n"
 
                         elif any(keyword in error_str.lower() for keyword in ["502", "server error", "bad gateway"]):
-                            print(f"- Suspected temporary glitch for playlist {spotify_format_playlist_reference(uri)}" + (f" - {error_str}" if error_str else ""))
+                            print(f"- Suspected temporary glitch for playlist {spotify_format_playlist_reference(uri)}" + (f": {error_str}" if error_str else ""))
                             GLITCH_CACHE[uri] = time.time()
-                            print_cur_ts("Timestamp:\t\t")
+                            print_cur_ts("Timestamp:\t\t\t")
                             continue
 
                         else:
-                            print(f"- Error while getting info for playlist {spotify_format_playlist_reference(uri)}, skipping for now" + (f" - {error_str}" if error_str else ""))
+                            print(f"- Error while getting info for playlist {spotify_format_playlist_reference(uri)}, skipping for now" + (f": {error_str}" if error_str else ""))
                             list_of_removed_f_list += f"- Error while getting info for playlist {spotify_format_playlist_reference(uri)}\n"
-                            print_cur_ts("Timestamp:\t\t")
+                            print_cur_ts("Timestamp:\t\t\t")
                             continue
 
                     if is_playlist_private(sp_accessToken, uri):
@@ -2155,12 +2142,15 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                         print(f"- {spotify_format_playlist_reference(uri)}")
                         list_of_removed_f_list += f"- {spotify_format_playlist_reference(uri)}\n"
 
-                    p_name = cached.get("name", "Unknown")
+                    if cached:
+                        p_name = cached.get("name", "Unknown")
+                    else:
+                        p_name = "Unknown"
                     try:
                         if csv_file_name:
                             write_csv_entry(csv_file_name, now_local_naive(), f_removed_csv, username, p_name, "")
                     except Exception as e:
-                        print(f"* Cannot write CSV entry - {e}")
+                        print(f"* Error: {e}")
             else:
                 if "name" in f_dict and "uri" in f_dict:
                     print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
@@ -2169,7 +2159,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                         if csv_file_name:
                             write_csv_entry(csv_file_name, now_local_naive(), f_removed_csv, username, f_dict["name"], "")
                     except Exception as e:
-                        print(f"* Cannot write CSV entry - {e}")
+                        print(f"* Error: {e}")
         print()
 
     if is_playlist and f_diff != 0 and not list_of_added_f_list.strip() and not list_of_removed_f_list.strip():
@@ -2184,13 +2174,13 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
         with open(f_file, 'w', encoding="utf-8") as f:
             json.dump(f_list_to_save, f, indent=2)
     except Exception as e:
-        print(f"* Cannot save list of {str(f_str).lower()} to '{f_file}' file - {e}")
+        print(f"* Cannot save list of {str(f_str).lower()} to '{f_file}' file: {e}")
 
     try:
         if csv_file_name:
             write_csv_entry(csv_file_name, now_local_naive(), f_str, username, f_old_count, f_count)
     except Exception as e:
-        print(f"* Cannot write CSV entry - {e}")
+        print(f"* Error: {e}")
 
     if (f_str == "Followers" or f_str == "Followings") and not followers_followings_notification:
         return False
@@ -2240,7 +2230,7 @@ def compare_images(path1, path2):
                     return False
             return True
     except Exception as e:
-        print(f"Error while comparing profile pictures - {e}")
+        print(f"* Error while comparing profile pictures: {e}")
         return False
 
 
@@ -2257,7 +2247,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
         if csv_file_name:
             init_csv_file(csv_file_name)
     except Exception as e:
-        print(f"* Error - {e}")
+        print(f"* Error: {e}")
 
     email_sent = False
 
@@ -2279,11 +2269,11 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
         elif '404' in str(e):
             print("* Error: user does not exist!")
         else:
-            print(f"Error: {e}")
+            print(f"* Error: {e}")
         sys.exit(1)
 
     if user_info:
-        print(f"Token belongs to:\t{user_info.get('display_name', '')}\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
+        print(f"Token belongs to:\t\t{user_info.get('display_name', '')}\n\t\t\t\t[ {user_info.get('spotify_url')} ]\n")
 
     username = sp_user_data["sp_username"]
     image_url = sp_user_data["sp_user_image_url"]
@@ -2309,11 +2299,11 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
     recently_played_artists = sp_user_data["sp_user_recently_played_artists"]
 
-    print(f"Username:\t\t{username}")
-    print(f"User URI ID:\t\t{user_uri_id}")
-    print(f"User URL:\t\t{spotify_convert_uri_to_url(f'spotify:user:{user_uri_id}')}")
+    print(f"Username:\t\t\t{username}")
+    print(f"User URI ID:\t\t\t{user_uri_id}")
+    print(f"User URL:\t\t\t{spotify_convert_uri_to_url(f'spotify:user:{user_uri_id}')}")
 
-    print(f"User profile picture:\t{image_url != ''}")
+    print(f"User profile picture:\t\t{image_url != ''}")
 
     profile_pic_file_tmp = f"spotify_profile_{file_suffix}_pic_tmp_info.jpeg"
     if image_url and IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
@@ -2327,20 +2317,20 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             except Exception:
                 pass
 
-    print(f"\nFollowers:\t\t{followers_count}")
-    print(f"Followings:\t\t{followings_count}")
+    print(f"\nFollowers:\t\t\t{followers_count}")
+    print(f"Followings:\t\t\t{followings_count}")
 
     list_of_playlists = []
 
     if DETECT_CHANGES_IN_PLAYLISTS:
-        print(f"Public playlists:\t{playlists_count}")
+        print(f"Public playlists:\t\t{playlists_count}")
 
         if playlists:
             print("\n* Getting list of public playlists (be patient, it might take a while) ...\n")
             list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True, playlists_to_skip)
             spotify_print_public_playlists(list_of_playlists, playlists_to_skip)
 
-    print_cur_ts("\nTimestamp:\t\t")
+    print_cur_ts("\nTimestamp:\t\t\t")
 
     followers_file = f"spotify_profile_{file_suffix}_followers.json"
     followings_file = f"spotify_profile_{file_suffix}_followings.json"
@@ -2374,7 +2364,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                 with open(playlists_file, 'r', encoding="utf-8") as f:
                     playlists_read = json.load(f)
             except Exception as e:
-                print(f"* Cannot load entries from '{playlists_file}' file - {e}")
+                print(f"* Cannot load entries from '{playlists_file}' file: {e}")
             if playlists_read:
                 playlists_old_count = playlists_read[0]
                 playlists_old = playlists_read[1]
@@ -2389,12 +2379,12 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                     json.dump(playlists_to_save, f, indent=2)
                 print(f"* Playlists ({playlists_count}) saved to file '{playlists_file}'")
             except Exception as e:
-                print(f"* Cannot save list of playlists to '{playlists_file}' file - {e}")
+                print(f"* Cannot save list of playlists to '{playlists_file}' file: {e}")
 
         if playlists_count != playlists_old_count:
             spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists to profile", "Added Playlist", "Removed playlists from profile", "Removed Playlist", playlists_file, csv_file_name, False, True, sp_accessToken)
 
-        print_cur_ts("Timestamp:\t\t")
+        print_cur_ts("Timestamp:\t\t\t")
 
     # followers
     if os.path.isfile(followers_file):
@@ -2402,7 +2392,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             with open(followers_file, 'r', encoding="utf-8") as f:
                 followers_read = json.load(f)
         except Exception as e:
-            print(f"* Cannot load entries from '{followers_file}' file - {e}")
+            print(f"* Cannot load entries from '{followers_file}' file: {e}")
         if followers_read:
             followers_old_count = followers_read[0]
             followers_old = followers_read[1]
@@ -2417,12 +2407,12 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                 json.dump(followers_to_save, f, indent=2)
             print(f"* Followers ({followers_count}) saved to file '{followers_file}'")
         except Exception as e:
-            print(f"* Cannot save list of followers to '{followers_file}' file - {e}")
+            print(f"* Cannot save list of followers to '{followers_file}' file: {e}")
 
     if followers_count != followers_old_count:
         spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, False, False)
 
-    print_cur_ts("Timestamp:\t\t")
+    print_cur_ts("Timestamp:\t\t\t")
 
     # followings
     if os.path.isfile(followings_file):
@@ -2430,7 +2420,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             with open(followings_file, 'r', encoding="utf-8") as f:
                 followings_read = json.load(f)
         except Exception as e:
-            print(f"* Cannot load entries from '{followings_file}' file - {e}")
+            print(f"* Cannot load entries from '{followings_file}' file: {e}")
         if followings_read:
             followings_old_count = followings_read[0]
             followings_old = followings_read[1]
@@ -2445,12 +2435,12 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                 json.dump(followings_to_save, f, indent=2)
             print(f"* Followings ({followings_count}) saved to file '{followings_file}'")
         except Exception as e:
-            print(f"* Cannot save list of followings to '{followings_file}' file - {e}")
+            print(f"* Cannot save list of followings to '{followings_file}' file: {e}")
 
     if followings_count != followings_old_count:
         spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, False, False)
 
-    print_cur_ts("Timestamp:\t\t")
+    print_cur_ts("Timestamp:\t\t\t")
 
     # profile pic
 
@@ -2466,9 +2456,9 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                 if csv_file_name:
                     write_csv_entry(csv_file_name, now_local_naive(), "Profile Picture Removed", username, convert_to_local_naive(profile_pic_mdate_dt), "")
             except Exception as e:
-                print(f"* Cannot write CSV entry - {e}")
+                print(f"* Error: {e}")
 
-            print_cur_ts("Timestamp:\t\t")
+            print_cur_ts("Timestamp:\t\t\t")
 
         # user has profile pic, but it does not exist in the filesystem
         elif image_url and not os.path.isfile(profile_pic_file):
@@ -2488,12 +2478,12 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), "Profile Picture Created", username, "", convert_to_local_naive(profile_pic_mdate_dt))
                 except Exception as e:
-                    print(f"* Cannot write CSV entry - {e}")
+                    print(f"* Error: {e}")
 
             else:
-                print(f"Error saving profile picture !")
+                print(f"* Error saving profile picture !")
 
-            print_cur_ts("Timestamp:\t\t")
+            print_cur_ts("Timestamp:\t\t\t")
 
         # user has profile pic and it exists in the filesystem, but we check if it has not changed
         elif image_url and os.path.isfile(profile_pic_file):
@@ -2509,7 +2499,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                         if csv_file_name:
                             write_csv_entry(csv_file_name, now_local_naive(), "Profile Picture Changed", username, convert_to_local_naive(profile_pic_mdate_dt), convert_to_local_naive(profile_pic_tmp_mdate_dt))
                     except Exception as e:
-                        print(f"* Cannot write CSV entry - {e}")
+                        print(f"* Error: {e}")
 
                     try:
                         if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
@@ -2518,7 +2508,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                         os.replace(profile_pic_file, profile_pic_file_old)
                         os.replace(profile_pic_file_tmp, profile_pic_file)
                     except Exception as e:
-                        print(f"Error while replacing/copying files - {e}")
+                        print(f"* Error while replacing/copying files: {e}")
 
                 else:
                     print(f"* Profile picture '{profile_pic_file}' already exists")
@@ -2528,8 +2518,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                     except Exception:
                         pass
             else:
-                print(f"Error while checking if the profile picture has changed !")
-            print_cur_ts("Timestamp:\t\t")
+                print(f"* Error while checking if the profile picture has changed !")
+            print_cur_ts("Timestamp:\t\t\t")
 
     followers_old = followers
     followings_old = followings
@@ -2561,13 +2551,13 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             if platform.system() != 'Windows':
                 signal.alarm(0)
             print(f"spotify_*() function timeout after {display_time(ALARM_TIMEOUT)}, retrying in {display_time(ALARM_RETRY)}")
-            print_cur_ts("Timestamp:\t\t")
+            print_cur_ts("Timestamp:\t\t\t")
             time.sleep(ALARM_RETRY)
             continue
         except Exception as e:
             if platform.system() != 'Windows':
                 signal.alarm(0)
-            print(f"Error, retrying in {display_time(SPOTIFY_ERROR_INTERVAL)} - {e}")
+            print(f"* Error, retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}: {e}")
             if "401" in str(e):
                 SP_CACHED_ACCESS_TOKEN = None
             if ('access token' in str(e)) or ('Unsuccessful token request' in str(e)):
@@ -2588,7 +2578,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, m_body_html, SMTP_SSL)
                     email_sent = True
-            print_cur_ts("Timestamp:\t\t")
+            print_cur_ts("Timestamp:\t\t\t")
             time.sleep(SPOTIFY_ERROR_INTERVAL)
             continue
 
@@ -2603,7 +2593,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                 if csv_file_name:
                     write_csv_entry(csv_file_name, now_local_naive(), "Username", username, username_old, username)
             except Exception as e:
-                print(f"* Cannot write CSV entry - {e}")
+                print(f"* Error: {e}")
 
             if profile_notification:
                 m_subject = f"Spotify user {username_old} has changed username to {username}"
@@ -2613,15 +2603,15 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
             username_old = username
 
-            print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-            print_cur_ts("Timestamp:\t\t")
+            print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+            print_cur_ts("Timestamp:\t\t\t")
 
         try:
             sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
             sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
         except Exception as e:
-            print(f"Error while getting followers & followings, retrying in {display_time(SPOTIFY_ERROR_INTERVAL)} - {e}")
-            print_cur_ts("Timestamp:\t\t")
+            print(f"* Error while getting followers & followings, retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}: {e}")
+            print_cur_ts("Timestamp:\t\t\t")
             time.sleep(SPOTIFY_ERROR_INTERVAL)
             continue
 
@@ -2652,8 +2642,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             followers_old_count = followers_count
             followers_old = followers
 
-            print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-            print_cur_ts("Timestamp:\t\t")
+            print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+            print_cur_ts("Timestamp:\t\t\t")
 
         if followings_count != followings_old_count:
             spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, profile_notification, False)
@@ -2661,8 +2651,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             followings_old_count = followings_count
             followings_old = followings
 
-            print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-            print_cur_ts("Timestamp:\t\t")
+            print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+            print_cur_ts("Timestamp:\t\t\t")
 
         # profile pic
 
@@ -2678,7 +2668,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                     if csv_file_name:
                         write_csv_entry(csv_file_name, now_local_naive(), "Profile Picture Removed", username, convert_to_local_naive(profile_pic_mdate_dt), "")
                 except Exception as e:
-                    print(f"* Cannot write CSV entry - {e}")
+                    print(f"* Error: {e}")
 
                 if profile_notification:
                     m_subject = f"Spotify user {username} has removed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
@@ -2686,8 +2676,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, "", SMTP_SSL)
 
-                print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-                print_cur_ts("Timestamp:\t\t")
+                print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                print_cur_ts("Timestamp:\t\t\t")
 
             # user has profile pic, but it does not exist in the filesystem
             elif image_url and not os.path.isfile(profile_pic_file):
@@ -2710,7 +2700,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                         if csv_file_name:
                             write_csv_entry(csv_file_name, now_local_naive(), "Profile Picture Created", username, "", convert_to_local_naive(profile_pic_mdate_dt))
                     except Exception as e:
-                        print(f"* Cannot write CSV entry - {e}")
+                        print(f"* Error: {e}")
 
                     if profile_notification:
                         m_subject = f"Spotify user {username} has set profile picture ! ({get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)})"
@@ -2721,10 +2711,10 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                         send_email(m_subject, m_body, m_body_html, SMTP_SSL, profile_pic_file, "profile_pic")
 
                 else:
-                    print(f"Error saving profile picture !\n")
+                    print(f"* Error saving profile picture !\n")
 
-                print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-                print_cur_ts("Timestamp:\t\t")
+                print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                print_cur_ts("Timestamp:\t\t\t")
 
             # user has profile pic and it exists in the filesystem, but we check if it has not changed
             elif image_url and os.path.isfile(profile_pic_file):
@@ -2741,7 +2731,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                             if csv_file_name:
                                 write_csv_entry(csv_file_name, now_local_naive(), "Profile Picture Changed", username, convert_to_local_naive(profile_pic_mdate_dt), convert_to_local_naive(profile_pic_tmp_mdate_dt))
                         except Exception as e:
-                            print(f"* Cannot write CSV entry - {e}")
+                            print(f"* Error: {e}")
 
                         try:
                             if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
@@ -2750,7 +2740,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                             os.replace(profile_pic_file, profile_pic_file_old)
                             os.replace(profile_pic_file_tmp, profile_pic_file)
                         except Exception as e:
-                            print(f"Error while replacing/copying files - {e}")
+                            print(f"* Error while replacing/copying files: {e}")
 
                         if profile_notification:
                             m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
@@ -2760,17 +2750,17 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                             print(f"Sending email notification to {RECEIVER_EMAIL}")
                             send_email(m_subject, m_body, m_body_html, SMTP_SSL, profile_pic_file, "profile_pic")
 
-                        print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-                        print_cur_ts("Timestamp:\t\t")
+                        print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                        print_cur_ts("Timestamp:\t\t\t")
                     else:
                         try:
                             os.remove(profile_pic_file_tmp)
                         except Exception:
                             pass
                 else:
-                    print(f"Error while checking if the profile pic has changed !\n")
-                    print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-                    print_cur_ts("Timestamp:\t\t")
+                    print(f"* Error while checking if the profile pic has changed !\n")
+                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print_cur_ts("Timestamp:\t\t\t")
 
         list_of_playlists = []
         error_while_processing = False
@@ -2827,14 +2817,14 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                         if csv_file_name:
                                             write_csv_entry(csv_file_name, now_local_naive(), "Playlist Likes", p_name, p_likes_old, p_likes)
                                     except Exception as e:
-                                        print(f"* Cannot write CSV entry - {e}")
+                                        print(f"* Error: {e}")
                                     m_subject = f"Spotify user {username} number of likes for playlist '{p_name}' has changed! ({p_likes_diff_str}, {p_likes_old} -> {p_likes})"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                     if profile_notification:
                                         print(f"Sending email notification to {RECEIVER_EMAIL}")
                                         send_email(m_subject, m_body, "", SMTP_SSL)
-                                    print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-                                    print_cur_ts("Timestamp:\t\t")
+                                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                                    print_cur_ts("Timestamp:\t\t\t")
 
                                 # Number of collaborators changed
                                 if p_collaborators != p_collaborators_old:
@@ -2853,7 +2843,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                         if csv_file_name:
                                             write_csv_entry(csv_file_name, now_local_naive(), "Collaborators Number", p_name, p_collaborators_old, p_collaborators)
                                     except Exception as e:
-                                        print(f"* Cannot write CSV entry - {e}")
+                                        print(f"* Error: {e}")
 
                                     added_keys = p_collaborators_list.keys() - p_collaborators_list_old.keys()
                                     removed_keys = p_collaborators_list_old.keys() - p_collaborators_list.keys()
@@ -2874,7 +2864,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                                 if csv_file_name:
                                                     write_csv_entry(csv_file_name, now_local_naive(), "Added Collaborator", p_name, "", collab_name)
                                             except Exception as e:
-                                                print(f"* Cannot write CSV entry - {e}")
+                                                print(f"* Error: {e}")
 
                                         p_message_added_collaborators += "\n"
                                         print(p_message_added_collaborators, end="")
@@ -2889,7 +2879,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                                 if csv_file_name:
                                                     write_csv_entry(csv_file_name, now_local_naive(), "Removed Collaborator", p_name, collab_name, "")
                                             except Exception as e:
-                                                print(f"* Cannot write CSV entry - {e}")
+                                                print(f"* Error: {e}")
 
                                         p_message_removed_collaborators += "\n"
                                         print(p_message_removed_collaborators, end="")
@@ -2899,8 +2889,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                     if profile_notification:
                                         print(f"Sending email notification to {RECEIVER_EMAIL}")
                                         send_email(m_subject, m_body, "", SMTP_SSL)
-                                    print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-                                    print_cur_ts("Timestamp:\t\t")
+                                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                                    print_cur_ts("Timestamp:\t\t\t")
 
                                 # Number of tracks changed
                                 if p_tracks != p_tracks_old or p_update != p_update_old:
@@ -2932,14 +2922,14 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                             p_message = f"* Playlist '{p_name}': list of tracks ({p_tracks}) have changed{p_after_str}\n* Playlist URL: {p_url}\n"
                                         print(p_message)
                                     except Exception as e:
-                                        print(f"Error while processing data for playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f" - {e}" if e else ""))
-                                        print_cur_ts("Timestamp:\t\t")
+                                        print(f"* Error while processing data for playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f": {e}" if e else ""))
+                                        print_cur_ts("Timestamp:\t\t\t")
                                         continue
                                     try:
                                         if csv_file_name:
                                             write_csv_entry(csv_file_name, now_local_naive(), "Playlist Number of Tracks", p_name, p_tracks_old, p_tracks)
                                     except Exception as e:
-                                        print(f"* Cannot write CSV entry - {e}")
+                                        print(f"* Error: {e}")
                                     removed_tracks = compare_two_lists_of_dicts(p_tracks_list_old, p_tracks_list)
                                     added_tracks = compare_two_lists_of_dicts(p_tracks_list, p_tracks_list_old)
                                     p_message_added_tracks = ""
@@ -2961,7 +2951,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                                     if csv_file_name:
                                                         write_csv_entry(csv_file_name, convert_to_local_naive(added_at_dt), "Added Track", p_name, f_dict['added_by'], f_dict["artist"] + " - " + f_dict["track"])
                                                 except Exception as e:
-                                                    print(f"* Cannot write CSV entry - {e}")
+                                                    print(f"* Error: {e}")
 
                                     if removed_tracks:
                                         print("Removed tracks:\n")
@@ -2978,7 +2968,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                                     if csv_file_name:
                                                         write_csv_entry(csv_file_name, now_local_naive(), "Removed Track", p_name, f_dict["artist"] + " - " + f_dict["track"], "")
                                                 except Exception as e:
-                                                    print(f"* Cannot write CSV entry - {e}")
+                                                    print(f"* Error: {e}")
 
                                     p_subject_after_str = ""
                                     if p_tracks_diff != 0:
@@ -2993,8 +2983,8 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                     if profile_notification:
                                         print(f"Sending email notification to {RECEIVER_EMAIL}")
                                         send_email(m_subject, m_body, "", SMTP_SSL)
-                                    print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-                                    print_cur_ts("Timestamp:\t\t")
+                                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                                    print_cur_ts("Timestamp:\t\t\t")
 
                                 # Playlist name changed
                                 if p_name != p_name_old:
@@ -3004,14 +2994,14 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                         if csv_file_name:
                                             write_csv_entry(csv_file_name, now_local_naive(), "Playlist Name", username, p_name_old, p_name)
                                     except Exception as e:
-                                        print(f"* Cannot write CSV entry - {e}")
+                                        print(f"* Error: {e}")
                                     m_subject = f"Spotify user {username} playlist '{p_name_old}' name changed to '{p_name}'!"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                     if profile_notification:
                                         print(f"Sending email notification to {RECEIVER_EMAIL}")
                                         send_email(m_subject, m_body, "", SMTP_SSL)
-                                    print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-                                    print_cur_ts("Timestamp:\t\t")
+                                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                                    print_cur_ts("Timestamp:\t\t\t")
 
                                 # Playlist description changed
                                 if p_descr != p_descr_old:
@@ -3021,14 +3011,14 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                         if csv_file_name:
                                             write_csv_entry(csv_file_name, now_local_naive(), "Playlist Description", p_name, p_descr_old, p_descr)
                                     except Exception as e:
-                                        print(f"* Cannot write CSV entry - {e}")
+                                        print(f"* Error: {e}")
                                     m_subject = f"Spotify user {username} playlist '{p_name}' description has changed !"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                     if profile_notification:
                                         print(f"Sending email notification to {RECEIVER_EMAIL}")
                                         send_email(m_subject, m_body, "", SMTP_SSL)
-                                    print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-                                    print_cur_ts("Timestamp:\t\t")
+                                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                                    print_cur_ts("Timestamp:\t\t\t")
 
             if not error_while_processing:
                 list_of_playlists_old = list_of_playlists
@@ -3050,13 +3040,13 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
                     else:
                         print("* Possible Spotify API glitch detected, not reporting the number of changed playlists temporarily!\n")
-                    print(f"Check interval:\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-                    print_cur_ts("Timestamp:\t\t")
+                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print_cur_ts("Timestamp:\t\t\t")
 
         alive_counter += 1
 
         if alive_counter >= TOOL_ALIVE_COUNTER:
-            print_cur_ts("Alive check, timestamp: ")
+            print_cur_ts("Alive check, timestamp:\t\t")
             alive_counter = 0
 
         time.sleep(SPOTIFY_CHECK_INTERVAL)
@@ -3073,29 +3063,169 @@ if __name__ == "__main__":
 
     print(f"Spotify Profile Monitoring Tool v{VERSION}\n")
 
-    parser = argparse.ArgumentParser("spotify_profile_monitor")
-    parser.add_argument("SPOTIFY_USER_URI_ID", nargs="?", help="Spotify user URI ID", type=str)
-    parser.add_argument("-u", "--spotify_dc_cookie", help="Spotify sp_dc cookie to override the value defined within the script (SP_DC_COOKIE)", type=str)
-    parser.add_argument("-p", "--profile_notification", help="Send email notification once user's profile changes (followers & followings, public playlists and its tracks, likes for playlists, profile picture)", action='store_true')
-    parser.add_argument("-g", "--disable_followers_followings_notification", help="Disable sending email notifications about new followers/followings (it is sent by default when -p / --profile_notification is enabled)", action='store_false')
-    parser.add_argument("-e", "--error_notification", help="Disable sending email notifications in case of errors like expired sp_dc", action='store_false')
-    parser.add_argument("-c", "--check_interval", help="Time between monitoring checks, in seconds", type=int)
-    parser.add_argument("-m", "--error_interval", help="Time between error checks, in seconds", type=int)
-    parser.add_argument("-b", "--csv_file", help="Write all profile changes to CSV file", type=str, metavar="CSV_FILENAME")
-    parser.add_argument("-t", "--playlists_to_skip", help="Filename with Spotify playlists to ignore from monitoring (so it won't report changed tracks and number of likes for them); playlists can be blacklisted by its URI and URL, but also owner name, URI and URL", type=str, metavar="IGNORED_PLAYLISTS_FILENAME")
-    parser.add_argument("-j", "--do_not_detect_changed_profile_pic", help="Disable detection of changed user's profile picture in monitoring mode", action='store_false')
-    parser.add_argument("-q", "--do_not_monitor_playlists", help="Disable detection of changes in user's public playlists in monitoring mode (like added/removed tracks in playlists, playlists name and description changes, number of likes and collaborators for playlists)", action='store_false')
-    parser.add_argument("-k", "--get_all_playlists", help="By default, only public playlists owned by the user are fetched; you can change this behavior with this parameter; it is helpful in the case of playlists created by another user added to another user profile", action='store_true')
-    parser.add_argument("-l", "--list_tracks_for_playlist", help="List all tracks for a specific Spotify playlist URL", type=str, metavar="SPOTIFY_PLAYLIST_URL")
-    parser.add_argument("-x", "--list_liked_tracks", help="List all liked tracks for the user associated with the selected SP_DC_COOKIE", action='store_true')
-    parser.add_argument("-i", "--user_profile_details", help="Show profile details for user with specific Spotify URI ID (playlists, followers, followings, recently played artists etc.)", action='store_true')
-    parser.add_argument("-a", "--recently_played_artists", help="List recently played artists for user with specific Spotify URI ID", action='store_true')
-    parser.add_argument("-f", "--followers_and_followings", help="List followers & followings for user with specific Spotify URI ID", action='store_true')
-    parser.add_argument("-v", "--current_user", help="Get basic information about access token owner", action='store_true')
-    parser.add_argument("-s", "--search_username", help="Search for users with specific name to get their Spotify user URI ID", type=str, metavar="SPOTIFY_USERNAME")
-    parser.add_argument("-d", "--disable_logging", help="Disable output logging to file 'spotify_profile_monitor_UserURIID.log' file", action='store_true')
-    parser.add_argument("-y", "--file_suffix", help="File suffix to be used instead of Spotify user URI ID for different file names like output log file, json files, profile picture jpeg files", type=str, metavar="FILE_SUFFIX")
-    parser.add_argument("-z", "--send_test_email_notification", help="Send test email notification to verify SMTP settings defined in the script", action='store_true')
+    parser = argparse.ArgumentParser(
+        prog="spotify_profile_monitor",
+        description="Monitor a Spotify user’s profile changes and send customizable email alerts [ https://github.com/misiektoja/spotify_profile_monitor/ ]"
+    )
+
+    # Positional
+    parser.add_argument(
+        "user_id",
+        nargs="?",
+        metavar="SPOTIFY_USER_URI_ID",
+        help="Spotify user URI ID",
+        type=str
+    )
+
+    # API credentials
+    creds = parser.add_argument_group("API credentials")
+    creds.add_argument(
+        "-u", "--spotify-dc-cookie",
+        dest="spotify_dc_cookie",
+        metavar="SP_DC_COOKIE",
+        type=str,
+        help="Spotify sp_dc cookie"
+    )
+
+    # Notifications
+    notify = parser.add_argument_group("Notifications")
+    notify.add_argument(
+        "-p", "--notify-profile",
+        dest="profile_notification",
+        action="store_true",
+        help="Email when user’s profile changes"
+    )
+    notify.add_argument(
+        "-g", "--no-followers-followings-notify",
+        dest="disable_followers_followings_notification",
+        action="store_false",
+        help="Disable notifications about new followers/followings"
+    )
+    notify.add_argument(
+        "-e", "--no-error-notify",
+        dest="error_notification",
+        action="store_false",
+        help="Disable notifications on errors"
+    )
+    notify.add_argument(
+        "-z", "--send-test-email",
+        dest="send_test_email",
+        action="store_true",
+        help="Send test email to verify SMTP settings"
+    )
+
+    # Intervals & timers
+    times = parser.add_argument_group("Intervals & timers")
+    times.add_argument(
+        "-c", "--check-interval",
+        dest="check_interval",
+        metavar="SECONDS",
+        type=int,
+        help="Time between monitoring checks, in seconds"
+    )
+    times.add_argument(
+        "-m", "--error-interval",
+        dest="error_interval",
+        metavar="SECONDS",
+        type=int,
+        help="Time between error checks, in seconds"
+    )
+
+    # Listing
+    listing = parser.add_argument_group("Listing")
+    listing.add_argument(
+        "-l", "--list-tracks-for-playlist",
+        dest="list_tracks_for_playlist",
+        metavar="URL",
+        type=str,
+        help="List all tracks for a Spotify playlist URL"
+    )
+    listing.add_argument(
+        "-x", "--list-liked-tracks",
+        dest="list_liked_tracks",
+        action="store_true",
+        help="List all liked tracks for the user owning the Spotify access token"
+    )
+    listing.add_argument(
+        "-i", "--show-user-profile",
+        dest="user_profile_details",
+        action="store_true",
+        help="Show profile details for a specific user"
+    )
+    listing.add_argument(
+        "-a", "--list-recently-played-artists",
+        dest="recently_played_artists",
+        action="store_true",
+        help="List recently played artists for a user"
+    )
+    listing.add_argument(
+        "-f", "--list-followers-followings",
+        dest="followers_and_followings",
+        action="store_true",
+        help="List followers & followings for a user"
+    )
+    listing.add_argument(
+        "-v", "--show-user-info",
+        dest="show_user_info",
+        action="store_true",
+        help="Get basic information about the Spotify access token owner"
+    )
+    listing.add_argument(
+        "-s", "--search-username",
+        dest="search_username",
+        metavar="USERNAME",
+        type=str,
+        help="Search for Spotify users by name"
+    )
+
+    # Features & output
+    opts = parser.add_argument_group("Features & output")
+    opts.add_argument(
+        "-b", "--csv-file",
+        dest="csv_file",
+        metavar="CSV_FILE",
+        type=str,
+        help="Write all profile changes to CSV file"
+    )
+    opts.add_argument(
+        "-t", "--playlists-to-skip",
+        dest="playlists_to_skip",
+        metavar="PLAYLISTS_FILE",
+        type=str,
+        help="Filename with Spotify playlists to ignore"
+    )
+    opts.add_argument(
+        "-j", "--no-profile-pic-detect",
+        dest="do_not_detect_changed_profile_pic",
+        action="store_false",
+        help="Disable detection of changed profile picture"
+    )
+    opts.add_argument(
+        "-q", "--no-playlist-monitor",
+        dest="do_not_monitor_playlists",
+        action="store_false",
+        help="Disable monitoring of playlist changes"
+    )
+    opts.add_argument(
+        "-k", "--get-all-playlists",
+        dest="get_all_playlists",
+        action="store_true",
+        help="Fetch all playlists instead of only owned ones"
+    )
+    opts.add_argument(
+        "-y", "--file-suffix",
+        dest="file_suffix",
+        metavar="SUFFIX",
+        type=str,
+        help="File suffix to append to output filenames"
+    )
+    opts.add_argument(
+        "-d", "--disable-logging",
+        dest="disable_logging",
+        action="store_true",
+        help="Disable logging to spotify_profile_monitor_<suffix>.log"
+    )
+
     args = parser.parse_args()
 
     if len(sys.argv) == 1:
@@ -3122,7 +3252,7 @@ if __name__ == "__main__":
     if not check_internet():
         sys.exit(1)
 
-    if args.send_test_email_notification:
+    if args.send_test_email:
         print("* Sending test email notification ...\n")
         if send_email("spotify_profile_monitor: test email", "This is test email - your SMTP settings seems to be correct !", "", SMTP_SSL, smtp_timeout=5) == 0:
             print("* Email sent successfully !")
@@ -3153,7 +3283,7 @@ if __name__ == "__main__":
         print("* Error: SP_DC_COOKIE (-u / --spotify_dc_cookie) value is empty or incorrect")
         sys.exit(1)
 
-    if args.current_user:
+    if args.show_user_info:
         print("* Getting basic information about access token owner ...\n")
         try:
             accessToken = spotify_get_access_token(SP_DC_COOKIE)
@@ -3173,7 +3303,7 @@ if __name__ == "__main__":
 
             print("─" * HORIZONTAL_LINE)
         except Exception as e:
-            print(f"* Error - {e}")
+            print(f"* Error: {e}")
             sys.exit(1)
         sys.exit(0)
 
@@ -3182,7 +3312,7 @@ if __name__ == "__main__":
             with open(args.csv_file, 'a', newline='', buffering=1, encoding="utf-8") as _:
                 pass
         except Exception as e:
-            print(f"* Error: CSV file cannot be opened for writing - {e}")
+            print(f"* Error, CSV file cannot be opened for writing: {e}")
             sys.exit(1)
 
     if args.list_tracks_for_playlist:
@@ -3193,7 +3323,7 @@ if __name__ == "__main__":
             if 'Not Found' in str(e) or '400 Client' in str(e):
                 print("* Error: playlist does not exist or is set to private")
             else:
-                print(f"* Error - {e}")
+                print(f"* Error: {e}")
             sys.exit(1)
         sys.exit(0)
 
@@ -3205,7 +3335,7 @@ if __name__ == "__main__":
             if 'Not Found' in str(e) or '400 Client' in str(e):
                 print("* Error: playlist does not exist or is set to private")
             else:
-                print(f"* Error - {e}")
+                print(f"* Error: {e}")
             sys.exit(1)
         sys.exit(0)
 
@@ -3217,47 +3347,47 @@ if __name__ == "__main__":
             sp_accessToken = spotify_get_access_token(SP_DC_COOKIE)
             spotify_search_users(sp_accessToken, args.search_username)
         except Exception as e:
-            print(f"* Error - {e}")
+            print(f"* Error: {e}")
             sys.exit(1)
         sys.exit(0)
 
-    if not args.SPOTIFY_USER_URI_ID:
+    if not args.user_id:
         print("* Error: SPOTIFY_USER_URI_ID argument is required !")
         sys.exit(1)
 
     if args.user_profile_details:
         try:
             sp_accessToken = spotify_get_access_token(SP_DC_COOKIE)
-            spotify_get_user_details(sp_accessToken, args.SPOTIFY_USER_URI_ID)
+            spotify_get_user_details(sp_accessToken, args.user_id)
         except Exception as e:
             if 'Not Found' in str(e) or '404 Client' in str(e):
                 print("* Error: user does not exist")
             else:
-                print(f"* Error - {e}")
+                print(f"* Error: {e}")
             sys.exit(1)
         sys.exit(0)
 
     if args.recently_played_artists:
         try:
             sp_accessToken = spotify_get_access_token(SP_DC_COOKIE)
-            spotify_get_recently_played_artists(sp_accessToken, args.SPOTIFY_USER_URI_ID)
+            spotify_get_recently_played_artists(sp_accessToken, args.user_id)
         except Exception as e:
             if 'Not Found' in str(e) or '404 Client' in str(e):
                 print("* Error: user does not exist")
             else:
-                print(f"* Error - {e}")
+                print(f"* Error: {e}")
             sys.exit(1)
         sys.exit(0)
 
     if args.followers_and_followings:
         try:
             sp_accessToken = spotify_get_access_token(SP_DC_COOKIE)
-            spotify_get_followers_and_followings(sp_accessToken, args.SPOTIFY_USER_URI_ID)
+            spotify_get_followers_and_followings(sp_accessToken, args.user_id)
         except Exception as e:
             if 'Not Found' in str(e) or '404 Client' in str(e):
                 print("* Error: user does not exist")
             else:
-                print(f"* Error - {e}")
+                print(f"* Error: {e}")
             sys.exit(1)
         sys.exit(0)
 
@@ -3271,7 +3401,7 @@ if __name__ == "__main__":
                 }
             file.close()
         except Exception as e:
-            print(f"* Error: file with playlists to ignore cannot be opened - {e}")
+            print(f"* Error, file with playlists to ignore cannot be opened: {e}")
             sys.exit(1)
     else:
         playlists_to_skip = []
@@ -3279,7 +3409,7 @@ if __name__ == "__main__":
     if args.file_suffix:
         file_suffix = str(args.file_suffix)
     else:
-        file_suffix = str(args.SPOTIFY_USER_URI_ID)
+        file_suffix = str(args.user_id)
 
     if not args.disable_logging:
         SP_LOGFILE = f"{SP_LOGFILE}_{file_suffix}.log"
@@ -3299,9 +3429,9 @@ if __name__ == "__main__":
 
     print(f"* Spotify timers:\t\t[check interval: {display_time(SPOTIFY_CHECK_INTERVAL)}] [error interval: {display_time(SPOTIFY_ERROR_INTERVAL)}]")
     print(f"* Email notifications:\t\t[profile changes = {profile_notification}] [followers/followings = {followers_followings_notification}]\n\t\t\t\t[errors = {error_notification}]")
-    print(f"* Detect changed profile pic:\t{DETECT_CHANGED_PROFILE_PIC}")
-    print(f"* Detect changes in playlists:\t{DETECT_CHANGES_IN_PLAYLISTS}")
-    print(f"* Get all public playlists:\t{GET_ALL_PLAYLISTS}")
+    print(f"* Profile pic changes:\t\t{DETECT_CHANGED_PROFILE_PIC}")
+    print(f"* Playlist changes:\t\t{DETECT_CHANGES_IN_PLAYLISTS}")
+    print(f"* All public playlists:\t\t{GET_ALL_PLAYLISTS}")
     print(f"* Output logging enabled:\t{not args.disable_logging}" + (f" ({SP_LOGFILE})" if not args.disable_logging else ""))
     print(f"* CSV logging enabled:\t\t{bool(args.csv_file)}" + (f" ({args.csv_file})" if args.csv_file else ""))
     print(f"* Local timezone:\t\t{LOCAL_TIMEZONE}\n")
@@ -3312,7 +3442,7 @@ if __name__ == "__main__":
         signal.signal(signal.SIGTRAP, increase_check_signal_handler)
         signal.signal(signal.SIGABRT, decrease_check_signal_handler)
 
-    spotify_profile_monitor_uri(args.SPOTIFY_USER_URI_ID, error_notification, args.csv_file, playlists_to_skip)
+    spotify_profile_monitor_uri(args.user_id, error_notification, args.csv_file, playlists_to_skip)
 
     sys.stdout = stdout_bck
     sys.exit(0)
