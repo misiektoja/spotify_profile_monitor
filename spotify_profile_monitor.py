@@ -2234,6 +2234,14 @@ def compare_images(path1, path2):
         return False
 
 
+# Return tracks in list_a that are not in list_b, ignoring added_by
+def diff_tracks(list_a, list_b):
+    def sig(d):
+        return (d.get("uri"), d.get("artist"), d.get("track"), d.get("duration"), d.get("added_at"), d.get("added_by_id") or "")
+    set_b = {sig(x) for x in list_b}
+    return [x for x in list_a if sig(x) not in set_b]
+
+
 # Main function that monitors profile changes of the specified Spotify user URI ID
 def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, playlists_to_skip):
     global SP_CACHED_ACCESS_TOKEN
@@ -2930,8 +2938,9 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                             write_csv_entry(csv_file_name, now_local_naive(), "Playlist Number of Tracks", p_name, p_tracks_old, p_tracks)
                                     except Exception as e:
                                         print(f"* Error: {e}")
-                                    removed_tracks = compare_two_lists_of_dicts(p_tracks_list_old, p_tracks_list)
-                                    added_tracks = compare_two_lists_of_dicts(p_tracks_list, p_tracks_list_old)
+
+                                    removed_tracks = diff_tracks(p_tracks_list_old, p_tracks_list)
+                                    added_tracks = diff_tracks(p_tracks_list, p_tracks_list_old)
                                     p_message_added_tracks = ""
                                     p_message_removed_tracks = ""
 
