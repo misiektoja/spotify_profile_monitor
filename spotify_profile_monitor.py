@@ -18,6 +18,28 @@ pyotp
 
 VERSION = "2.0.1"
 
+# API 401 error means sp_dc cookie has expired. Lasts one year. 03/15/2025
+
+# spotify-friend-stalker: https://github.com/moritzlauper/spotify-friend-stalker
+# spotify-buddylist API:  https://github.com/valeriangalliat/spotify-buddylist
+# spotify-api:            https://developer.spotify.com/documentation/web-api (official API)
+# spotify-monitor:        https://github.com/misiektoja/spotify_monitor/
+# spot-fy-api-python:     https://github.com/thlucas1/SpotifyWebApiPython (reference only)
+
+# revision history
+# 2025/03/28: Finished updating with new features to export playlists into format to import directly into spotify_monitor
+# 2025/03/30: Updated to 2.0.1 from spotify_profile_monitor source
+# 2025/04/02: Spotify_list_saved_tracks and spotify_list_tracks_for_playlist have option to write to file directly
+# 2025/04/02: Spotify_list_saved_tracks and spotify_list_tracks_for_playlist will not overwrite file if there's an error fetching spotify data
+
+# bugs and to-dos:
+# -
+#
+# example command lines:
+# - python spotify_profile_monitor.py kara.elaine.long -p -k -b kara.csv
+# - python spotify_profile_monitor.py -l https://open.spotify.com/playlist/5eEkzONtwQsK6efRldsyoI -w > out.txt # list tracks in Discovery Zone
+# - python spotify_profile_monitor.py -r > liked_songs_jmk.txt # list tracks in jeoff's liked songs
+
 # ---------------------------
 # CONFIGURATION SECTION START
 # ---------------------------
@@ -25,22 +47,36 @@ VERSION = "2.0.1"
 # Log in to Spotify web client (https://open.spotify.com/) and put the value of sp_dc cookie below (or use -u parameter)
 # Newly generated Spotify's sp_dc cookie should be valid for 1 year
 # You can use Cookie-Editor by cgagnier to get it easily (available for all major web browsers): https://cookie-editor.com/
-SP_DC_COOKIE = "your_sp_dc_cookie_value"
+                                        
+
+# Account: JEOFF-US (to monitor KEL)
+SP_DC_COOKIE  = "AQApZPk-gr5VVWNh6Qn-AX4iqTa4v_JDLS7nJBfFV8xs_pEll8Gwki9C-TKAxnXSK8COPNqNcw249wTQORNbDqrsszsflWRiF-dpGF5t7Sd7_e9BF_sPuUBJsZFry-UaGU-28TW9ccRMkLFQcXEzdAB-jglOLIFMtZNAWujOXqsdK0Yy4X1gBTTwBWHCPHO9_quq_-h6KknIgNSUIg"
+GMAIL_TAG     = "SpotifyU "
+ERR_CODE      = "KEL"
+SEND_TEXTS    = True
+
+# Account: CASHY (to monitor JMK)
+SP_DC_COOKIE2 = "AQC5rbNKuWJEX5RBAM3MMt50re0iZnbpM8uqgPVdNXLLSJAP5mjnTEyn48-5A6-SVnmXGJH4h4kOu4myK1WaKaERCaAHym80O1RbC09iYMIofVsWYLIZ_NQ_q5NUvyo70AawHh_JByGAefIuRSUYcDKnqBRfRRrGP0w6G7hqhRgHvnABcOgAHnT4hmtYJJxXD9pQtf5LXMTOl7l3y2g"
+GMAIL_TAG2    = "SpotifyJ "
+ERR_CODE2     = "JMK"
+SEND_TEXTS2   = True
+
+JMK_MODE = False
 
 # SMTP settings for sending email notifications, you can leave it as it is below and no notifications will be sent
-SMTP_HOST = "your_smtp_server_ssl"
+SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 587
-SMTP_USER = "your_smtp_user"
-SMTP_PASSWORD = "your_smtp_password"
+SMTP_USER = "jeoff@krontz.com"
+SMTP_PASSWORD = "trkpuandloqxzzkf"
 SMTP_SSL = True
-SENDER_EMAIL = "your_sender_email"
+SENDER_EMAIL = "jeoff@krontz.com"
 # SMTP_HOST = "your_smtp_server_plaintext"
 # SMTP_PORT = 25
 # SMTP_USER = "your_smtp_user"
 # SMTP_PASSWORD = "your_smtp_password"
 # SMTP_SSL = False
 # SENDER_EMAIL = "your_sender_email"
-RECEIVER_EMAIL = "your_receiver_email"
+RECEIVER_EMAIL = "jkrontz@gmail.com"
 
 # How often do we perform checks for user's profile changes, you can also use -c parameter; in seconds
 SPOTIFY_CHECK_INTERVAL = 1800  # 30 mins
@@ -208,6 +244,7 @@ from random import randrange
 import urllib3
 if not VERIFY_SSL:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+from twilio.rest import Client
 
 SESSION = req.Session()
 
@@ -998,6 +1035,44 @@ def spotify_convert_url_to_uri(url):
 
     return uri
 
+# Function returning detailed info about tracks saved by current user
+def spotify_get_user_saved_tracks(access_token):
+    url2 = f"https://api.spotify.com/v1/me/tracks?market=EN&limit=50"
+      
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Client-Id": SP_CACHED_CLIENT_ID,
+        "User-Agent": SP_CACHED_USER_AGENT,
+    }
+    # add si parameter so link opens in native Spotify app after clicking
+    si = "?si=1"
+
+    try:
+        sp_playlist_tracks_concatenated_list = []
+        next_url = url2
+        while next_url:
+            response2 = req.get(next_url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
+            response2.raise_for_status()
+            json_response2 = response2.json()
+#            print(json.dumps(json_response2))
+
+            for track in json_response2.get("items"):
+                sp_playlist_tracks_concatenated_list.append(track)
+
+            next_url = json_response2.get("next")
+
+        sp_playlist_tracks = sp_playlist_tracks_concatenated_list
+        if sp_playlist_tracks:
+            sp_playlist_tracks_count_tmp = len(sp_playlist_tracks)
+            if sp_playlist_tracks_count_tmp > 0:
+                sp_playlist_tracks_count = sp_playlist_tracks_count_tmp
+
+        return {"sp_playlist_tracks_count": sp_playlist_tracks_count, "sp_playlist_tracks": sp_playlist_tracks}
+
+    except Exception:
+        raise
+
+
 
 # Function returning detailed info about playlist with specified URI (with possibility to get its tracks as well)
 def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
@@ -1168,9 +1243,42 @@ def spotify_get_user_followers(access_token, user_uri_id):
         raise
 
 
+# Function listing tracks for current user's saved tracks
+def spotify_list_saved_tracks(sp_accessToken, save_filename):
+    global JMK_MODE
+
+    if not JMK_MODE:
+        print(f"Listing saved tracks for current user ...\n")
+
+    user_id_name_mapping = {}
+
+    sp_playlist_data = spotify_get_user_saved_tracks(sp_accessToken)
+
+    p_tracks = sp_playlist_data.get("sp_playlist_tracks_count", 0)
+    p_tracks_list = sp_playlist_data.get("sp_playlist_tracks", None)
+
+    try:
+       if p_tracks_list is not None:
+            tracks_list = {f'{track["track"]["artists"][0].get("name", None).strip()} - {track["track"].get("name", None).strip()}' for index, track in enumerate(p_tracks_list)}
+            tracks_list = sorted(list(tracks_list))
+            for line in tracks_list:
+                print(line)  # Print each line to screen
+
+       if save_filename:
+            # Open the file in write mode and write the lines
+            with open(save_filename, "w") as file:
+                file.writelines([track + '\n' for track in tracks_list])
+                print(f"\nLines successfully written to {save_filename}.")
+            
+    except Exception as e:
+        print(f"* Error writing to the output file {save_filename} - {e}")
+
 # Function listing tracks for playlist with specified URI (-l parameter)
-def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
-    print(f"Listing tracks for playlist '{playlist_url}' ...\n")
+def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, save_filename):
+    global JMK_MODE
+
+    if not JMK_MODE:
+        print(f"Listing tracks for playlist '{playlist_url}' ...\n")
 
     user_id_name_mapping = {}
 
@@ -1182,7 +1290,8 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
     p_descr = html.unescape(sp_playlist_data.get("sp_playlist_description", ""))
     p_owner = sp_playlist_data.get("sp_playlist_owner", "")
 
-    print(f"Playlist '{p_name}' owned by '{p_owner}':\n")
+    if not JMK_MODE:
+        print(f"Playlist '{p_name}' owned by '{p_owner}':\n")
 
     p_likes = sp_playlist_data.get("sp_playlist_followers_count", 0)
     p_tracks = sp_playlist_data.get("sp_playlist_tracks_count", 0)
@@ -1190,6 +1299,7 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
     added_at_ts_lowest = 0
     added_at_ts_highest = 0
     duration_sum = 0
+    tracks_list = []
     if p_tracks_list is not None:
         for index, track in enumerate(p_tracks_list):
             p_artist = track["track"]["artists"][0].get("name", None)
@@ -1226,32 +1336,46 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url):
                     added_at_ts_highest = added_at_dt_ts
                 added_at_dt_new = datetime.fromtimestamp(int(added_at_dt_ts)).strftime("%d %b %Y, %H:%M:%S")
                 added_at_dt_new_week_day = calendar.day_abbr[datetime.fromtimestamp(int(added_at_dt_ts)).weekday()]
-                artist_track = artist_track[:75]
-                line_new = '%75s    %20s    %3s     %10s' % (artist_track, added_at_dt_new, added_at_dt_new_week_day, added_by_name)
+                if not JMK_MODE:
+                    artist_track = artist_track[:75]
+                    line_new = '%75s    %20s    %3s     %10s' % (artist_track, added_at_dt_new, added_at_dt_new_week_day, added_by_name)
+                else:
+                    line_new = f"{artist_track}"
+                    tracks_list.append(line_new)
                 print(line_new)
+        try:
+            if save_filename:
+                # Open the file in write mode and write the lines
+                with open(save_filename, "w") as file:
+                    file.writelines([track + '\n' for track in tracks_list])
+                    print(f"\nLines successfully written to {save_filename}.")
+        except Exception as e:
+            print(f"* Error writing to the output file {save_filename} - {e}")
+                
 
-    print(f"\nName:\t\t'{p_name}'")
-    if p_descr:
-        print(f"Description:\t'{p_descr}'")
+    if not JMK_MODE:
+        print(f"\nName:\t\t'{p_name}'")
+        if p_descr:
+            print(f"Description:\t'{p_descr}'")
 
-    print(f"URL:\t\t{playlist_url}\nSongs:\t\t{p_tracks}\nLikes:\t\t{p_likes}")
+        print(f"URL:\t\t{playlist_url}\nSongs:\t\t{p_tracks}\nLikes:\t\t{p_likes}")
 
-    if added_at_ts_lowest > 0:
-        p_creation_date = get_date_from_ts(int(added_at_ts_lowest))
-        p_creation_date_since = calculate_timespan(int(time.time()), int(added_at_ts_lowest))
-        print(f"Creation date:\t{p_creation_date} ({p_creation_date_since} ago)")
+        if added_at_ts_lowest > 0:
+            p_creation_date = get_date_from_ts(int(added_at_ts_lowest))
+            p_creation_date_since = calculate_timespan(int(time.time()), int(added_at_ts_lowest))
+            print(f"Creation date:\t{p_creation_date} ({p_creation_date_since} ago)")
 
-    if added_at_ts_highest > 0:
-        p_last_track_date = get_date_from_ts(int(added_at_ts_highest))
-        p_last_track_date_since = calculate_timespan(int(time.time()), int(added_at_ts_highest))
-        print(f"Last update:\t{p_last_track_date} ({p_last_track_date_since} ago)")
+        if added_at_ts_highest > 0:
+            p_last_track_date = get_date_from_ts(int(added_at_ts_highest))
+            p_last_track_date_since = calculate_timespan(int(time.time()), int(added_at_ts_highest))
+            print(f"Last update:\t{p_last_track_date} ({p_last_track_date_since} ago)")
 
-    print(f"Duration:\t{display_time(duration_sum)}")
+        print(f"Duration:\t{display_time(duration_sum)}")
 
-    if len(user_id_name_mapping) > 1:
-        print(f"\nCollaborators ({len(user_id_name_mapping)}):\n")
-        for collab_id, collab_name in user_id_name_mapping.items():
-            print(f"- {collab_name} [id: {collab_id}]")
+        if len(user_id_name_mapping) > 1:
+            print(f"\nCollaborators ({len(user_id_name_mapping)}):\n")
+            for collab_id, collab_name in user_id_name_mapping.items():
+                print(f"- {collab_name} [id: {collab_id}]")
 
 
 # Function comparing two lists of dictionaries
@@ -1774,6 +1898,7 @@ def compare_images(path1, path2):
 # Main function monitoring profile changes of the specified Spotify user URI ID
 def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, csv_exists, playlists_to_skip):
     global SP_CACHED_ACCESS_TOKEN
+    global JMK_MODE
     playlists_count = 0
     playlists_old_count = 0
     playlists = None
@@ -2588,20 +2713,20 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
 if __name__ == "__main__":
 
-    stdout_bck = sys.stdout
+                           
 
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+                                                
+                                                 
 
-    try:
-        if platform.system() == 'Windows':
-            os.system('cls')
-        else:
-            os.system('clear')
-    except Exception:
-        print("* Cannot clear the screen contents")
+        
+                                          
+                            
+             
+                              
+                     
+                                                   
 
-    print(f"Spotify Profile Monitoring Tool v{VERSION}\n")
+                                                          
 
     parser = argparse.ArgumentParser("spotify_profile_monitor")
     parser.add_argument("SPOTIFY_USER_URI_ID", nargs="?", help="Spotify user URI ID", type=str)
@@ -2617,6 +2742,8 @@ if __name__ == "__main__":
     parser.add_argument("-q", "--do_not_monitor_playlists", help="Disable detection of changes in user's public playlists in monitoring mode (like added/removed tracks in playlists, playlists name and description changes, number of likes for playlists)", action='store_false')
     parser.add_argument("-k", "--get_all_playlists", help="By default, only public playlists owned by the user are fetched; you can change this behavior with this parameter; it is helpful in the case of playlists created by another user added to another user profile", action='store_true')
     parser.add_argument("-l", "--list_tracks_for_playlist", help="List all tracks for specific Spotify playlist URL", type=str, metavar="SPOTIFY_PLAYLIST_URL")
+    parser.add_argument("-r", "--list_saved_tracks", help="List all tracks for user associated with selected SP_DC_COOKIE or SP_DC_COOKIE2", action='store_true')
+    parser.add_argument("-n", "--output_filename", help="Filename to write list of tracks to for -l or -r", type=str)
     parser.add_argument("-i", "--user_profile_details", help="Show profile details for user with specific Spotify URI ID (playlists, followers, followings, recently played artists etc.)", action='store_true')
     parser.add_argument("-a", "--recently_played_artists", help="List recently played artists for user with specific Spotify URI ID", action='store_true')
     parser.add_argument("-f", "--followers_and_followings", help="List followers & followings for user with specific Spotify URI ID", action='store_true')
@@ -2624,9 +2751,32 @@ if __name__ == "__main__":
     parser.add_argument("-d", "--disable_logging", help="Disable output logging to file 'spotify_profile_monitor_UserURIID.log' file", action='store_true')
     parser.add_argument("-y", "--file_suffix", help="File suffix to be used instead of Spotify user URI ID for different file names like output log file, json files, profile picture jpeg files", type=str, metavar="FILE_SUFFIX")
     parser.add_argument("-z", "--send_test_email_notification", help="Send test email notification to verify SMTP settings defined in the script", action='store_true')
+    parser.add_argument("-v", "--alt_cookie", help="Use secondary sp_dc cookie (SP_DC_COOKIE2)", action='store_true')
+    parser.add_argument("-w", "--jmk", help="Simplified output for list_tracks_for_playlist (-l) and list_saved_tracks (-r)", action='store_true')
     args = parser.parse_args()
 
+    if args.jmk:
+        JMK_MODE = True
+    
+    if not JMK_MODE:
+        stdout_bck = sys.stdout
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
+        try:
+            if platform.system() == 'Windows':
+                os.system('cls')
+            else:
+                os.system('clear')
+        except Exception:
+            print("* Cannot clear the screen contents")
+
+    if not JMK_MODE:
+        print(f"Spotify Profile Monitoring Tool v{VERSION}\n")
+
     if len(sys.argv) == 1:
+        print(f"Spotify Profile Monitoring Tool v{VERSION}\n")
         parser.print_help(sys.stderr)
         sys.exit(1)
 
@@ -2642,10 +2792,17 @@ if __name__ == "__main__":
             print("* Error: Cannot detect local timezone, consider setting LOCAL_TIMEZONE manually !")
             sys.exit(1)
 
-    sys.stdout.write("* Checking internet connectivity ... ")
-    sys.stdout.flush()
-    check_internet()
-    print("")
+    if not JMK_MODE:
+        sys.stdout.write("* Checking internet connectivity ... ")
+        sys.stdout.flush()
+        check_internet()
+        print("")
+
+    if args.alt_cookie:
+        SP_DC_COOKIE = SP_DC_COOKIE2
+        GMAIL_TAG    = GMAIL_TAG2
+        ERR_CODE     = ERR_CODE2
+        SEND_TEXTS   = SEND_TEXTS2
 
     if args.send_test_email_notification:
         print("* Sending test email notification ...\n")
@@ -2678,10 +2835,23 @@ if __name__ == "__main__":
         print("* Error: SP_DC_COOKIE (-u / --spotify_dc_cookie) value is empty or incorrect")
         sys.exit(1)
 
+    # If -r flag is set and filename is provided, write to file, otherwise just print to screen
+    if args.list_saved_tracks:
+        try:
+            sp_accessToken = spotify_get_access_token(SP_DC_COOKIE)
+            spotify_list_saved_tracks(sp_accessToken, args.output_filename)
+        except Exception as e:
+            if 'Not Found' in str(e) or '400 Client' in str(e):
+                print("* Error: playlist does not exist or is set to private")
+            else:
+                print(f"* Error - {e}")
+            sys.exit(1)
+        sys.exit(0)
+
     if args.list_tracks_for_playlist:
         try:
             sp_accessToken = spotify_get_access_token(SP_DC_COOKIE)
-            spotify_list_tracks_for_playlist(sp_accessToken, args.list_tracks_for_playlist)
+            spotify_list_tracks_for_playlist(sp_accessToken, args.list_tracks_for_playlist, args.output_filename)
         except Exception as e:
             if 'Not Found' in str(e) or '400 Client' in str(e):
                 print("* Error: playlist does not exist or is set to private")
