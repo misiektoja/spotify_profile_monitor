@@ -1,6 +1,6 @@
 # spotify_profile_monitor
 
-spotify_profile_monitor is an OSINT tool that enables real-time monitoring of Spotify users' activities and profile changes. 
+spotify_profile_monitor is an OSINT tool for real-time monitoring of Spotify users' activities and profile changes including playlists.
 
 NOTE: If you want to track Spotify friends' music activity, check out another tool I developed: [spotify_monitor](https://github.com/misiektoja/spotify_monitor).
 
@@ -8,7 +8,7 @@ NOTE: If you want to track Spotify friends' music activity, check out another to
 
 - Real-time tracking of Spotify user activities and profile changes:
    - addition/removal of followings and followers
-   - addition/removal of public playlists
+   - addition/removal of playlists
    - addition/removal of tracks in playlists (including collaborator info for newly added tracks)
    - playlists name and description changes
    - number of likes for playlists
@@ -17,9 +17,10 @@ NOTE: If you want to track Spotify friends' music activity, check out another to
    - username changes
 - Email notifications for various events (as listed above)
 - Attaching changed profile pictures directly to email notifications
-- Displaying the profile picture right in your terminal (if you have *imgcat* installed)
+- Displaying the profile picture right in your terminal (if you have `imgcat` installed)
 - Additional functionalities on top of the monitoring mode allowing to display detailed info about the user, list of followers & followings, recently played artists and possibility to search for users in Spotify catalog with specific names
-- Saving all profile changes with timestamps to the CSV file
+- Ability to display and export the list of tracks for a specific playlist (including **Liked Songs** for the user who owns the Spotify access token)
+- Saving all profile changes (including playlists) with timestamps to the CSV file
 - Clickable Spotify, Apple Music, YouTube Music and Genius Lyrics search URLs printed in the console & included in email notifications
 - Possibility to control the running copy of the script via signals
 
@@ -27,70 +28,180 @@ NOTE: If you want to track Spotify friends' music activity, check out another to
    <img src="./assets/spotify_profile_monitor.png" alt="spotify_profile_monitor_screenshot" width="100%"/>
 </p>
 
-## Change Log
+## Table of Contents
 
-Release notes can be found [here](RELEASE_NOTES.md)
+1. [Requirements](#requirements)
+2. [Installation](#installation)
+   * [Install from PyPI](#install-from-pypi)
+   * [Manual Installation](#manual-installation)
+3. [Quick Start](#quick-start)
+4. [Configuration](#configuration)
+   * [Configuration File](#configuration-file)
+   * [Spotify sp_dc Cookie](#spotify-sp_dc-cookie)
+   * [How to Get a Friend's User URI ID](#how-to-get-a-friends-user-uri-id)
+   * [Spotify sha256 (optional)](#spotify-sha256-optional)
+   * [Time Zone](#time-zone)
+   * [SMTP Settings](#smtp-settings)
+   * [Storing Secrets](#storing-secrets)
+5. [Usage](#usage)
+   * [Monitoring Mode](#monitoring-mode)
+   * [Listing Mode](#listing-mode)
+   * [Email Notifications](#email-notifications)
+   * [CSV Export](#csv-export)
+   * [Detection of Changed Profile Pictures](#detection-of-changed-profile-pictures)
+   * [Displaying Images in Your Terminal](#displaying-images-in-your-terminal)
+   * [Playlist Blacklisting](#playlist-blacklisting)
+   * [Check Intervals](#check-intervals)
+   * [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix)
+   * [Coloring Log Output with GRC](#coloring-log-output-with-grc)
+6. [Change Log](#change-log)
+7. [License](#license)
 
 ## Requirements
 
-The tool requires Python 3.x.
+* Python 3.6 or higher
+* Libraries: `requests`, `python-dateutil`, `urllib3`, `pyotp`, `pytz`, `tzlocal`, `python-dotenv`
 
-It uses requests, python-dateutil, pytz, tzlocal, urllib3 and pyotp.
+Tested on:
 
-It has been tested successfully on:
-- macOS (Ventura, Sonoma & Sequoia)
-- Linux:
-   - Raspberry Pi OS (Bullseye & Bookworm)
-   - Ubuntu 24
-   - Rocky Linux (8.x, 9.x)
-   - Kali Linux (2024, 2025)
-- Windows (10 & 11)
+* **macOS**: Ventura, Sonoma, Sequoia
+* **Linux**: Raspberry Pi OS (Bullseye, Bookworm), Ubuntu 24, Rocky Linux 8.x/9.x, Kali Linux 2024/2025
+* **Windows**: 10, 11
 
 It should work on other versions of macOS, Linux, Unix and Windows as well.
 
 ## Installation
 
-Install the required Python packages:
+### Install from PyPI
 
 ```sh
-python3 -m pip install requests python-dateutil pytz tzlocal urllib3 pyotp
+pip install spotify_profile_monitor
 ```
 
-Or from requirements.txt:
+### Manual Installation
+
+Download the *[spotify_profile_monitor.py](spotify_profile_monitor.py)* file to the desired location.
+
+Install dependencies via pip:
 
 ```sh
-pip3 install -r requirements.txt
+pip install requests python-dateutil urllib3 pyotp pytz tzlocal python-dotenv
 ```
 
-Copy the *[spotify_profile_monitor.py](spotify_profile_monitor.py)* file to the desired location. 
-
-You might want to add executable rights if on Linux/Unix/macOS:
+Alternatively, from the downloaded *[requirements.txt](requirements.txt)*:
 
 ```sh
-chmod a+x spotify_profile_monitor.py
+pip install -r requirements.txt
+```
+
+## Quick Start
+
+- Grab your [Spotify sp_dc cookie](#spotify-sp_dc-cookie) and track the `spotify_user_uri_id` profile changes (including playlists):
+
+
+```sh
+spotify_profile_monitor <spotify_user_uri_id> -u "your_sp_dc_cookie_value"
+```
+
+Or if you installed [manually](#manual-installation):
+
+```sh
+python3 spotify_profile_monitor.py <spotify_user_uri_id> -u "your_sp_dc_cookie_value"
+```
+
+To get the list of all supported command-line arguments / flags:
+
+```sh
+spotify_profile_monitor --help
 ```
 
 ## Configuration
 
-Edit the *[spotify_profile_monitor.py](spotify_profile_monitor.py)* file and change any desired configuration variables in the marked **CONFIGURATION SECTION** (all parameters have detailed description in the comments).
+### Configuration File
 
-### Spotify sp_dc cookie
+Most settings can be configured via command-line arguments.
 
-Log in to the Spotify web client [https://open.spotify.com/](https://open.spotify.com/) in your web browser and copy the value of the sp_dc cookie to the `SP_DC_COOKIE` variable (or use the **-u** parameter).
+If you want to have it stored persistently, generate a default config template and save it to a file named `spotify_profile_monitor.conf`:
 
-You can use Cookie-Editor by cgagnier to obtain it easily (available for all major web browsers): [https://cookie-editor.com/](https://cookie-editor.com/)
+```sh
+spotify_profile_monitor --generate-config > spotify_profile_monitor.conf
 
-Newly generated Spotify's sp_dc cookie should be valid for 1 year. You will be informed by the tool once the cookie expires (proper message on the console and in email if error notifications have not been disabled via the **-e** parameter).
+```
+
+Edit the `spotify_profile_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
+
+### Spotify sp_dc Cookie
+
+Log in to [https://open.spotify.com/](https://open.spotify.com/) in your web browser.
+
+Locate and copy the value of the `sp_dc` cookie.
+
+Use your web browser's dev console or **Cookie-Editor** by cgagnier to extract it easily: [https://cookie-editor.com/](https://cookie-editor.com/)
+
+Provide the `SP_DC_COOKIE` secret using one of the following methods:
+ - Pass it at runtime with `-u` / `--spotify-dc-cookie`
+ - Set it as an [environment variable](#storing-secrets) (e.g. `export SP_DC_COOKIE=...`)
+ - Add it to [.env file](#storing-secrets) (`SP_DC_COOKIE=...`) for persistent use
+
+Fallback:
+ - Hard-code it in the code or config file
+
+The `sp_dc` cookie is typically valid for up to 2 weeks. You will be informed by the tool once the cookie expires (proper message on the console and in email).
+
+If you store the `SP_DC_COOKIE` in a dotenv file you can update its value and send a `SIGHUP` signal to the process to reload the file with the new `sp_dc` cookie without restarting the tool. More info in [Storing Secrets](#storing-secrets) and [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix).
 
 It is recommended to create a new Spotify account for use with the tool since we are not using the official Spotify Web API most of the time as most features needed by the tool (like fetching a list of followers/followings, followings count and recently played artists) are not available.
 
-### Timezone
+### How to Get a Friend's User URI ID
 
-The tool will attempt to automatically detect your local time zone so it can convert Spotify timestamps to your local time. 
+The easiest way is via the Spotify desktop or mobile client:
+- go to your friend's profile
+- click the **three dots** (•••) or press the **Share** button
+- copy the link to the profile
 
-If you wish to specify your time zone manually, change the `LOCAL_TIMEZONE` variable from *'Auto'* to a specific location, e.g.
+You'll get a URL like: [https://open.spotify.com/user/spotify_user_uri_id?si=tracking_id](https://open.spotify.com/user/spotify_user_uri_id?si=tracking_id)
 
+Extract the part between `/user/` and `?si=` - in this case: `spotify_user_uri_id`
+
+Use that as the user URI ID (`spotify_user_uri_id`) in the tool.
+
+Alternatively you can use the built-in functionality to search for usernames (`-s` flag) to get the user URI ID:
+
+```sh
+spotify_profile_monitor -s "user name"
 ```
+
+It will list all users with such names with their user URI ID. 
+
+Before using this feature make sure you followed the instructions [here](#spotify-sha256-optional).
+
+### Spotify sha256 (optional)
+
+This step is optional and only necessary if you want to use the feature to search Spotify's catalog for users with a specific name to obtain their Spotify user URI ID (`-s` flag).
+
+To do this, you need to intercept your Spotify client's network traffic and obtain the sha256 value.
+
+To simulate the required request, search for the user in the Spotify client. Then, in the intercepting proxy, look for requests with the `searchUsers` or `searchDesktop` operation name.
+
+Display the details of one of these requests and copy the **sha256Hash** parameter value, then place it in the `SP_SHA256` secret.
+
+Example request:
+https://api-partner.spotify.com/pathfinder/v1/query?operationName=searchUsers&variables={"searchTerm":"spotify_user_uri_id","offset":0,"limit":5,"numberOfTopResults":5,"includeAudiobooks":false}&extensions={"persistedQuery":{"version":1,"sha256Hash":"XXXXXXXXXX"}}
+
+You are interested in the string marked as "XXXXXXXXXX" here. 
+
+Provide the `SP_SHA256` secret using one of the following methods:
+   - Set it as an [environment variable](#storing-secrets) (e.g. `export SP_SHA256=...`)
+   - Add it to [.env file](#storing-secrets) (`SP_SHA256=...`) for persistent use
+ 
+ Fallback:
+   - Hard-code it in the code or config file
+
+### Time Zone
+
+By default, time zone is auto-detected using `tzlocal`. You can set it manually in `spotify_profile_monitor.conf`:
+
+```ini
 LOCAL_TIMEZONE='Europe/Warsaw'
 ```
 
@@ -100,184 +211,217 @@ You can get the list of all time zones supported by pytz like this:
 python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
 ```
 
-In such case it is not needed to install *tzlocal* pip module.
+### SMTP Settings
 
-### Spotify sha256 (optional)
+If you want to use email notifications functionality, configure SMTP settings in the `spotify_profile_monitor.conf` file. 
 
-This step is optional and only necessary if you want to use the feature to search Spotify's catalog for users with a specific name to obtain their Spotify user URI ID (**-s** parameter).
-
-To do this, you need to intercept your Spotify client's network traffic and obtain the sha256 value.
-
-To simulate the required request, search for the user in the Spotify client. Then, in the intercepting proxy, look for requests with the *searchUsers* or *searchDesktop* operation name.
-
-Display the details of one of these requests and copy the sha256Hash parameter value, then place it in the `SP_SHA256` variable.
-
-Example request:
-https://api-partner.spotify.com/pathfinder/v1/query?operationName=searchUsers&variables={"searchTerm":"spotify_user_uri_id","offset":0,"limit":5,"numberOfTopResults":5,"includeAudiobooks":false}&extensions={"persistedQuery":{"version":1,"sha256Hash":"XXXXXXXXXX"}}
-
-You are interested in the string marked as "XXXXXXXXXX" here. 
-
-I used [Proxyman](https://proxyman.io/) proxy to intercept Spotify's client traffic.
-
-### SMTP settings
-
-If you want to use email notifications functionality you need to change the SMTP settings (host, port, user, password, sender, recipient) in the *[spotify_profile_monitor.py](spotify_profile_monitor.py)* file. If you leave the default settings then no notifications will be sent.
-
-You can verify if your SMTP settings are correct by using **-z** parameter (the tool will try to send a test email notification):
+Verify your SMTP settings by using `--send-test-email` flag (the tool will try to send a test email notification):
 
 ```sh
-./spotify_profile_monitor.py -z
+spotify_profile_monitor --send-test-email
 ```
 
-### Other settings
+### Storing Secrets
 
-All other variables can be left at their defaults, but feel free to experiment with it.
+It is recommended to store secrets like `SP_DC_COOKIE`, `SP_SHA256` or `SMTP_PASSWORD` as either an environment variable or in a dotenv file.
 
-## Getting started
-
-### How to get user's URI ID
-
-The easiest way is to use your Spotify client. Go to the profile page of the user you want to track and then click 3 dots and select 'Copy link to profile'. For example: [https://open.spotify.com/user/spotify_user_uri_id?si=tracking_id](https://open.spotify.com/user/spotify_user_uri_id?si=tracking_id)
-
-Then use the string after */user/* and before *?si=tracking_id* (*spotify_user_uri_id* in the example) as the user URI ID.
-
-You can also use the built-in functionality to search for usernames (**-s** parameter) to get the user URI ID:
+Set environment variables using `export` on **Linux/Unix/macOS/WSL** systems:
 
 ```sh
-./spotify_profile_monitor.py -s "user name"
+export SP_DC_COOKIE="your_sp_dc_cookie_value"
+export SP_SHA256="your_spotify_client_sha256"
+export SMTP_PASSWORD="your_smtp_password"
 ```
 
-It will list all users with such names with their user URI ID. 
+On **Windows Command Prompt** use `set` instead of `export` and on **Windows PowerShell** use `$env`.
 
-Before using this feature make sure you followed the instructions [here](#spotify-sha256-optional)
+Alternatively store them persistently in a dotenv file (recommended):
 
-### List of supported parameters
+```ini
+SP_DC_COOKIE="your_sp_dc_cookie_value"
+SP_SHA256="your_spotify_client_sha256"
+SMTP_PASSWORD="your_smtp_password"
+```
 
-To get the list of all supported parameters:
+By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it. 
+
+You can specify a custom file with `DOTENV_FILE` or `--env-file` flag:
 
 ```sh
-./spotify_profile_monitor.py -h
+spotify_profile_monitor <spotify_user_uri_id> --env-file /path/.env-spotify_profile_monitor
 ```
 
-or 
+ You can also disable `.env` auto-search with `DOTENV_FILE = "none"` or `--env-file none`:
 
 ```sh
-python3 ./spotify_profile_monitor.py -h
+spotify_profile_monitor <spotify_user_uri_id> --env-file none
 ```
 
-### Monitoring mode
+As a fallback, you can also store secrets in the configuration file or source code.
 
-To monitor a specific user for all profile changes, simply type the Spotify user URI ID as a parameter (**spotify_user_uri_id** in the example below):
+## Usage
+
+### Monitoring Mode
+
+To monitor specific user for all profile changes (including playlists), just type [Spotify user URI ID](#how-to-get-a-friends-user-uri-id) as a command-line argument (`spotify_user_uri_id` in the example below):
 
 ```sh
-./spotify_profile_monitor.py spotify_user_uri_id
+spotify_profile_monitor <spotify_user_uri_id>
 ```
 
-If you have not changed `SP_DC_COOKIE` variable in the *[spotify_profile_monitor.py](spotify_profile_monitor.py)* file, you can use **-u** parameter:
+If you have not set `SP_DC_COOKIE` secret, you can use `-u` flag:
 
 ```sh
-./spotify_profile_monitor.py spotify_user_uri_id -u "your_sp_dc_cookie_value"
+spotify_profile_monitor <spotify_user_uri_id> -u "your_sp_dc_cookie_value"
 ```
 
-By default, only public playlists owned by the user are fetched. You can change this behavior with **-k** parameter. It is helpful in the case of playlists created by another user added to another user profile:
+By default, the tool looks for a configuration file named `spotify_profile_monitor.conf` in:
+ - current directory 
+ - home directory (`~`)
+ - script directory 
+
+ If you generated a configuration file as described in [Configuration](#configuration), but saved it under a different name or in a different directory, you can specify its location using the `--config-file` flag:
+
 
 ```sh
-./spotify_profile_monitor.py spotify_user_uri_id -k
+spotify_profile_monitor <spotify_user_uri_id> --config-file /path/spotify_profile_monitor_new.conf
 ```
 
-If you want to completely disable detection of changes in user's public playlists (like added/removed tracks in playlists, playlists name and description changes, number of likes for playlists), you can use **-q** parameter:
+By default, only public playlists owned by the user are fetched. To change this behavior:
+- set `GET_ALL_PLAYLISTS` to `True`
+- or use the `-k` flag
 
 ```sh
-./spotify_profile_monitor.py spotify_user_uri_id -q
+spotify_profile_monitor <spotify_user_uri_id> -k
 ```
 
-If you want to skip some user's playlists from processing, you can use **-t** parameter (more info [here](#playlist-blacklisting))
+It is helpful in the case of playlists created by another user added to another user profile.
+
+If you want to completely disable detection of changes in user's public playlists (like added/removed tracks in playlists, playlists name and description changes, number of likes for playlists):
+- set `DETECT_CHANGES_IN_PLAYLISTS` to `False`
+- or use the `-q` flag
 
 ```sh
-./spotify_profile_monitor.py spotify_user_uri_id -t ignored_playlists
+spotify_profile_monitor <spotify_user_uri_id> -q
 ```
 
-The tool will run indefinitely and monitor the user until the script is interrupted (Ctrl+C) or terminated by other means.
+If you want to skip some user's playlists from processing, you can use `PLAYLISTS_TO_SKIP_FILE` or `-t` flag (more info [here](#playlist-blacklisting))
+
+```sh
+spotify_profile_monitor <spotify_user_uri_id> -t ignored_playlists
+```
+
+The tool runs until interrupted (`Ctrl+C`). Use `tmux` or `screen` for persistence.
 
 You can monitor multiple Spotify users by running multiple copies of the script.
 
-It is recommended to use something like **tmux** or **screen** to keep the script running after you log out from the server (unless you are running it on your desktop).
-
-The tool automatically saves its output to *spotify_profile_monitor_{user_uri_id}.log* file (the log file name suffix can be changed via **-y** parameter or logging can be disabled completely with **-d** parameter).
+The tool automatically saves its output to `spotify_profile_monitor_<user_uri_id/file_suffix>.log` file. The log file name can be changed via `SP_LOGFILE` configuration option and its suffix via `FILE_SUFFIX` / `-y` flag. Logging can be disabled completely via `DISABLE_LOGGING` / `-d` flag.
 
 The tool also saves the list of followings, followers and playlists to these files:
-- *spotify_profile_{user_uri_id}_followings.json* 
-- *spotify_profile_{user_uri_id}_followers.json*
-- *spotify_profile_{user_uri_id}_playlists.json*
+- `spotify_profile_<user_uri_id/file_suffix>_followings.json` 
+- `spotify_profile_<user_uri_id/file_suffix>_followers.json`
+- `spotify_profile_<user_uri_id/file_suffix>_playlists.json`
 
-Thanks to this we can detect changes after the tool is restarted (the file name suffix {user_uri_id} can be changed to custom one via **-y** parameter).
+Thanks to this we can detect changes after the tool is restarted.
 
-The tool also saves the user profile picture to *spotify_profile_{user_uri_id}_pic\*.jpeg* files (the file name suffix {user_uri_id} can be changed to custom one via **-y** parameter). 
+The tool also saves the user profile picture to `spotify_profile_{user_uri_id/file_suffix}_pic*.jpeg` files.
 
-### Listing mode
+### Listing Mode
 
-There is also another mode of the tool which displays various requested information (**-l**, **-i**, **-a**, **-f** and **-s** parameters). 
+There is also another mode of the tool which displays various requested information.
 
-If you want to display details for a specific Spotify playlist URL (i.e. its name, description, number of tracks, likes, overall duration, creation and last update date, list of tracks with information on when they were added), then use the **-l** parameter.
+If you want to display details for a specific Spotify playlist URL (i.e. its name, description, number of tracks, likes, overall duration, creation and last update date, list of tracks with information on when they were added), then use the `-l` flag:
 
 ```sh
-./spotify_profile_monitor.py -l "https://open.spotify.com/playlist/playlist_uri_id"
+spotify_profile_monitor -l "https://open.spotify.com/playlist/playlist_uri_id"
 ```
 
 <p align="center">
    <img src="./assets/spotify_profile_monitor_playlist.png" alt="spotify_profile_monitor_playlist" width="100%"/>
 </p>
 
-If you want to display details for a specific Spotify user profile URL (i.e. user URI ID, list and number of followers and followings, recently played artists, list and number of user's playlists with basic statistics like when created, last updated, description, number of tracks and likes) then use the **-i** parameter:
+If you want to not only display, but also save the list of tracks for a specific Spotify playlist to a CSV file, use the `-l` flag with `-b` indicating the CSV file:
 
 ```sh
-./spotify_profile_monitor.py -i spotify_user_uri_id
+spotify_profile_monitor -l "https://open.spotify.com/playlist/playlist_uri_id" -b spotify_playlist_tracks.csv
+```
+
+If you want to display similar information for **Liked Songs** playlist for the user owning the Spotify access token, use the `-x` flag (can also be used with `-b`):
+
+```sh
+spotify_profile_monitor -x
+```
+
+If you want to display details for a specific Spotify user profile URL (i.e. user URI ID, list and number of followers and followings, recently played artists, list and number of user's playlists with basic statistics like when created, last updated, description, number of tracks and likes) then use the `-i` flag:
+
+```sh
+spotify_profile_monitor <spotify_user_uri_id> -i
 ```
 
 <p align="center">
    <img src="./assets/spotify_profile_monitor_user_details.png" alt="spotify_profile_monitor_user_details" width="80%"/>
 </p>
 
-By default, only public playlists owned by the user are fetched. You can change this behavior with **-k** parameter. It is helpful in the case of playlists created by another user added to another user profile:
+By default, only public playlists owned by the user are fetched. You can change this behavior with `-k` flag. It is helpful in the case of playlists created by another user added to another user profile:
 
 ```sh
-./spotify_profile_monitor.py -i spotify_user_uri_id -k
+spotify_profile_monitor <spotify_user_uri_id> -i -k
 ```
 
-If you want to completely disable the processing of a user's public playlists while displaying details for a specific Spotify user profile URL (to speed up the process), you can use the **-q** parameter:
+If you want to completely disable the processing of a user's public playlists while displaying details for a specific Spotify user profile URL (to speed up the process), you can use the `-q` flag:
 
 ```sh
-./spotify_profile_monitor.py -i  spotify_user_uri_id -q
+spotify_profile_monitor <spotify_user_uri_id> -i -q
 ```
 
-If you only want to display the list of followings and followers for the user (**-f** parameter):
+If you only want to display the list of followings and followers for the user (`-f` flag):
 
 ```sh
-./spotify_profile_monitor.py -f spotify_user_uri_id
+spotify_profile_monitor <spotify_user_uri_id> -f
 ```
 
-If you want to display a list of recently played artists (this feature only works if the user has it enabled in their settings), use the **-a** parameter:
+If you want to display a list of recently played artists (this feature only works if the user has it enabled in their settings), use the `-a` flag:
 
 ```sh
-./spotify_profile_monitor.py -a spotify_user_uri_id
+spotify_profile_monitor <spotify_user_uri_id> -a
 ```
 
-If you want to search the Spotify catalog for users with a specific name to obtain their Spotify user URI ID (**-s** parameter):
+To get basic information about the Spotify access token owner (`-v` flag):
 
 ```sh
-./spotify_profile_monitor.py -s spotify_user_uri_id
+spotify_profile_monitor -v
 ```
 
-You can use the described features regardless of whether the monitoring is used or not (it does not interfere).
-
-## How to use other features
-
-### Email notifications
-
-If you want to receive email notifications for all user profile changes, use the **-p** parameter:
+If you want to search the Spotify catalog for users with a specific name to obtain their Spotify user URI ID (`-s` flag):
 
 ```sh
-./spotify_profile_monitor.py spotify_user_uri_id -p
+spotify_profile_monitor -s "user name"
+```
+
+### Email Notifications
+
+To enable email notifications for all user profile changes (including playlists):
+- set `PROFILE_NOTIFICATION` to `True`
+- or use the `-p` flag
+
+```sh
+spotify_profile_monitor <spotify_user_uri_id> -p
+```
+
+To disable sending an email about new followers/followings (these are sent by default when the `-p` flag is enabled):
+- set `FOLLOWERS_FOLLOWINGS_NOTIFICATION` to `False`
+- or use the `-g` flag
+
+```sh
+spotify_profile_monitor <spotify_user_uri_id> -p -g
+```
+
+To disable sending an email on errors (enabled by default):
+- set `ERROR_NOTIFICATION` to `False`
+- or use the `-e` flag
+
+```sh
+spotify_profile_monitor <spotify_user_uri_id> -e
 ```
 
 Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-settings)).
@@ -288,41 +432,54 @@ Example email:
    <img src="./assets/spotify_profile_monitor_email_notifications.png" alt="spotify_profile_monitor_email_notifications" width="80%"/>
 </p>
 
-If you would like to disable email notifications about new followers and followings (these are sent by default when the -p option is enabled), use the **-g** parameter:
+### CSV Export
+
+If you want to save all profile changes (including playlists) to a CSV file, set `CSV_FILE` or use `-b` flag:
 
 ```sh
-./spotify_profile_monitor.py spotify_user_uri_id -p -g
+spotify_profile_monitor <spotify_user_uri_id> -b spotify_profile_changes_spotify_user.csv
 ```
 
-### Saving profile changes to the CSV file
+The file will be automatically created if it does not exist.
 
-If you want to save all profile changes in the CSV file, use **-b** parameter with the name of the file (it will be automatically created if it does not exist):
+### Detection of Changed Profile Pictures
 
-```sh
-./spotify_profile_monitor.py spotify_user_uri_id -b spotify_profile_changes_spotify_user_uri_id.csv
-```
+The tool can detect when a monitored user changes their profile picture. Notifications appear in the console and (if the `-p` flag is enabled) via email.
 
-### Detection of changed profile pictures
+This feature is enabled by default. To disable it, either:
 
-The tool has functionality to detect changed profile pictures. Proper information will be visible in the console (and email notifications when the **-p** parameter is enabled). By default, this feature is enabled, but you can disable it either by setting the `DETECT_CHANGED_PROFILE_PIC` variable to *False* or by enabling the **-j** / **--do_not_detect_changed_profile_pic** parameter.
+- set the `DETECT_CHANGED_PROFILE_PIC` to `False`
+- or use the `-j` flag
 
-Since the URL of a Spotify user's profile picture appears to change periodically, the tool identifies any updates in the profile picture by performing a binary comparison of the saved JPEG files. Initially it saves the profile pic to *spotify_profile_{user_uri_id}_pic.jpeg* file after the tool is started (in monitoring mode), then during every check the new picture is fetched and the tool does binary comparison if it has changed or not.
+#### How It Works
 
-In case of changes the old profile picture is moved to *spotify_profile_{user_uri_id}_pic_old.jpeg* file and the new one is saved to *spotify_profile_{user_uri_id}_pic.jpeg* and also to the file named *spotify_profile_{user_uri_id}_pic_YYmmdd_HHMM.jpeg* (so we can have history of all profile pictures).
+Since Spotify periodically changes the profile picture URL even when the image is the same, the tool performs a binary comparison of JPEG files to detect actual changes.
 
-### Displaying profile pictures in your terminal
+On the first run, it saves the current profile picture to `spotify_profile_<user_uri_id/file_suffix>_pic.jpeg`
 
-If you have *imgcat* installed, you can enable the feature for displaying pictures right in your terminal. 
+On each subsequent check a new image is fetched and it is compared byte-for-byte with the saved image.
 
-To do this, set the path to your *imgcat* binary in the `IMGCAT_PATH` variable (or leave it empty to disable this functionality).
+If a change is detected, the old picture is moved to `spotify_profile_<user_uri_id/file_suffix>_pic_old.jpeg` and the new one is saved to:
+- `spotify_profile_<user_uri_id/file_suffix>_pic.jpeg` (current)
+- `spotify_profile_<user_uri_id/file_suffix>_pic_YYmmdd_HHMM.jpeg` (for history)
 
-### Playlist blacklisting
+### Displaying Images in Your Terminal
 
-By default, all Spotify-owned playlists are skipped from processing, i.e. the tool won't fetch or report changed tracks and the number of likes for them. This is because they are typically dynamically generated with a high volume of changes in terms of likes and sometimes tracks as well. You can change this behavior by setting `IGNORE_SPOTIFY_PLAYLISTS` to False.
+If you have `imgcat` installed, you can use the feature of displaying profile pictures right in your terminal. 
 
-On top of that, you can also use the **-t** / **--playlists_to_skip** parameter which allows you to indicate a file with additional playlists to be blacklisted.
+To do this, set the path to your `imgcat` binary in the `IMGCAT_PATH` configuration option. 
 
-The file may include lines referencing playlist URIs and URLs, as well as the playlist owner's name, URI, and URL. Below is an example of an **ignored_playlists** file with acceptable entries:
+If you specify only the binary name, it will be auto-searched in your PATH.
+
+Set it to empty to disable this feature.
+
+### Playlist Blacklisting
+
+By default, all Spotify-owned playlists are skipped from processing, i.e. the tool won't fetch or report changed tracks and the number of likes for them. This is because they are typically dynamically generated with a high volume of changes in terms of likes and sometimes tracks as well. You can change this behavior by setting `IGNORE_SPOTIFY_PLAYLISTS` to `False`.
+
+On top of that, you can also use the `PLAYLISTS_TO_SKIP_FILE` / `-t` flag which allows you to indicate a file with additional playlists to be blacklisted.
+
+The file may include lines referencing playlist URIs and URLs, as well as the playlist owner's name, URI and URL. Below is an example of an `ignored_playlists` file with acceptable entries:
 
 ```sh
 playlist_uri_id
@@ -349,17 +506,17 @@ If certain playlists are blacklisted, there will be an appropriate message. For 
 'Unwind and let the afternoon unfold.'
 ```
 
-### Check interval 
+### Check Intervals
 
-If you want to change the check interval to 15 minutes (900 seconds), use **-c** parameter:
+If you want to customize polling interval, use `-c` flag (or `SPOTIFY_CHECK_INTERVAL` configuration option):
 
 ```sh
-./spotify_profile_monitor.py spotify_user_uri_id -c 900
+spotify_profile_monitor <spotify_user_uri_id> -c 900
 ```
 
-### Controlling the script via signals (only macOS/Linux/Unix)
+### Signal Controls (macOS/Linux/Unix)
 
-The tool has several signal handlers implemented which allow changing the behavior of the tool without needing to restart it with new parameters.
+The tool has several signal handlers implemented which allow to change behavior of the tool without a need to restart it with new configuration options / flags.
 
 List of supported signals:
 
@@ -368,28 +525,21 @@ List of supported signals:
 | USR1 | Toggle email notifications for user's profile changes (-p) |
 | TRAP | Increase the profile check timer (by 5 minutes) |
 | ABRT | Decrease the profile check timer (by 5 minutes) |
+| HUP | Reload secrets from .env file |
 
-So if you want to change the functionality of the running tool, just send the appropriate signal to the desired copy of the script.
-
-I personally use the **pkill** tool. For example, to toggle email notifications for user profile changes for the tool instance monitoring the user with the *spotify_user_uri_id*:
+Send signals with `kill` or `pkill`, e.g.:
 
 ```sh
-pkill -f -USR1 "python3 ./spotify_profile_monitor.py spotify_user_uri_id"
+pkill -USR1 -f "spotify_profile_monitor <spotify_user_uri_id>"
 ```
 
 As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.
 
-### Other
+### Coloring Log Output with GRC
 
-Check other supported parameters using **-h**.
+You can use [GRC](https://github.com/garabik/grc) to color logs.
 
-You can combine all the parameters mentioned earlier in monitoring mode (listing mode only supports **-l**, **-i**, **-a**, **-f**, **-s**, **-q**, **-k**).
-
-## Coloring log output with GRC
-
-If you use [GRC](https://github.com/garabik/grc) and want to have the tool's log output properly colored you can use the configuration file available [here](grc/conf.monitor_logs)
-
-Change your grc configuration (typically *.grc/grc.conf*) and add this part:
+Add to your GRC config (`~/.grc/grc.conf`):
 
 ```
 # monitoring log file
@@ -397,8 +547,18 @@ Change your grc configuration (typically *.grc/grc.conf*) and add this part:
 conf.monitor_logs
 ```
 
-Now copy the *conf.monitor_logs* to your *.grc* directory and spotify_profile_monitor log files should be nicely colored when using *grc* tool.
+Now copy the [conf.monitor_logs](grc/conf.monitor_logs) to your `~/.grc/` and log files should be nicely colored when using `grc` tool.
+
+Example:
+
+```sh
+grc tail -F -n 100 spotify_profile_monitor_<user_uri_id/file_suffix>.log
+```
+
+## Change Log
+
+See [RELEASE_NOTES.md](RELEASE_NOTES.md) for details.
 
 ## License
 
-This project is licensed under the GPLv3 - see the [LICENSE](LICENSE) file for details
+Licensed under GPLv3. See [LICENSE](LICENSE).
