@@ -25,7 +25,7 @@ VERSION = "2.2"
 
 CONFIG_BLOCK = """
 # Log in to Spotify web client (https://open.spotify.com/) and retrieve your sp_dc cookie
-# Use the web browser dev console or "Cookie-Editor" by cgagnier to extract it easily: https://cookie-editor.com/
+# Use your web browser's dev console or "Cookie-Editor" by cgagnier to extract it easily: https://cookie-editor.com/
 # The sp_dc cookie is typically valid for up to 2 weeks
 #
 # Provide the SP_DC_COOKIE secret using one of the following methods:
@@ -34,7 +34,6 @@ CONFIG_BLOCK = """
 #   - Add it to ".env" file (SP_DC_COOKIE=...) for persistent use
 # Fallback:
 #   - Hard-code it in the code or config file
-#
 SP_DC_COOKIE = "your_sp_dc_cookie_value"
 
 # SMTP settings for sending email notifications
@@ -45,7 +44,6 @@ SP_DC_COOKIE = "your_sp_dc_cookie_value"
 #   - Add it to ".env" file (SMTP_PASSWORD=...) for persistent use
 # Fallback:
 #   - Hard-code it in the code or config file
-#
 SMTP_HOST = "your_smtp_server_ssl"
 SMTP_PORT = 587
 SMTP_USER = "your_smtp_user"
@@ -90,6 +88,7 @@ LOCAL_TIMEZONE = 'Auto'
 DETECT_CHANGED_PROFILE_PIC = True
 
 # If you have 'imgcat' installed, you can set its path below to display profile pictures directly in your terminal
+# If you specify only the binary name, it will be auto-searched in your PATH
 # Leave empty to disable this feature
 IMGCAT_PATH = "imgcat"
 
@@ -105,7 +104,6 @@ IMGCAT_PATH = "imgcat"
 #   - Add it to ".env" file (SP_SHA256=...) for persistent use
 # Fallback:
 #   - Hard-code it in the code or config file
-#
 SP_SHA256 = "your_spotify_client_sha256"
 
 # Notify when user's public playlists change? (via console and email if PROFILE_NOTIFICATION / -p is enabled)
@@ -167,17 +165,20 @@ PLAYLISTS_TO_SKIP_FILE = ""
 
 # Location of the optional dotenv file which can keep secrets
 # If not specified it will try to auto-search for .env files
+# To disable auto-search, set this to the literal string "none"
 # Can also be set using the --env-file parameter
 DOTENV_FILE = ""
 
-# Suffix to append to the output filename instead of default user URI ID
+# Suffix to append to the output filenames instead of default user URI ID
 # Can also be set using the -y parameter
 FILE_SUFFIX = ""
 
-# Base name of the log file. The tool will save its output to spotify_profile_monitor_{user_uri_id/file_suffix}.log file
+# Path or base name of the log file
+# If a directory or base name is provided, the final log file will be named 'spotify_profile_monitor_<user_uri_id/file_suffix>.log'
+# Absolute paths and custom filenames are supported. Use '~' for home directory if needed
 SP_LOGFILE = "spotify_profile_monitor"
 
-# Whether to disable logging to spotify_profile_monitor_<suffix>.log
+# Whether to disable logging to spotify_profile_monitor_<user_uri_id/file_suffix>.log
 # Can also be disabled via the -d parameter
 DISABLE_LOGGING = False
 
@@ -201,7 +202,8 @@ TOKEN_RETRY_TIMEOUT = 0.5  # 0.5 second
 # CONFIGURATION SECTION END
 # -------------------------
 
-# Provide default dummy values so linters shut up
+# Default dummy values so linters shut up
+# Do not change values below — modify them in the configuration section or config file instead
 SP_DC_COOKIE = ""
 SMTP_HOST = ""
 SMTP_PORT = 0
@@ -298,6 +300,11 @@ nl_ch = "\n"
 
 
 import sys
+
+if sys.version_info < (3, 6):
+    print("* Error: Python version 3.6 or higher required !")
+    sys.exit(1)
+
 import time
 from time import time_ns
 import string
@@ -318,7 +325,10 @@ from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
 import argparse
 import csv
-import pytz
+try:
+    import pytz
+except ModuleNotFoundError:
+    raise SystemExit("Error: Couldn’t find the pytz library !\n\nTo install it, run:\n    pip3 install pytz\n\nOnce installed, re-run this tool")
 try:
     from tzlocal import get_localzone
 except ImportError:
@@ -331,7 +341,10 @@ import ipaddress
 from itertools import zip_longest
 from html import escape
 import subprocess
-import pyotp
+try:
+    import pyotp
+except ModuleNotFoundError:
+    raise SystemExit("Error: Couldn’t find the pyotp library !\n\nTo install it, run:\n    pip3 install pyotp\n\nOnce installed, re-run this tool")
 import base64
 import random
 from collections import Counter
@@ -629,7 +642,7 @@ def write_csv_entry(csv_file_name, timestamp, object_type, object_name, old, new
             csvwriter = csv.DictWriter(csv_file, fieldnames=csv_fields, quoting=csv.QUOTE_NONNUMERIC)
             csvwriter.writerow(csv_row)
 
-    except Exception:
+    except Exception as e:
         raise RuntimeError(f"Failed to write to CSV file '{csv_file_name}': {e}")
 
 
@@ -867,20 +880,24 @@ def reload_secrets_signal_handler(sig, frame):
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
 
-    # reload .env if python-dotenv is installed
-    try:
-        from dotenv import load_dotenv, find_dotenv
-        if DOTENV_FILE:
-            env_path = DOTENV_FILE
-        else:
-            env_path = find_dotenv()
-        if env_path:
-            load_dotenv(env_path, override=True)
-        else:
-            print("* No .env file found, skipping env-var reload")
-    except ImportError:
+    # disable autoscan if DOTENV_FILE set to none
+    if DOTENV_FILE and DOTENV_FILE.lower() == 'none':
         env_path = None
-        print("* python-dotenv not installed, skipping env-var reload")
+    else:
+        # reload .env if python-dotenv is installed
+        try:
+            from dotenv import load_dotenv, find_dotenv
+            if DOTENV_FILE:
+                env_path = DOTENV_FILE
+            else:
+                env_path = find_dotenv()
+            if env_path:
+                load_dotenv(env_path, override=True)
+            else:
+                print("* No .env file found, skipping env-var reload")
+        except ImportError:
+            env_path = None
+            print("* python-dotenv not installed, skipping env-var reload")
 
     if env_path:
         for secret in SECRET_KEYS:
@@ -2386,11 +2403,10 @@ def find_config_file(cli_path=None):
     """
     Search for an optional config file in:
       1) CLI-provided path (must exist if given)
-      2) ./spotify_profile_monitor.conf
-      3) ~/.spotify_profile_monitor.conf
-      4) script-directory/spotify_profile_monitor.conf
+      2) ./{DEFAULT_CONFIG_FILENAME}
+      3) ~/.{DEFAULT_CONFIG_FILENAME}
+      4) script-directory/{DEFAULT_CONFIG_FILENAME}
     """
-    from pathlib import Path
 
     if cli_path:
         p = Path(os.path.expanduser(cli_path))
@@ -2453,7 +2469,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         if ('access token' in str(e)) or ('Unsuccessful token request' in str(e)):
             print(f"* Error: sp_dc might have expired!\n{str(e)}")
         elif '404' in str(e):
-            print("* Error: user does not exist!")
+            print("* Error: User does not exist!")
         else:
             print(f"* Error: {e}")
         sys.exit(1)
@@ -2756,7 +2772,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     send_email(m_subject, m_body, m_body_html, SMTP_SSL)
                     email_sent = True
             elif '404' in str(e):
-                print("* Error: user might have removed the account !")
+                print("* Error: User might have removed the account !")
                 if ERROR_NOTIFICATION and not email_sent:
                     m_subject = f"spotify_profile_monitor: user might have removed the account! (uri: {user_uri_id})"
                     m_body = f"User might have removed the account: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
@@ -3239,10 +3255,15 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         time.sleep(SPOTIFY_CHECK_INTERVAL)
 
 
-if __name__ == "__main__":
+def main():
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, TOOL_ALIVE_COUNTER, SP_DC_COOKIE, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, SP_LOGFILE, PROFILE_NOTIFICATION, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
+        sys.exit(0)
+
+    if "--version" in sys.argv:
+        print(f"{os.path.basename(sys.argv[0])} v{VERSION}")
         sys.exit(0)
 
     stdout_bck = sys.stdout
@@ -3268,6 +3289,13 @@ if __name__ == "__main__":
         type=str
     )
 
+    # Version, just to list in help, it is handled earlier
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=f"%(prog)s v{VERSION}"
+    )
+
     # Configuration & dotenv files
     conf = parser.add_argument_group("Configuration & dotenv files")
     conf.add_argument(
@@ -3285,7 +3313,7 @@ if __name__ == "__main__":
         "--env-file",
         dest="env_file",
         metavar="PATH",
-        help="Location of the optional dotenv file",
+        help="Path to optional dotenv file (auto-search if not set, disable with 'none')",
     )
 
     # API credentials
@@ -3322,7 +3350,7 @@ if __name__ == "__main__":
         help="Disable notifications on errors"
     )
     notify.add_argument(
-        "-z", "--send-test-email",
+        "--send-test-email",
         dest="send_test_email",
         action="store_true",
         help="Send test email to verify SMTP settings"
@@ -3434,14 +3462,14 @@ if __name__ == "__main__":
         dest="file_suffix",
         metavar="SUFFIX",
         type=str,
-        help="File suffix to append to output filenames"
+        help="File suffix to append to output filenames instead of Spotify user URI ID"
     )
     opts.add_argument(
         "-d", "--disable-logging",
         dest="disable_logging",
         action="store_true",
         default=None,
-        help="Disable logging to spotify_profile_monitor_<suffix>.log"
+        help="Disable logging to spotify_profile_monitor_<user_uri_id/file_suffix>.log"
     )
 
     args = parser.parse_args()
@@ -3473,28 +3501,32 @@ if __name__ == "__main__":
         if DOTENV_FILE:
             DOTENV_FILE = os.path.expanduser(DOTENV_FILE)
 
-    try:
-        from dotenv import load_dotenv, find_dotenv
+    if DOTENV_FILE and DOTENV_FILE.lower() == 'none':
+        env_path = None
+    else:
+        try:
+            from dotenv import load_dotenv, find_dotenv
 
-        if DOTENV_FILE:
-            env_path = DOTENV_FILE
-            if not os.path.isfile(env_path):
-                print(f"* Warning: dotenv file '{env_path}' does not exist\n")
+            if DOTENV_FILE:
+                env_path = DOTENV_FILE
+                if not os.path.isfile(env_path):
+                    print(f"* Warning: dotenv file '{env_path}' does not exist\n")
+                else:
+                    load_dotenv(env_path, override=True)
             else:
-                load_dotenv(env_path, override=True)
-        else:
-            env_path = find_dotenv() or None
+                env_path = find_dotenv() or None
+                if env_path:
+                    load_dotenv(env_path, override=True)
+        except ImportError:
+            env_path = DOTENV_FILE if DOTENV_FILE else None
             if env_path:
-                load_dotenv(env_path, override=True)
-    except ImportError:
-        env_path = DOTENV_FILE if DOTENV_FILE else None
-        if env_path:
-            print(f"* Warning: cannot load dotenv file '{env_path}' because 'python-dotenv' is not installed\n")
+                print(f"* Warning: Cannot load dotenv file '{env_path}' because 'python-dotenv' is not installed\n\nTo install it, run:\n    pip3 install python-dotenv\n\nOnce installed, re-run this tool\n")
 
-    for secret in SECRET_KEYS:
-        val = os.getenv(secret)
-        if val is not None:
-            globals()[secret] = val
+    if env_path:
+        for secret in SECRET_KEYS:
+            val = os.getenv(secret)
+            if val is not None:
+                globals()[secret] = val
 
     local_tz = None
     if LOCAL_TIMEZONE == "Auto":
@@ -3579,13 +3611,16 @@ if __name__ == "__main__":
 
     if args.csv_file:
         CSV_FILE = os.path.expanduser(args.csv_file)
+    else:
+        if CSV_FILE:
+            CSV_FILE = os.path.expanduser(CSV_FILE)
 
     if CSV_FILE:
         try:
             with open(CSV_FILE, 'a', newline='', buffering=1, encoding="utf-8") as _:
                 pass
         except Exception as e:
-            print(f"* Error, CSV file cannot be opened for writing: {e}")
+            print(f"* Error: CSV file cannot be opened for writing: {e}")
             sys.exit(1)
 
     if args.list_tracks_for_playlist:
@@ -3594,7 +3629,7 @@ if __name__ == "__main__":
             spotify_list_tracks_for_playlist(sp_accessToken, args.list_tracks_for_playlist, CSV_FILE, CSV_FILE_FORMAT_EXPORT)
         except Exception as e:
             if 'Not Found' in str(e) or '400 Client' in str(e):
-                print("* Error: playlist does not exist or is set to private")
+                print("* Error: Playlist does not exist or is set to private")
             else:
                 print(f"* Error: {e}")
             sys.exit(1)
@@ -3606,7 +3641,7 @@ if __name__ == "__main__":
             spotify_list_liked_tracks(sp_accessToken, CSV_FILE, CSV_FILE_FORMAT_EXPORT)
         except Exception as e:
             if 'Not Found' in str(e) or '400 Client' in str(e):
-                print("* Error: playlist does not exist or is set to private")
+                print("* Error: Playlist does not exist or is set to private")
             else:
                 print(f"* Error: {e}")
             sys.exit(1)
@@ -3614,7 +3649,7 @@ if __name__ == "__main__":
 
     if args.search_username:
         if not SP_SHA256 or SP_SHA256 == "your_spotify_client_sha256":
-            print("* Error: wrong SP_SHA256 value !")
+            print("* Error: Wrong SP_SHA256 value !")
             sys.exit(1)
         try:
             sp_accessToken = spotify_get_access_token(SP_DC_COOKIE)
@@ -3634,7 +3669,7 @@ if __name__ == "__main__":
             spotify_get_user_details(sp_accessToken, args.user_id)
         except Exception as e:
             if 'Not Found' in str(e) or '404 Client' in str(e):
-                print("* Error: user does not exist")
+                print("* Error: User does not exist")
             else:
                 print(f"* Error: {e}")
             sys.exit(1)
@@ -3646,7 +3681,7 @@ if __name__ == "__main__":
             spotify_get_recently_played_artists(sp_accessToken, args.user_id)
         except Exception as e:
             if 'Not Found' in str(e) or '404 Client' in str(e):
-                print("* Error: user does not exist")
+                print("* Error: User does not exist")
             else:
                 print(f"* Error: {e}")
             sys.exit(1)
@@ -3658,7 +3693,7 @@ if __name__ == "__main__":
             spotify_get_followers_and_followings(sp_accessToken, args.user_id)
         except Exception as e:
             if 'Not Found' in str(e) or '404 Client' in str(e):
-                print("* Error: user does not exist")
+                print("* Error: User does not exist")
             else:
                 print(f"* Error: {e}")
             sys.exit(1)
@@ -3666,6 +3701,9 @@ if __name__ == "__main__":
 
     if args.playlists_to_skip:
         PLAYLISTS_TO_SKIP_FILE = os.path.expanduser(args.playlists_to_skip)
+    else:
+        if PLAYLISTS_TO_SKIP_FILE:
+            PLAYLISTS_TO_SKIP_FILE = os.path.expanduser(PLAYLISTS_TO_SKIP_FILE)
 
     if PLAYLISTS_TO_SKIP_FILE:
         try:
@@ -3677,7 +3715,7 @@ if __name__ == "__main__":
                 }
             file.close()
         except Exception as e:
-            print(f"* Error, file with playlists to ignore cannot be opened: {e}")
+            print(f"* Error: File with playlists to ignore cannot be opened: {e}")
             sys.exit(1)
     else:
         playlists_to_skip = []
@@ -3692,8 +3730,16 @@ if __name__ == "__main__":
         DISABLE_LOGGING = True
 
     if not DISABLE_LOGGING:
-        SP_LOGFILE = f"{SP_LOGFILE}_{FILE_SUFFIX}.log"
-        sys.stdout = Logger(SP_LOGFILE)
+        log_path = Path(os.path.expanduser(SP_LOGFILE))
+        if log_path.is_dir():
+            raise SystemExit(f"* Error: SP_LOGFILE '{log_path}' is a directory, expected a filename")
+        if log_path.suffix == "":
+            log_path = log_path.with_name(f"{log_path.name}_{FILE_SUFFIX}.log")
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        FINAL_LOG_PATH = str(log_path)
+        sys.stdout = Logger(FINAL_LOG_PATH)
+    else:
+        FINAL_LOG_PATH = None
 
     if args.profile_notification is True:
         PROFILE_NOTIFICATION = True
@@ -3720,7 +3766,7 @@ if __name__ == "__main__":
     print(f"* CSV logging enabled:\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
     print(f"* Ignoring listed playlists:\t{bool(PLAYLISTS_TO_SKIP_FILE)}" + (f" ({PLAYLISTS_TO_SKIP_FILE})" if PLAYLISTS_TO_SKIP_FILE else ""))
     print(f"* Display profile pics:\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
-    print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({SP_LOGFILE})" if not DISABLE_LOGGING else ""))
+    print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
     print(f"* Configuration file:\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
     print(f"* Local timezone:\t\t{LOCAL_TIMEZONE}\n")
@@ -3736,3 +3782,7 @@ if __name__ == "__main__":
 
     sys.stdout = stdout_bck
     sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()
