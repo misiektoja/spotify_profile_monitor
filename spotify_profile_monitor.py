@@ -3475,15 +3475,21 @@ if __name__ == "__main__":
 
     try:
         from dotenv import load_dotenv, find_dotenv
+
         if DOTENV_FILE:
             env_path = DOTENV_FILE
-            load_dotenv(env_path, override=True)
+            if not os.path.isfile(env_path):
+                print(f"* Warning: dotenv file '{env_path}' does not exist\n")
+            else:
+                load_dotenv(env_path, override=True)
         else:
             env_path = find_dotenv() or None
             if env_path:
                 load_dotenv(env_path, override=True)
     except ImportError:
-        env_path = None
+        env_path = DOTENV_FILE if DOTENV_FILE else None
+        if env_path:
+            print(f"* Warning: cannot load dotenv file '{env_path}' because 'python-dotenv' is not installed\n")
 
     for secret in SECRET_KEYS:
         val = os.getenv(secret)
