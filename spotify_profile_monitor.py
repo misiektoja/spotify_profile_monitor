@@ -3,16 +3,16 @@
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
 v2.2
 
-OSINT tool implementing real-time tracking of Spotify users' activities and profile changes:
+OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
 
 Python pip3 requirements:
 
-python-dateutil
-pytz
 requests
+python-dateutil
 urllib3
 pyotp
+pytz
 tzlocal (optional)
 python-dotenv (optional)
 """
@@ -29,7 +29,7 @@ CONFIG_BLOCK = """
 # The sp_dc cookie is typically valid for up to 2 weeks
 #
 # Provide the SP_DC_COOKIE secret using one of the following methods:
-#   - Pass it at runtime with -u / --spotify-dc-cookie parameter
+#   - Pass it at runtime with -u / --spotify-dc-cookie
 #   - Set it as an environment variable (e.g. export SP_DC_COOKIE=...)
 #   - Add it to ".env" file (SP_DC_COOKIE=...) for persistent use
 # Fallback:
@@ -53,24 +53,24 @@ SENDER_EMAIL = "your_sender_email"
 RECEIVER_EMAIL = "your_receiver_email"
 
 # Whether to send an email when the user's profile changes
-# Can also be enabled via the -p parameter
+# Can also be enabled via the -p flag
 PROFILE_NOTIFICATION = False
 
 # Whether to send an email when followers or followings change
 # Only applies if PROFILE_NOTIFICATION / -p is enabled
-# Can also be disabled via the -g parameter
+# Can also be disabled via the -g flag
 FOLLOWERS_FOLLOWINGS_NOTIFICATION = True
 
 # Whether to send an email on errors
-# Can also be disabled via the -e parameter
+# Can also be disabled via the -e flag
 ERROR_NOTIFICATION = True
 
 # How often to check for user profile changes; in seconds
-# Can also be set using the -c parameter
+# Can also be set using the -c flag
 SPOTIFY_CHECK_INTERVAL = 1800  # 30 mins
 
 # Retry interval after errors; in seconds
-# Can also be set using the -m parameter
+# Can also be set using the -m flag
 SPOTIFY_ERROR_INTERVAL = 300  # 5 mins
 
 # Set your local time zone so that Spotify timestamps are converted accordingly (e.g. 'Europe/Warsaw')
@@ -81,10 +81,10 @@ LOCAL_TIMEZONE = 'Auto'
 
 # Notify when the user's profile picture changes? (via console and email if PROFILE_NOTIFICATION / -p is enabled)
 # If enabled, the current profile picture is saved as:
-#   - spotify_profile_{user_uri_id/file_suffix}_pic.jpeg (initial)
-#   - spotify_profile_{user_uri_id/file_suffix}_pic_YYmmdd_HHMM.jpeg (on change)
+#   - spotify_profile_<user_uri_id/file_suffix>_pic.jpeg (initial)
+#   - spotify_profile_<user_uri_id/file_suffix>_pic_YYmmdd_HHMM.jpeg (on change)
 # The binary JPEGs are compared to detect changes
-# Can also be disabled via the -j parameter
+# Can also be disabled via the -j flag
 DETECT_CHANGED_PROFILE_PIC = True
 
 # If you have 'imgcat' installed, you can set its path below to display profile pictures directly in your terminal
@@ -93,8 +93,11 @@ DETECT_CHANGED_PROFILE_PIC = True
 IMGCAT_PATH = "imgcat"
 
 # SHA256 hash needed to search for Spotify users (used with -s)
-# Intercept traffic when using search in the Spotify client, look for requests with searchUsers or searchDesktop operation name
+#
+# Intercept traffic when using search in the Spotify client
+# Look for requests with searchUsers or searchDesktop operation name
 # Extract the "sha256Hash" from the request
+#
 # Example request:
 # https://api-partner.spotify.com/pathfinder/v1/query?operationName=searchUsers&variables={"searchTerm":"user_uri_id","offset":0,"limit":5,"numberOfTopResults":5,"includeAudiobooks":false}&extensions={"persistedQuery":{"version":1,"sha256Hash":"XXXXXXXXXX"}}
 # You are interested in the string marked as "XXXXXXXXXX" here
@@ -113,12 +116,12 @@ SP_SHA256 = "your_spotify_client_sha256"
 #   - number of likes
 #   - collaborators
 # This option also affects behavior when using -i (listing mode)
-# It can also be disabled via the -q parameter
+# It can also be disabled via the -q flag
 DETECT_CHANGES_IN_PLAYLISTS = True
 
 # By default, only public playlists owned by the user are fetched
 # Set to True to include all public playlists on their profile (e.g. created by others, but added to the profile)
-# Can also be enabled via the -k parameter
+# Can also be enabled via the -k flag
 GET_ALL_PLAYLISTS = False
 
 # Ignore Spotify-owned playlists when monitoring?
@@ -135,11 +138,12 @@ RECENTLY_PLAYED_ARTISTS_LIMIT = 50
 RECENTLY_PLAYED_ARTISTS_LIMIT_INFO = 15
 
 # Occasionally, the Spotify API glitches and returns an empty list of user playlists
-# To avoid false alarms, we delay notifications until this happens PLAYLISTS_DISAPPEARED_COUNTER times in a row (i.e. after the next check interval)
+# To avoid false alarms, we delay notifications until this happens PLAYLISTS_DISAPPEARED_COUNTER times in a row
 PLAYLISTS_DISAPPEARED_COUNTER = 2
 
-# How often to print an "alive check" message to the output; in seconds
-TOOL_ALIVE_INTERVAL = 21600  # 6 hours
+# How often to print a "liveness check" message to the output; in seconds
+# Set to 0 to disable
+LIVENESS_CHECK_INTERVAL = 43200  # 12 hours
 
 # URL used to verify internet connectivity at startup
 CHECK_INTERNET_URL = 'https://api.spotify.com/v1'
@@ -151,7 +155,7 @@ CHECK_INTERNET_TIMEOUT = 5
 VERIFY_SSL = True
 
 # CSV file to write all profile changes
-# Can also be set using the -b parameter
+# Can also be set using the -b flag
 CSV_FILE = ""
 
 # Format used when exporting playlists (-l) or liked songs (-x) to CSV file:
@@ -160,26 +164,27 @@ CSV_FILE = ""
 CSV_FILE_FORMAT_EXPORT = 2
 
 # Filename with Spotify playlists to ignore
-# Can also be set using the -t parameter
+# Can also be set using the -t flag
 PLAYLISTS_TO_SKIP_FILE = ""
 
 # Location of the optional dotenv file which can keep secrets
 # If not specified it will try to auto-search for .env files
 # To disable auto-search, set this to the literal string "none"
-# Can also be set using the --env-file parameter
+# Can also be set using the --env-file flag
 DOTENV_FILE = ""
 
 # Suffix to append to the output filenames instead of default user URI ID
-# Can also be set using the -y parameter
+# Can also be set using the -y flag
 FILE_SUFFIX = ""
 
 # Path or base name of the log file
-# If a directory or base name is provided, the final log file will be named 'spotify_profile_monitor_<user_uri_id/file_suffix>.log'
+# If a directory or base name is provided, the final log file will be named:
+# spotify_profile_monitor_<user_uri_id/file_suffix>.log
 # Absolute paths and custom filenames are supported. Use '~' for home directory if needed
 SP_LOGFILE = "spotify_profile_monitor"
 
 # Whether to disable logging to spotify_profile_monitor_<user_uri_id/file_suffix>.log
-# Can also be disabled via the -d parameter
+# Can also be disabled via the -d flag
 DISABLE_LOGGING = False
 
 # Width of horizontal line (─)
@@ -203,7 +208,7 @@ TOKEN_RETRY_TIMEOUT = 0.5  # 0.5 second
 # -------------------------
 
 # Default dummy values so linters shut up
-# Do not change values below — modify them in the configuration section or config file instead
+# Do not change values below - modify them in the configuration section or config file instead
 SP_DC_COOKIE = ""
 SMTP_HOST = ""
 SMTP_PORT = 0
@@ -228,7 +233,7 @@ PLAYLISTS_LIMIT = 0
 RECENTLY_PLAYED_ARTISTS_LIMIT = 0
 RECENTLY_PLAYED_ARTISTS_LIMIT_INFO = 0
 PLAYLISTS_DISAPPEARED_COUNTER = 0
-TOOL_ALIVE_INTERVAL = 0
+LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
 VERIFY_SSL = False
@@ -251,7 +256,7 @@ exec(CONFIG_BLOCK, globals())
 DEFAULT_CONFIG_FILENAME = "spotify_profile_monitor.conf"
 
 # List of secret keys to load from env/config
-SECRET_KEYS = ("SP_DC_COOKIE", "SMTP_PASSWORD", "SP_SHA256")
+SECRET_KEYS = ("SP_DC_COOKIE", "SP_SHA256", "SMTP_PASSWORD")
 
 # Strings removed from track names for generating proper Genius search URLs
 re_search_str = r'remaster|extended|original mix|remix|original soundtrack|radio( |-)edit|\(feat\.|( \(.*version\))|( - .*version)'
@@ -285,7 +290,7 @@ PLAYLIST_INFO_CACHE_TTL = (SPOTIFY_CHECK_INTERVAL * 2 if SPOTIFY_CHECK_INTERVAL 
 # Tracks temporarily glitched playlists to suppress false alerts
 GLITCH_CACHE = {}
 
-TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / SPOTIFY_CHECK_INTERVAL
+LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / SPOTIFY_CHECK_INTERVAL
 
 stdout_bck = None
 csvfieldnames = ['Date', 'Type', 'Name', 'Old', 'New']
@@ -328,7 +333,7 @@ import csv
 try:
     import pytz
 except ModuleNotFoundError:
-    raise SystemExit("Error: Couldn’t find the pytz library !\n\nTo install it, run:\n    pip3 install pytz\n\nOnce installed, re-run this tool")
+    raise SystemExit("Error: Couldn't find the pytz library !\n\nTo install it, run:\n    pip3 install pytz\n\nOnce installed, re-run this tool")
 try:
     from tzlocal import get_localzone
 except ImportError:
@@ -344,7 +349,7 @@ import subprocess
 try:
     import pyotp
 except ModuleNotFoundError:
-    raise SystemExit("Error: Couldn’t find the pyotp library !\n\nTo install it, run:\n    pip3 install pyotp\n\nOnce installed, re-run this tool")
+    raise SystemExit("Error: Couldn't find the pyotp library !\n\nTo install it, run:\n    pip3 install pyotp\n\nOnce installed, re-run this tool")
 import base64
 import random
 from collections import Counter
@@ -1529,7 +1534,7 @@ def spotify_get_user_followers(access_token, user_uri_id):
         raise
 
 
-# Lists tracks for playlist with specified URI (-l parameter)
+# Lists tracks for playlist with specified URI (-l flag)
 def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name, format_type=2):
     added_at_dt: datetime | None = None
 
@@ -1794,7 +1799,7 @@ def compare_two_lists_of_dicts(list1: list, list2: list):
     return diff
 
 
-# Searches for Spotify users (-s parameter)
+# Searches for Spotify users (-s flag)
 def spotify_search_users(sp_accessToken, username):
     url = f"https://api-partner.spotify.com/pathfinder/v1/query?operationName=searchUsers&variables=%7B%22searchTerm%22%3A%22{username}%22%2C%22offset%22%3A0%2C%22limit%22%3A5%2C%22numberOfTopResults%22%3A5%2C%22includeAudiobooks%22%3Afalse%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22{SP_SHA256}%22%7D%7D"
     headers = {
@@ -2025,7 +2030,7 @@ def spotify_print_public_playlists(list_of_playlists, playlists_to_skip=None):
             print(f"Recently updated playlist:\n\n- '{p_name_recent}'\n[ {p_url_recent} ]\n[ update: {get_date_from_ts(p_update_recent)} - {calculate_timespan(now_local(), p_update_recent)} ago ]")
 
 
-# Prints detailed info about the user with the specified URI ID (-i parameter)
+# Prints detailed info about the user with the specified URI ID (-i flag)
 def spotify_get_user_details(sp_accessToken, user_uri_id):
     playlists_count = 0
     playlists = None
@@ -2117,7 +2122,7 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
             spotify_print_public_playlists(list_of_playlists)
 
 
-# Returns recently played artists for a user with the specified URI (-a parameter)
+# Returns recently played artists for a user with the specified URI (-a flag)
 def spotify_get_recently_played_artists(sp_accessToken, user_uri_id):
     print(f"* Getting list of recently played artists for user with URI ID '{user_uri_id}' ...\n")
 
@@ -2147,7 +2152,7 @@ def spotify_get_recently_played_artists(sp_accessToken, user_uri_id):
         print("\nRecently played artists list is empty\n")
 
 
-# Prints followers & followings for a user with specified URI (-f parameter)
+# Prints followers & followings for a user with specified URI (-f flag)
 def spotify_get_followers_and_followings(sp_accessToken, user_uri_id):
     print(f"* Getting followers & followings for user with URI ID '{user_uri_id}' ...\n")
 
@@ -3248,15 +3253,15 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
         alive_counter += 1
 
-        if alive_counter >= TOOL_ALIVE_COUNTER:
-            print_cur_ts("Alive check, timestamp:\t\t")
+        if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER:
+            print_cur_ts("Liveness check, timestamp:\t")
             alive_counter = 0
 
         time.sleep(SPOTIFY_CHECK_INTERVAL)
 
 
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, TOOL_ALIVE_COUNTER, SP_DC_COOKIE, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, SP_LOGFILE, PROFILE_NOTIFICATION, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, SP_LOGFILE, PROFILE_NOTIFICATION, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -3277,7 +3282,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="spotify_profile_monitor",
-        description=("Monitor a Spotify user’s profile changes and send customizable email alerts [ https://github.com/misiektoja/spotify_profile_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
+        description=("Monitor a Spotify user's profile changes including playlists and send customizable email alerts [ https://github.com/misiektoja/spotify_profile_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
     )
 
     # Positional
@@ -3333,7 +3338,7 @@ def main():
         dest="profile_notification",
         action="store_true",
         default=None,
-        help="Email when user’s profile changes"
+        help="Email when user's profile changes"
     )
     notify.add_argument(
         "-g", "--no-followers-followings-notify",
@@ -3567,7 +3572,7 @@ def main():
 
     if args.check_interval:
         SPOTIFY_CHECK_INTERVAL = args.check_interval
-        TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / SPOTIFY_CHECK_INTERVAL
+        LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / SPOTIFY_CHECK_INTERVAL
 
     if args.error_interval:
         SPOTIFY_ERROR_INTERVAL = args.error_interval
@@ -3629,7 +3634,7 @@ def main():
             spotify_list_tracks_for_playlist(sp_accessToken, args.list_tracks_for_playlist, CSV_FILE, CSV_FILE_FORMAT_EXPORT)
         except Exception as e:
             if 'Not Found' in str(e) or '400 Client' in str(e):
-                print("* Error: Playlist does not exist or is set to private")
+                print(f"* Error: Playlist does not exist or is set to private: {e}")
             else:
                 print(f"* Error: {e}")
             sys.exit(1)
@@ -3641,7 +3646,7 @@ def main():
             spotify_list_liked_tracks(sp_accessToken, CSV_FILE, CSV_FILE_FORMAT_EXPORT)
         except Exception as e:
             if 'Not Found' in str(e) or '400 Client' in str(e):
-                print("* Error: Playlist does not exist or is set to private")
+                print(f"* Error: Playlist does not exist or is set to private: {e}")
             else:
                 print(f"* Error: {e}")
             sys.exit(1)
@@ -3758,11 +3763,12 @@ def main():
         FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
 
-    print(f"* Spotify timers:\t\t[check interval: {display_time(SPOTIFY_CHECK_INTERVAL)}] [error interval: {display_time(SPOTIFY_ERROR_INTERVAL)}]")
+    print(f"* Spotify polling intervals:\t[check: {display_time(SPOTIFY_CHECK_INTERVAL)}] [error: {display_time(SPOTIFY_ERROR_INTERVAL)}]")
     print(f"* Email notifications:\t\t[profile changes = {PROFILE_NOTIFICATION}] [followers/followings = {FOLLOWERS_FOLLOWINGS_NOTIFICATION}]\n\t\t\t\t[errors = {ERROR_NOTIFICATION}]")
     print(f"* Profile pic changes:\t\t{DETECT_CHANGED_PROFILE_PIC}")
     print(f"* Playlist changes:\t\t{DETECT_CHANGES_IN_PLAYLISTS}")
     print(f"* All public playlists:\t\t{GET_ALL_PLAYLISTS}")
+    print(f"* Liveness check:\t\t{bool(LIVENESS_CHECK_INTERVAL)}" + (f" ({display_time(LIVENESS_CHECK_INTERVAL)})" if LIVENESS_CHECK_INTERVAL else ""))
     print(f"* CSV logging enabled:\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
     print(f"* Ignoring listed playlists:\t{bool(PLAYLISTS_TO_SKIP_FILE)}" + (f" ({PLAYLISTS_TO_SKIP_FILE})" if PLAYLISTS_TO_SKIP_FILE else ""))
     print(f"* Display profile pics:\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
