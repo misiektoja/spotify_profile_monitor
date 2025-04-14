@@ -10,10 +10,11 @@ Python pip3 requirements:
 
 python-dateutil
 pytz
-tzlocal
 requests
 urllib3
 pyotp
+tzlocal (optional)
+python-dotenv (optional)
 """
 
 VERSION = "2.2"
@@ -22,14 +23,29 @@ VERSION = "2.2"
 # CONFIGURATION SECTION START
 # ---------------------------
 
-# Log in to Spotify web client (https://open.spotify.com/) and put the value of sp_dc cookie below
-# Alternatively, you can use the -u parameter to provide it at runtime
-# The sp_dc cookie is typically valid for up to 1 year
-# Tip: use the web browser dev console or "Cookie-Editor" by cgagnier (available for all major browsers) to extract it easily: https://cookie-editor.com/
+CONFIG_BLOCK = """
+# Log in to Spotify web client (https://open.spotify.com/) and retrieve your sp_dc cookie
+# Use the web browser dev console or "Cookie-Editor" by cgagnier to extract it easily: https://cookie-editor.com/
+# The sp_dc cookie is typically valid for up to 2 weeks
+#
+# Provide the SP_DC_COOKIE secret using one of the following methods:
+#   - Pass it at runtime with -u / --spotify-dc-cookie parameter
+#   - Set it as an environment variable (e.g. export SP_DC_COOKIE=...)
+#   - Add it to ".env" file (SP_DC_COOKIE=...) for persistent use
+# Fallback:
+#   - Hard-code it in the code or config file
+#
 SP_DC_COOKIE = "your_sp_dc_cookie_value"
 
 # SMTP settings for sending email notifications
 # If left as-is, no notifications will be sent
+#
+# Provide the SMTP_PASSWORD secret using one of the following methods:
+#   - Set it as an environment variable (e.g. export SMTP_PASSWORD=...)
+#   - Add it to ".env" file (SMTP_PASSWORD=...) for persistent use
+# Fallback:
+#   - Hard-code it in the code or config file
+#
 SMTP_HOST = "your_smtp_server_ssl"
 SMTP_PORT = 587
 SMTP_USER = "your_smtp_user"
@@ -37,6 +53,19 @@ SMTP_PASSWORD = "your_smtp_password"
 SMTP_SSL = True
 SENDER_EMAIL = "your_sender_email"
 RECEIVER_EMAIL = "your_receiver_email"
+
+# Whether to send an email when the user's profile changes
+# Can also be enabled via the -p parameter
+PROFILE_NOTIFICATION = False
+
+# Whether to send an email when followers or followings change
+# Only applies if PROFILE_NOTIFICATION / -p is enabled
+# Can also be disabled via the -g parameter
+FOLLOWERS_FOLLOWINGS_NOTIFICATION = True
+
+# Whether to send an email on errors
+# Can also be disabled via the -e parameter
+ERROR_NOTIFICATION = True
 
 # How often to check for user profile changes; in seconds
 # Can also be set using the -c parameter
@@ -46,18 +75,18 @@ SPOTIFY_CHECK_INTERVAL = 1800  # 30 mins
 # Can also be set using the -m parameter
 SPOTIFY_ERROR_INTERVAL = 300  # 5 mins
 
-# Set your local time zone so that Spotify timestamps are converted accordingly (e.g. 'Europe/Warsaw').
+# Set your local time zone so that Spotify timestamps are converted accordingly (e.g. 'Europe/Warsaw')
 # Use this command to list all time zones supported by pytz:
-# python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
-# If set to 'Auto', the tool will try to detect your local time zone automatically
+#   python3 -c "import pytz; print('\\n'.join(pytz.all_timezones))"
+# If set to 'Auto', the tool will try to detect your local time zone automatically (requires tzlocal)
 LOCAL_TIMEZONE = 'Auto'
 
-# Notify when the user's profile picture changes? (via console and email if -p is enabled).
+# Notify when the user's profile picture changes? (via console and email if PROFILE_NOTIFICATION / -p is enabled)
 # If enabled, the current profile picture is saved as:
 #   - spotify_profile_{user_uri_id/file_suffix}_pic.jpeg (initial)
 #   - spotify_profile_{user_uri_id/file_suffix}_pic_YYmmdd_HHMM.jpeg (on change)
 # The binary JPEGs are compared to detect changes
-# It is enabled by default, can be disabled by using -j parameter
+# Can also be disabled via the -j parameter
 DETECT_CHANGED_PROFILE_PIC = True
 
 # If you have 'imgcat' installed, you can set its path below to display profile pictures directly in your terminal
@@ -71,19 +100,35 @@ IMGCAT_PATH = ""
 # Example request:
 # https://api-partner.spotify.com/pathfinder/v1/query?operationName=searchUsers&variables={"searchTerm":"user_uri_id","offset":0,"limit":5,"numberOfTopResults":5,"includeAudiobooks":false}&extensions={"persistedQuery":{"version":1,"sha256Hash":"XXXXXXXXXX"}}
 # You are interested in the string marked as "XXXXXXXXXX" here
+#
+# Provide the SP_SHA256 secret using one of the following methods:
+#   - Set it as an environment variable (e.g. export SP_SHA256=...)
+#   - Add it to ".env" file (SP_SHA256=...) for persistent use
+# Fallback:
+#   - Hard-code it in the code or config file
+#
 SP_SHA256 = "your_spotify_client_sha256"
 
-# Notify when user's public playlists change? (via console and email if -p is enabled)
+# Notify when user's public playlists change? (via console and email if PROFILE_NOTIFICATION / -p is enabled)
 # Detects:
 #   - added/removed tracks
 #   - name or description changes
 #   - number of likes
 #   - collaborators
-# It is enabled by default, can be disabled by using -q parameter
-# This option also affects behavior when using -i
+# This option also affects behavior when using -i (listing mode)
+# It can also be disabled via the -q parameter
 DETECT_CHANGES_IN_PLAYLISTS = True
 
-# Max number of public playlists (owned by the user) to monitor
+# By default, only public playlists owned by the user are fetched
+# Set to True to include all public playlists on their profile (e.g. created by others, but added to the profile)
+# Can also be enabled via the -k parameter
+GET_ALL_PLAYLISTS = False
+
+# Ignore Spotify-owned playlists when monitoring?
+# Set to True to avoid tracking Spotify-generated playlists that often change frequently (likes, tracks etc.)
+IGNORE_SPOTIFY_PLAYLISTS = True
+
+# Max number of public playlists to monitor
 PLAYLISTS_LIMIT = 50
 
 # Max number of recently played artists to show (when using -a)
@@ -92,10 +137,9 @@ RECENTLY_PLAYED_ARTISTS_LIMIT = 50
 # Max number of recently played artists to show (when using -i)
 RECENTLY_PLAYED_ARTISTS_LIMIT_INFO = 15
 
-# By default, only public playlists owned by the user are fetched
-# Set to True to include all public playlists on their profile (e.g. created by others, but added to the profile)
-# Can also be set with the -k parameter
-GET_ALL_PLAYLISTS = False
+# Occasionally, the Spotify API glitches and returns an empty list of user playlists
+# To avoid false alarms, we delay notifications until this happens PLAYLISTS_DISAPPEARED_COUNTER times in a row (i.e. after the next check interval)
+PLAYLISTS_DISAPPEARED_COUNTER = 2
 
 # How often to print an "alive check" message to the output; in seconds
 TOOL_ALIVE_INTERVAL = 21600  # 6 hours
@@ -106,8 +150,38 @@ CHECK_INTERNET_URL = 'https://api.spotify.com/v1'
 # Timeout used when checking initial internet connectivity; in seconds
 CHECK_INTERNET_TIMEOUT = 5
 
+# Whether to enable / disable SSL certificate verification while sending https requests
+VERIFY_SSL = True
+
+# CSV file to write all profile changes
+# Can also be set using the -b parameter
+CSV_FILE = ""
+
+# Format used when exporting playlists (-l) or liked songs (-x) to CSV file:
+# 1 - default format used for activity logging ['Date', 'Type', 'Name', 'Old', 'New']
+# 2 - playlist dump format ['Date', 'Playlist Name', 'Artist', 'Track']
+CSV_FILE_FORMAT_EXPORT = 2
+
+# Filename with Spotify playlists to ignore
+# Can also be set using the -t parameter
+PLAYLISTS_TO_SKIP_FILE = ""
+
+# Suffix to append to the output filename instead of default user URI ID
+# Can also be set using the -y parameter
+FILE_SUFFIX = ""
+
 # Base name of the log file. The tool will save its output to spotify_profile_monitor_{user_uri_id/file_suffix}.log file
 SP_LOGFILE = "spotify_profile_monitor"
+
+# Whether to disable logging to spotify_profile_monitor_<suffix>.log
+# Can also be disabled via the -d parameter
+DISABLE_LOGGING = False
+
+# Width of horizontal line (─)
+HORIZONTAL_LINE = 113
+
+# Whether to clear the terminal screen after starting the tool
+CLEAR_SCREEN = True
 
 # Value used by signal handlers to increase or decrease profile check interval (SPOTIFY_CHECK_INTERVAL); in seconds
 SPOTIFY_CHECK_SIGNAL_VALUE = 300  # 5 minutes
@@ -117,25 +191,60 @@ TOKEN_MAX_RETRIES = 10
 
 # Interval between access token retry attempts; in seconds
 TOKEN_RETRY_TIMEOUT = 0.5  # 0.5 second
-
-# Whether to enable / disable SSL certificate verification while sending https requests
-VERIFY_SSL = True
-
-# Ignore Spotify-owned playlists when monitoring?
-# Set to True to avoid tracking Spotify-generated playlists that often change frequently (likes, tracks etc.)
-IGNORE_SPOTIFY_PLAYLISTS = True
-
-# Format used when exporting playlists (-l) or liked songs (-x) to CSV file:
-# 1 - default format used for activity logging ['Date', 'Type', 'Name', 'Old', 'New']
-# 2 - playlist dump format ['Date', 'Playlist Name', 'Artist', 'Track']
-CSV_FILE_FORMAT_EXPORT = 2
-
-# Whether to clear the terminal screen after starting the tool
-CLEAR_SCREEN = True
+"""
 
 # -------------------------
 # CONFIGURATION SECTION END
 # -------------------------
+
+# Provide default dummy values so linters shut up
+SP_DC_COOKIE = ""
+SMTP_HOST = ""
+SMTP_PORT = 0
+SMTP_USER = ""
+SMTP_PASSWORD = ""
+SMTP_SSL = False
+SENDER_EMAIL = ""
+RECEIVER_EMAIL = ""
+PROFILE_NOTIFICATION = False
+FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
+ERROR_NOTIFICATION = False
+SPOTIFY_CHECK_INTERVAL = 0
+SPOTIFY_ERROR_INTERVAL = 0
+LOCAL_TIMEZONE = ""
+DETECT_CHANGED_PROFILE_PIC = False
+IMGCAT_PATH = ""
+SP_SHA256 = ""
+DETECT_CHANGES_IN_PLAYLISTS = False
+GET_ALL_PLAYLISTS = False
+IGNORE_SPOTIFY_PLAYLISTS = False
+PLAYLISTS_LIMIT = 0
+RECENTLY_PLAYED_ARTISTS_LIMIT = 0
+RECENTLY_PLAYED_ARTISTS_LIMIT_INFO = 0
+PLAYLISTS_DISAPPEARED_COUNTER = 0
+TOOL_ALIVE_INTERVAL = 0
+CHECK_INTERNET_URL = ""
+CHECK_INTERNET_TIMEOUT = 0
+VERIFY_SSL = False
+CSV_FILE = ""
+CSV_FILE_FORMAT_EXPORT = 0
+PLAYLISTS_TO_SKIP_FILE = ""
+FILE_SUFFIX = ""
+SP_LOGFILE = ""
+DISABLE_LOGGING = False
+HORIZONTAL_LINE = 0
+CLEAR_SCREEN = False
+SPOTIFY_CHECK_SIGNAL_VALUE = 0
+TOKEN_MAX_RETRIES = 0
+TOKEN_RETRY_TIMEOUT = 0.0
+
+exec(CONFIG_BLOCK, globals())
+
+# Default name for the optional config file
+DEFAULT_CONFIG_FILENAME = "spotify_profile_monitor.conf"
+
+# List of secret keys to load from env/config
+SECRET_KEYS = ("SP_DC_COOKIE", "SMTP_PASSWORD", "SP_SHA256")
 
 # Strings removed from track names for generating proper Genius search URLs
 re_search_str = r'remaster|extended|original mix|remix|original soundtrack|radio( |-)edit|\(feat\.|( \(.*version\))|( - .*version)'
@@ -148,10 +257,6 @@ FUNCTION_TIMEOUT = 15
 ALARM_TIMEOUT = int((TOKEN_MAX_RETRIES * TOKEN_RETRY_TIMEOUT) + 5)
 ALARM_RETRY = 10
 
-# Sometimes Spotify API has issues and returns info that all user's playlists disappeared
-# We won't notify about such event right away, but only during PLAYLISTS_DISAPPEARED_COUNTER attempt (next check interval)
-PLAYLISTS_DISAPPEARED_COUNTER = 2
-
 # Variables for caching functionality of the Spotify access token to avoid unnecessary refreshing
 SP_CACHED_ACCESS_TOKEN = None
 SP_TOKEN_EXPIRES_AT = 0
@@ -163,9 +268,6 @@ TOKEN_URL = "https://open.spotify.com/get_access_token"
 
 # URL of the endpoint to get server time needed to create TOTP object
 SERVER_TIME_URL = "https://open.spotify.com/server-time"
-
-# Width of horizontal line (─)
-HORIZONTAL_LINE = 113
 
 # Cache for playlist info to avoid redundant API calls
 PLAYLIST_INFO_CACHE = {}
@@ -182,9 +284,7 @@ stdout_bck = None
 csvfieldnames = ['Date', 'Type', 'Name', 'Old', 'New']
 csvfieldnames_export = ['Date', 'Playlist Name', 'Artist', 'Track']
 
-profile_notification = False
-followers_followings_notification = True
-file_suffix = ""
+CLI_CONFIG_PATH = None
 
 # to solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
@@ -229,6 +329,7 @@ import base64
 import random
 from collections import Counter
 from email.utils import parsedate_to_datetime
+from pathlib import Path
 
 import urllib3
 if not VERIFY_SSL:
@@ -725,11 +826,11 @@ def is_valid_timezone(tz_name):
 
 # Signal handler for SIGUSR1 allowing to switch email notifications about profile changes
 def toggle_profile_changes_notifications_signal_handler(sig, frame):
-    global profile_notification
-    profile_notification = not profile_notification
+    global PROFILE_NOTIFICATION
+    PROFILE_NOTIFICATION = not PROFILE_NOTIFICATION
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
-    print(f"* Email notifications:\t\t[profile changes = {profile_notification}]")
+    print(f"* Email notifications:\t\t[profile changes = {PROFILE_NOTIFICATION}]")
     print_cur_ts("Timestamp:\t\t\t")
 
 
@@ -751,6 +852,37 @@ def decrease_check_signal_handler(sig, frame):
     sig_name = signal.Signals(sig).name
     print(f"* Signal {sig_name} received")
     print(f"* Spotify timers:\t\t[check interval: {display_time(SPOTIFY_CHECK_INTERVAL)}]")
+    print_cur_ts("Timestamp:\t\t\t")
+
+
+# Signal handler for SIGHUP allowing to reload secrets from .env
+def reload_secrets_signal_handler(sig, frame):
+    sig_name = signal.Signals(sig).name
+    print(f"* Signal {sig_name} received")
+
+    # reload .env if python-dotenv is installed
+    try:
+        from dotenv import load_dotenv, find_dotenv
+        if args.env_file:
+            env_path = args.env_file
+        else:
+            env_path = find_dotenv()
+        if env_path:
+            load_dotenv(env_path, override=True)
+        else:
+            print("* No .env file found, skipping env-var reload")
+    except ImportError:
+        env_path = None
+        print("* python-dotenv not installed, skipping env-var reload")
+
+    if env_path:
+        for secret in SECRET_KEYS:
+            old_val = globals().get(secret)
+            val = os.getenv(secret)
+            if val is not None and val != old_val:
+                globals()[secret] = val
+                print(f"* Reloaded {secret} from {env_path}")
+
     print_cur_ts("Timestamp:\t\t\t")
 
 
@@ -2182,7 +2314,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
     except Exception as e:
         print(f"* Error: {e}")
 
-    if (f_str == "Followers" or f_str == "Followings") and not followers_followings_notification:
+    if (f_str == "Followers" or f_str == "Followings") and not FOLLOWERS_FOLLOWINGS_NOTIFICATION:
         return False
 
     if profile_notification:
@@ -2242,8 +2374,32 @@ def diff_tracks(list_a, list_b):
     return [x for x in list_a if sig(x) not in set_b]
 
 
+# Finds an optional config file
+def find_config_file(cli_path=None):
+    """
+    Search for an optional config file in:
+      1) CLI-provided path
+      2) ./spotify_profile_monitor.conf
+      3) ~/.spotify_profile_monitor.conf
+      4) script-directory/spotify_profile_monitor.conf
+    """
+    from pathlib import Path
+    candidates = []
+    if cli_path:
+        candidates.append(Path(cli_path))
+    candidates += [
+        Path.cwd() / DEFAULT_CONFIG_FILENAME,
+        Path.home() / f".{DEFAULT_CONFIG_FILENAME}",
+        Path(__file__).parent / DEFAULT_CONFIG_FILENAME,
+    ]
+    for p in candidates:
+        if p.is_file():
+            return str(p)
+    return None
+
+
 # Main function that monitors profile changes of the specified Spotify user URI ID
-def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, playlists_to_skip):
+def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     global SP_CACHED_ACCESS_TOKEN
     playlists_count = 0
     playlists_old_count = 0
@@ -2313,7 +2469,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
     print(f"User profile picture:\t\t{image_url != ''}")
 
-    profile_pic_file_tmp = f"spotify_profile_{file_suffix}_pic_tmp_info.jpeg"
+    profile_pic_file_tmp = f"spotify_profile_{FILE_SUFFIX}_pic_tmp_info.jpeg"
     if image_url and IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
         if save_profile_pic(image_url, profile_pic_file_tmp):
             try:
@@ -2340,12 +2496,12 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
     print_cur_ts("\nTimestamp:\t\t\t")
 
-    followers_file = f"spotify_profile_{file_suffix}_followers.json"
-    followings_file = f"spotify_profile_{file_suffix}_followings.json"
-    playlists_file = f"spotify_profile_{file_suffix}_playlists.json"
-    profile_pic_file = f"spotify_profile_{file_suffix}_pic.jpeg"
-    profile_pic_file_old = f"spotify_profile_{file_suffix}_pic_old.jpeg"
-    profile_pic_file_tmp = f"spotify_profile_{file_suffix}_pic_tmp.jpeg"
+    followers_file = f"spotify_profile_{FILE_SUFFIX}_followers.json"
+    followings_file = f"spotify_profile_{FILE_SUFFIX}_followings.json"
+    playlists_file = f"spotify_profile_{FILE_SUFFIX}_playlists.json"
+    profile_pic_file = f"spotify_profile_{FILE_SUFFIX}_pic.jpeg"
+    profile_pic_file_old = f"spotify_profile_{FILE_SUFFIX}_pic_old.jpeg"
+    profile_pic_file_tmp = f"spotify_profile_{FILE_SUFFIX}_pic_tmp.jpeg"
 
     followers_old = followers
     followings_old = followings
@@ -2478,7 +2634,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                 try:
                     if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
                         subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file};echo'), shell=True)
-                    shutil.copy2(profile_pic_file, f'spotify_profile_{file_suffix}_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
+                    shutil.copy2(profile_pic_file, f'spotify_profile_{FILE_SUFFIX}_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
                 except Exception:
                     pass
 
@@ -2512,7 +2668,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                     try:
                         if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
                             subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file_tmp};echo'), shell=True)
-                        shutil.copy2(profile_pic_file_tmp, f'spotify_profile_{file_suffix}_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
+                        shutil.copy2(profile_pic_file_tmp, f'spotify_profile_{FILE_SUFFIX}_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
                         os.replace(profile_pic_file, profile_pic_file_old)
                         os.replace(profile_pic_file_tmp, profile_pic_file)
                     except Exception as e:
@@ -2570,7 +2726,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                 SP_CACHED_ACCESS_TOKEN = None
             if ('access token' in str(e)) or ('Unsuccessful token request' in str(e)):
                 print(f"* Error: sp_dc might have expired!")
-                if error_notification and not email_sent:
+                if ERROR_NOTIFICATION and not email_sent:
                     m_subject = f"spotify_profile_monitor: sp_dc might have expired! (uri: {user_uri_id})"
                     m_body = f"sp_dc might have expired!\n{e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     m_body_html = f"<html><head></head><body>sp_dc might have expired!<br>{escape(str(e))}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
@@ -2579,7 +2735,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                     email_sent = True
             elif '404' in str(e):
                 print("* Error: user might have removed the account !")
-                if error_notification and not email_sent:
+                if ERROR_NOTIFICATION and not email_sent:
                     m_subject = f"spotify_profile_monitor: user might have removed the account! (uri: {user_uri_id})"
                     m_body = f"User might have removed the account: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     m_body_html = f"<html><head></head><body>User might have removed the account: {escape(str(e))}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
@@ -2603,7 +2759,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             except Exception as e:
                 print(f"* Error: {e}")
 
-            if profile_notification:
+            if PROFILE_NOTIFICATION:
                 m_subject = f"Spotify user {username_old} has changed username to {username}"
                 m_body = f"Spotify user '{username_old}' has changed username to '{username}'\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                 print(f"Sending email notification to {RECEIVER_EMAIL}")
@@ -2645,7 +2801,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
         recently_played_artists = sp_user_data["sp_user_recently_played_artists"]
 
         if followers_count != followers_old_count:
-            spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, profile_notification, False)
+            spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, PROFILE_NOTIFICATION, False)
 
             followers_old_count = followers_count
             followers_old = followers
@@ -2654,7 +2810,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
             print_cur_ts("Timestamp:\t\t\t")
 
         if followings_count != followings_old_count:
-            spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, profile_notification, False)
+            spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, PROFILE_NOTIFICATION, False)
 
             followings_old_count = followings_count
             followings_old = followings
@@ -2678,7 +2834,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                 except Exception as e:
                     print(f"* Error: {e}")
 
-                if profile_notification:
+                if PROFILE_NOTIFICATION:
                     m_subject = f"Spotify user {username} has removed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
                     m_body = f"Spotify user {username} has removed profile picture added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
@@ -2700,7 +2856,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                     try:
                         if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
                             subprocess.call((f'{IMGCAT_PATH} {profile_pic_file};echo'), shell=True)
-                        shutil.copy2(profile_pic_file, f'spotify_profile_{file_suffix}_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
+                        shutil.copy2(profile_pic_file, f'spotify_profile_{FILE_SUFFIX}_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
                     except Exception:
                         pass
 
@@ -2710,7 +2866,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                     except Exception as e:
                         print(f"* Error: {e}")
 
-                    if profile_notification:
+                    if PROFILE_NOTIFICATION:
                         m_subject = f"Spotify user {username} has set profile picture ! ({get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)})"
                         m_body = f"Spotify user {username} has set profile picture !\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                         m_body_html = f"Spotify user <b>{username}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
@@ -2744,13 +2900,13 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                         try:
                             if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
                                 subprocess.call((f'{IMGCAT_PATH} {profile_pic_file_tmp};echo'), shell=True)
-                            shutil.copy2(profile_pic_file_tmp, f'spotify_profile_{file_suffix}_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
+                            shutil.copy2(profile_pic_file_tmp, f'spotify_profile_{FILE_SUFFIX}_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
                             os.replace(profile_pic_file, profile_pic_file_old)
                             os.replace(profile_pic_file_tmp, profile_pic_file)
                         except Exception as e:
                             print(f"* Error while replacing/copying files: {e}")
 
-                        if profile_notification:
+                        if PROFILE_NOTIFICATION:
                             m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
                             m_subject = f"Spotify user {username} has changed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
                             m_body = f"Spotify user {username} has changed profile picture !\n\nPrevious one added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
@@ -2828,7 +2984,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                         print(f"* Error: {e}")
                                     m_subject = f"Spotify user {username} number of likes for playlist '{p_name}' has changed! ({p_likes_diff_str}, {p_likes_old} -> {p_likes})"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                    if profile_notification:
+                                    if PROFILE_NOTIFICATION:
                                         print(f"Sending email notification to {RECEIVER_EMAIL}")
                                         send_email(m_subject, m_body, "", SMTP_SSL)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
@@ -2894,7 +3050,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
                                     m_subject = f"Spotify user {username} number of collaborators for playlist '{p_name}' has changed! ({p_collaborators_diff_str}, {p_collaborators_old} -> {p_collaborators})"
                                     m_body = f"{p_message}\n{p_message_added_collaborators}{p_message_removed_collaborators}Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                    if profile_notification:
+                                    if PROFILE_NOTIFICATION:
                                         print(f"Sending email notification to {RECEIVER_EMAIL}")
                                         send_email(m_subject, m_body, "", SMTP_SSL)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
@@ -2989,7 +3145,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                             p_subject_after_str = f" (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)})"
                                         m_subject = f"Spotify user {username} list of tracks ({p_tracks}) for playlist '{p_name}' has changed!{p_subject_after_str}"
                                     m_body = f"{p_message}\n{p_message_added_tracks}{p_message_removed_tracks}Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                    if profile_notification:
+                                    if PROFILE_NOTIFICATION:
                                         print(f"Sending email notification to {RECEIVER_EMAIL}")
                                         send_email(m_subject, m_body, "", SMTP_SSL)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
@@ -3006,7 +3162,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                         print(f"* Error: {e}")
                                     m_subject = f"Spotify user {username} playlist '{p_name_old}' name changed to '{p_name}'!"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                    if profile_notification:
+                                    if PROFILE_NOTIFICATION:
                                         print(f"Sending email notification to {RECEIVER_EMAIL}")
                                         send_email(m_subject, m_body, "", SMTP_SSL)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
@@ -3023,7 +3179,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                                         print(f"* Error: {e}")
                                     m_subject = f"Spotify user {username} playlist '{p_name}' description has changed !"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                    if profile_notification:
+                                    if PROFILE_NOTIFICATION:
                                         print(f"Sending email notification to {RECEIVER_EMAIL}")
                                         send_email(m_subject, m_body, "", SMTP_SSL)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
@@ -3040,7 +3196,7 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
                     playlists_zeroed_counter = 0
 
                 if playlists_zeroed_counter == PLAYLISTS_DISAPPEARED_COUNTER or playlists_count > 0:
-                    glitch_detected = spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists to profile", "Added Playlist", "Removed playlists from profile", "Removed Playlist", playlists_file, csv_file_name, profile_notification, True, sp_accessToken)
+                    glitch_detected = spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists to profile", "Added Playlist", "Removed playlists from profile", "Removed Playlist", playlists_file, csv_file_name, PROFILE_NOTIFICATION, True, sp_accessToken)
 
                     if not glitch_detected:
                         playlists_old_count = playlists_count
@@ -3063,6 +3219,10 @@ def spotify_profile_monitor_uri(user_uri_id, error_notification, csv_file_name, 
 
 if __name__ == "__main__":
 
+    if "--generate-config" in sys.argv:
+        print(CONFIG_BLOCK.strip("\n"))
+        sys.exit(0)
+
     stdout_bck = sys.stdout
 
     signal.signal(signal.SIGINT, signal_handler)
@@ -3074,7 +3234,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
         prog="spotify_profile_monitor",
-        description="Monitor a Spotify user’s profile changes and send customizable email alerts [ https://github.com/misiektoja/spotify_profile_monitor/ ]"
+        description=("Monitor a Spotify user’s profile changes and send customizable email alerts [ https://github.com/misiektoja/spotify_profile_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
     )
 
     # Positional
@@ -3084,6 +3244,26 @@ if __name__ == "__main__":
         metavar="SPOTIFY_USER_URI_ID",
         help="Spotify user URI ID",
         type=str
+    )
+
+    # Configuration & dotenv files
+    conf = parser.add_argument_group("Configuration & dotenv files")
+    conf.add_argument(
+        "--config-file",
+        dest="config_file",
+        metavar="PATH",
+        help="Location of the optional config file",
+    )
+    conf.add_argument(
+        "--generate-config",
+        action="store_true",
+        help="Print default config template and exit",
+    )
+    conf.add_argument(
+        "--env-file",
+        dest="env_file",
+        metavar="PATH",
+        help="Location of the optional dotenv file",
     )
 
     # API credentials
@@ -3102,18 +3282,21 @@ if __name__ == "__main__":
         "-p", "--notify-profile",
         dest="profile_notification",
         action="store_true",
+        default=None,
         help="Email when user’s profile changes"
     )
     notify.add_argument(
         "-g", "--no-followers-followings-notify",
         dest="disable_followers_followings_notification",
         action="store_false",
+        default=None,
         help="Disable notifications about new followers/followings"
     )
     notify.add_argument(
         "-e", "--no-error-notify",
         dest="error_notification",
         action="store_false",
+        default=None,
         help="Disable notifications on errors"
     )
     notify.add_argument(
@@ -3207,18 +3390,21 @@ if __name__ == "__main__":
         "-j", "--no-profile-pic-detect",
         dest="do_not_detect_changed_profile_pic",
         action="store_false",
+        default=None,
         help="Disable detection of changed profile picture"
     )
     opts.add_argument(
         "-q", "--no-playlist-monitor",
         dest="do_not_monitor_playlists",
         action="store_false",
+        default=None,
         help="Disable monitoring of playlist changes"
     )
     opts.add_argument(
         "-k", "--get-all-playlists",
         dest="get_all_playlists",
         action="store_true",
+        default=None,
         help="Fetch all playlists instead of only owned ones"
     )
     opts.add_argument(
@@ -3232,6 +3418,7 @@ if __name__ == "__main__":
         "-d", "--disable-logging",
         dest="disable_logging",
         action="store_true",
+        default=None,
         help="Disable logging to spotify_profile_monitor_<suffix>.log"
     )
 
@@ -3240,6 +3427,33 @@ if __name__ == "__main__":
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(1)
+
+    CLI_CONFIG_PATH = args.config_file
+    cfg_path = find_config_file(CLI_CONFIG_PATH)
+    if cfg_path:
+        try:
+            with open(cfg_path, "r") as cf:
+                exec(cf.read(), globals())
+        except Exception as e:
+            print(f"* Error loading config file '{cfg_path}': {e}")
+            sys.exit(1)
+
+    try:
+        from dotenv import load_dotenv, find_dotenv
+        if args.env_file:
+            env_path = args.env_file
+            load_dotenv(env_path, override=True)
+        else:
+            env_path = find_dotenv() or None
+            if env_path:
+                load_dotenv(env_path, override=True)
+    except ImportError:
+        env_path = None
+
+    for secret in SECRET_KEYS:
+        val = os.getenv(secret)
+        if val is not None:
+            globals()[secret] = val
 
     local_tz = None
     if LOCAL_TIMEZONE == "Auto":
@@ -3317,8 +3531,11 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if args.csv_file:
+        CSV_FILE = args.csv_file
+
+    if CSV_FILE:
         try:
-            with open(args.csv_file, 'a', newline='', buffering=1, encoding="utf-8") as _:
+            with open(CSV_FILE, 'a', newline='', buffering=1, encoding="utf-8") as _:
                 pass
         except Exception as e:
             print(f"* Error, CSV file cannot be opened for writing: {e}")
@@ -3327,7 +3544,7 @@ if __name__ == "__main__":
     if args.list_tracks_for_playlist:
         try:
             sp_accessToken = spotify_get_access_token(SP_DC_COOKIE)
-            spotify_list_tracks_for_playlist(sp_accessToken, args.list_tracks_for_playlist, args.csv_file, CSV_FILE_FORMAT_EXPORT)
+            spotify_list_tracks_for_playlist(sp_accessToken, args.list_tracks_for_playlist, CSV_FILE, CSV_FILE_FORMAT_EXPORT)
         except Exception as e:
             if 'Not Found' in str(e) or '400 Client' in str(e):
                 print("* Error: playlist does not exist or is set to private")
@@ -3339,7 +3556,7 @@ if __name__ == "__main__":
     if args.list_liked_tracks:
         try:
             sp_accessToken = spotify_get_access_token(SP_DC_COOKIE)
-            spotify_list_liked_tracks(sp_accessToken, args.csv_file, CSV_FILE_FORMAT_EXPORT)
+            spotify_list_liked_tracks(sp_accessToken, CSV_FILE, CSV_FILE_FORMAT_EXPORT)
         except Exception as e:
             if 'Not Found' in str(e) or '400 Client' in str(e):
                 print("* Error: playlist does not exist or is set to private")
@@ -3401,8 +3618,11 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if args.playlists_to_skip:
+        PLAYLISTS_TO_SKIP_FILE = args.playlists_to_skip
+
+    if PLAYLISTS_TO_SKIP_FILE:
         try:
-            with open(args.playlists_to_skip, encoding="utf-8") as file:
+            with open(PLAYLISTS_TO_SKIP_FILE, encoding="utf-8") as file:
                 playlists_to_skip = {
                     spotify_extract_id_or_name(line)
                     for line in file
@@ -3416,33 +3636,45 @@ if __name__ == "__main__":
         playlists_to_skip = []
 
     if args.file_suffix:
-        file_suffix = str(args.file_suffix)
+        FILE_SUFFIX = str(args.file_suffix)
     else:
-        file_suffix = str(args.user_id)
+        if not FILE_SUFFIX:
+            FILE_SUFFIX = str(args.user_id)
 
-    if not args.disable_logging:
-        SP_LOGFILE = f"{SP_LOGFILE}_{file_suffix}.log"
+    if args.disable_logging is True:
+        DISABLE_LOGGING = True
+
+    if not DISABLE_LOGGING:
+        SP_LOGFILE = f"{SP_LOGFILE}_{FILE_SUFFIX}.log"
         sys.stdout = Logger(SP_LOGFILE)
 
-    profile_notification = args.profile_notification
-    followers_followings_notification = args.disable_followers_followings_notification
-    error_notification = args.error_notification
+    if args.profile_notification is True:
+        PROFILE_NOTIFICATION = True
 
-    if profile_notification is False:
-        followers_followings_notification = False
+    if args.disable_followers_followings_notification is False:
+        FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
 
-    if SMTP_HOST == "your_smtp_server_ssl" or SMTP_HOST == "your_smtp_server_plaintext":
-        profile_notification = False
-        followers_followings_notification = False
-        error_notification = False
+    if args.error_notification is False:
+        ERROR_NOTIFICATION = False
+
+    if PROFILE_NOTIFICATION is False:
+        FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
+
+    if SMTP_HOST.startswith("your_smtp_server_"):
+        PROFILE_NOTIFICATION = False
+        FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
+        ERROR_NOTIFICATION = False
 
     print(f"* Spotify timers:\t\t[check interval: {display_time(SPOTIFY_CHECK_INTERVAL)}] [error interval: {display_time(SPOTIFY_ERROR_INTERVAL)}]")
-    print(f"* Email notifications:\t\t[profile changes = {profile_notification}] [followers/followings = {followers_followings_notification}]\n\t\t\t\t[errors = {error_notification}]")
+    print(f"* Email notifications:\t\t[profile changes = {PROFILE_NOTIFICATION}] [followers/followings = {FOLLOWERS_FOLLOWINGS_NOTIFICATION}]\n\t\t\t\t[errors = {ERROR_NOTIFICATION}]")
     print(f"* Profile pic changes:\t\t{DETECT_CHANGED_PROFILE_PIC}")
     print(f"* Playlist changes:\t\t{DETECT_CHANGES_IN_PLAYLISTS}")
     print(f"* All public playlists:\t\t{GET_ALL_PLAYLISTS}")
-    print(f"* Output logging enabled:\t{not args.disable_logging}" + (f" ({SP_LOGFILE})" if not args.disable_logging else ""))
-    print(f"* CSV logging enabled:\t\t{bool(args.csv_file)}" + (f" ({args.csv_file})" if args.csv_file else ""))
+    print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({SP_LOGFILE})" if not DISABLE_LOGGING else ""))
+    print(f"* CSV logging enabled:\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
+    print(f"* Ignoring listed playlists:\t{bool(PLAYLISTS_TO_SKIP_FILE)}" + (f" ({PLAYLISTS_TO_SKIP_FILE})" if PLAYLISTS_TO_SKIP_FILE else ""))
+    print(f"* Configuration file:\t\t{cfg_path}")
+    print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
     print(f"* Local timezone:\t\t{LOCAL_TIMEZONE}\n")
 
     # We define signal handlers only for Linux, Unix & MacOS since Windows has limited number of signals supported
@@ -3450,8 +3682,9 @@ if __name__ == "__main__":
         signal.signal(signal.SIGUSR1, toggle_profile_changes_notifications_signal_handler)
         signal.signal(signal.SIGTRAP, increase_check_signal_handler)
         signal.signal(signal.SIGABRT, decrease_check_signal_handler)
+        signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
 
-    spotify_profile_monitor_uri(args.user_id, error_notification, args.csv_file, playlists_to_skip)
+    spotify_profile_monitor_uri(args.user_id, CSV_FILE, playlists_to_skip)
 
     sys.stdout = stdout_bck
     sys.exit(0)
