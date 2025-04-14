@@ -91,8 +91,7 @@ DETECT_CHANGED_PROFILE_PIC = True
 
 # If you have 'imgcat' installed, you can set its path below to display profile pictures directly in your terminal
 # Leave empty to disable this feature
-# IMGCAT_PATH = "/usr/local/bin/imgcat"
-IMGCAT_PATH = ""
+IMGCAT_PATH = "imgcat"
 
 # SHA256 hash needed to search for Spotify users (used with -s)
 # Intercept traffic when using search in the Spotify client, look for requests with searchUsers or searchDesktop operation name
@@ -166,6 +165,11 @@ CSV_FILE_FORMAT_EXPORT = 2
 # Can also be set using the -t parameter
 PLAYLISTS_TO_SKIP_FILE = ""
 
+# Location of the optional dotenv file which can keep secrets
+# If not specified it will try to auto-search for .env files
+# Can also be set using the --env-file parameter
+DOTENV_FILE = ""
+
 # Suffix to append to the output filename instead of default user URI ID
 # Can also be set using the -y parameter
 FILE_SUFFIX = ""
@@ -229,6 +233,7 @@ VERIFY_SSL = False
 CSV_FILE = ""
 CSV_FILE_FORMAT_EXPORT = 0
 PLAYLISTS_TO_SKIP_FILE = ""
+DOTENV_FILE = ""
 FILE_SUFFIX = ""
 SP_LOGFILE = ""
 DISABLE_LOGGING = False
@@ -283,6 +288,8 @@ TOOL_ALIVE_COUNTER = TOOL_ALIVE_INTERVAL / SPOTIFY_CHECK_INTERVAL
 stdout_bck = None
 csvfieldnames = ['Date', 'Type', 'Name', 'Old', 'New']
 csvfieldnames_export = ['Date', 'Playlist Name', 'Artist', 'Track']
+
+imgcat_exe = ""
 
 CLI_CONFIG_PATH = None
 
@@ -863,8 +870,8 @@ def reload_secrets_signal_handler(sig, frame):
     # reload .env if python-dotenv is installed
     try:
         from dotenv import load_dotenv, find_dotenv
-        if args.env_file:
-            env_path = args.env_file
+        if DOTENV_FILE:
+            env_path = DOTENV_FILE
         else:
             env_path = find_dotenv()
         if env_path:
@@ -2051,9 +2058,9 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
         if save_profile_pic(image_url, profile_pic_file_tmp):
             profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)), pytz.timezone(LOCAL_TIMEZONE))
             print(f"({get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} - {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)")
-            if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
+            if imgcat_exe:
                 try:
-                    subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file_tmp}'), shell=True)
+                    subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {profile_pic_file_tmp}", shell=True, check=True)
                 except Exception:
                     pass
             try:
@@ -2378,24 +2385,39 @@ def diff_tracks(list_a, list_b):
 def find_config_file(cli_path=None):
     """
     Search for an optional config file in:
-      1) CLI-provided path
+      1) CLI-provided path (must exist if given)
       2) ./spotify_profile_monitor.conf
       3) ~/.spotify_profile_monitor.conf
       4) script-directory/spotify_profile_monitor.conf
     """
     from pathlib import Path
-    candidates = []
+
     if cli_path:
-        candidates.append(Path(cli_path))
-    candidates += [
+        p = Path(os.path.expanduser(cli_path))
+        return str(p) if p.is_file() else None
+
+    candidates = [
         Path.cwd() / DEFAULT_CONFIG_FILENAME,
         Path.home() / f".{DEFAULT_CONFIG_FILENAME}",
         Path(__file__).parent / DEFAULT_CONFIG_FILENAME,
     ]
+
     for p in candidates:
         if p.is_file():
             return str(p)
     return None
+
+
+# Resolves an executable path by checking if it's a valid file or searching in $PATH
+def resolve_executable(path):
+    if os.path.isfile(path) and os.access(path, os.X_OK):
+        return path
+
+    found = shutil.which(path)
+    if found:
+        return found
+
+    raise FileNotFoundError(f"Could not find executable '{path}'")
 
 
 # Main function that monitors profile changes of the specified Spotify user URI ID
@@ -2470,10 +2492,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     print(f"User profile picture:\t\t{image_url != ''}")
 
     profile_pic_file_tmp = f"spotify_profile_{FILE_SUFFIX}_pic_tmp_info.jpeg"
-    if image_url and IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
+    if image_url and imgcat_exe:
         if save_profile_pic(image_url, profile_pic_file_tmp):
             try:
-                subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file_tmp}'), shell=True)
+                subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {profile_pic_file_tmp}", shell=True, check=True)
             except Exception:
                 pass
             try:
@@ -2632,8 +2654,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)")
 
                 try:
-                    if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
-                        subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file};echo'), shell=True)
+                    if imgcat_exe:
+                        subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {profile_pic_file} {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
                     shutil.copy2(profile_pic_file, f'spotify_profile_{FILE_SUFFIX}_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
                 except Exception:
                     pass
@@ -2666,8 +2688,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                         print(f"* Error: {e}")
 
                     try:
-                        if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
-                            subprocess.call((f'echo;{IMGCAT_PATH} {profile_pic_file_tmp};echo'), shell=True)
+                        if imgcat_exe:
+                            subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {profile_pic_file_tmp} {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
                         shutil.copy2(profile_pic_file_tmp, f'spotify_profile_{FILE_SUFFIX}_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
                         os.replace(profile_pic_file, profile_pic_file_old)
                         os.replace(profile_pic_file_tmp, profile_pic_file)
@@ -2854,8 +2876,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
 
                     try:
-                        if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
-                            subprocess.call((f'{IMGCAT_PATH} {profile_pic_file};echo'), shell=True)
+                        if imgcat_exe:
+                            subprocess.run(f"{imgcat_exe} {profile_pic_file} {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
                         shutil.copy2(profile_pic_file, f'spotify_profile_{FILE_SUFFIX}_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
                     except Exception:
                         pass
@@ -2898,8 +2920,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                             print(f"* Error: {e}")
 
                         try:
-                            if IMGCAT_PATH and os.path.isfile(IMGCAT_PATH):
-                                subprocess.call((f'{IMGCAT_PATH} {profile_pic_file_tmp};echo'), shell=True)
+                            if imgcat_exe:
+                                subprocess.run(f"{imgcat_exe} {profile_pic_file_tmp} {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
                             shutil.copy2(profile_pic_file_tmp, f'spotify_profile_{FILE_SUFFIX}_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
                             os.replace(profile_pic_file, profile_pic_file_old)
                             os.replace(profile_pic_file_tmp, profile_pic_file)
@@ -3428,8 +3450,15 @@ if __name__ == "__main__":
         parser.print_help(sys.stderr)
         sys.exit(1)
 
-    CLI_CONFIG_PATH = args.config_file
+    if args.config_file:
+        CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
+
     cfg_path = find_config_file(CLI_CONFIG_PATH)
+
+    if not cfg_path and CLI_CONFIG_PATH:
+        print(f"* Error: Config file '{CLI_CONFIG_PATH}' does not exist")
+        sys.exit(1)
+
     if cfg_path:
         try:
             with open(cfg_path, "r") as cf:
@@ -3438,10 +3467,16 @@ if __name__ == "__main__":
             print(f"* Error loading config file '{cfg_path}': {e}")
             sys.exit(1)
 
+    if args.env_file:
+        DOTENV_FILE = os.path.expanduser(args.env_file)
+    else:
+        if DOTENV_FILE:
+            DOTENV_FILE = os.path.expanduser(DOTENV_FILE)
+
     try:
         from dotenv import load_dotenv, find_dotenv
-        if args.env_file:
-            env_path = args.env_file
+        if DOTENV_FILE:
+            env_path = DOTENV_FILE
             load_dotenv(env_path, override=True)
         else:
             env_path = find_dotenv() or None
@@ -3506,6 +3541,12 @@ if __name__ == "__main__":
         print("* Error: SP_DC_COOKIE (-u / --spotify_dc_cookie) value is empty or incorrect")
         sys.exit(1)
 
+    if IMGCAT_PATH:
+        try:
+            imgcat_exe = resolve_executable(IMGCAT_PATH)
+        except Exception:
+            pass
+
     if args.show_user_info:
         print("* Getting basic information about access token owner ...\n")
         try:
@@ -3531,7 +3572,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if args.csv_file:
-        CSV_FILE = args.csv_file
+        CSV_FILE = os.path.expanduser(args.csv_file)
 
     if CSV_FILE:
         try:
@@ -3618,7 +3659,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     if args.playlists_to_skip:
-        PLAYLISTS_TO_SKIP_FILE = args.playlists_to_skip
+        PLAYLISTS_TO_SKIP_FILE = os.path.expanduser(args.playlists_to_skip)
 
     if PLAYLISTS_TO_SKIP_FILE:
         try:
@@ -3670,9 +3711,10 @@ if __name__ == "__main__":
     print(f"* Profile pic changes:\t\t{DETECT_CHANGED_PROFILE_PIC}")
     print(f"* Playlist changes:\t\t{DETECT_CHANGES_IN_PLAYLISTS}")
     print(f"* All public playlists:\t\t{GET_ALL_PLAYLISTS}")
-    print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({SP_LOGFILE})" if not DISABLE_LOGGING else ""))
     print(f"* CSV logging enabled:\t\t{bool(CSV_FILE)}" + (f" ({CSV_FILE})" if CSV_FILE else ""))
     print(f"* Ignoring listed playlists:\t{bool(PLAYLISTS_TO_SKIP_FILE)}" + (f" ({PLAYLISTS_TO_SKIP_FILE})" if PLAYLISTS_TO_SKIP_FILE else ""))
+    print(f"* Display profile pics:\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
+    print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({SP_LOGFILE})" if not DISABLE_LOGGING else ""))
     print(f"* Configuration file:\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
     print(f"* Local timezone:\t\t{LOCAL_TIMEZONE}\n")
