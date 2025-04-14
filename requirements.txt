@@ -1,7 +1,7 @@
-python_dateutil
+requests
+python-dateutil
+urllib3
+pyotp
 pytz
 tzlocal
-urllib3
-Requests
-pyotp
 python-dotenv
