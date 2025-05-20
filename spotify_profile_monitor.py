@@ -1243,7 +1243,10 @@ def spotify_convert_uri_to_url(uri):
     si = "?si=1"
     # si=""
 
+    uri = uri or ''
     url = ""
+    if not isinstance(uri, str):
+        return url
     if "spotify:user:" in uri:
         s_id = uri.split(':', 2)[2]
         url = f"https://open.spotify.com/user/{s_id}{si}"
@@ -1266,8 +1269,10 @@ def spotify_convert_uri_to_url(uri):
 # Converts Spotify URL (e.g. https://open.spotify.com/user/username) to URI (e.g. spotify:user:username)
 def spotify_convert_url_to_uri(url):
 
+    url = url or ''
     uri = ""
-
+    if not isinstance(url, str):
+        return uri
     if "user" in url:
         uri = url.split('user/', 1)[1]
         if "?" in uri:
@@ -1834,6 +1839,7 @@ def spotify_search_users(sp_accessToken, username):
 
 # Returns playlist name and URL if available, otherwise just URL
 def spotify_format_playlist_reference(uri):
+    uri = uri or ''
     playlist_url = spotify_convert_uri_to_url(uri)
     cached = PLAYLIST_INFO_CACHE.get(uri)
     cached_name = cached.get("name") if cached and cached.get("name") else ""
@@ -1862,8 +1868,21 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                 try:
                     p_owner = playlist.get("owner_name", "")
                     p_owner_uri = playlist.get("owner_uri", "")
+
                     p_uri = playlist.get("uri", "")
+                    if not p_uri:
+                        print(f"* Playlist with missing URI returned by API, skipping for now")
+                        print_cur_ts("Timestamp:\t\t\t")
+                        error_while_processing = True
+                        continue
+
                     p_uri_id = spotify_extract_id_or_name(p_uri)
+                    if not p_uri_id:
+                        print(f"* Playlist with invalid URI ({p_uri}) returned by API, skipping for now")
+                        print_cur_ts("Timestamp:\t\t\t")
+                        error_while_processing = True
+                        continue
+
                     p_owner_name = spotify_extract_id_or_name(p_owner)
                     p_owner_id = spotify_extract_id_or_name(p_owner_uri)
 
