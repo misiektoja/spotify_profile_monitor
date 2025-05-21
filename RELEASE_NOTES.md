@@ -2,6 +2,38 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 2.2 (21 May 2025)
+
+**Features and Improvements**:
+
+- **NEW:** The tool can now be installed via pip: `pip install spotify_profile_monitor`
+- **NEW:** Added support for external config files, environment-based secrets and dotenv integration with auto-discovery
+- **NEW:** Added support for exporting playlists and liked songs to CSV files
+- **NEW:** Display access token owner information for better transparency
+- **IMPROVE:** Improved filtering of unavailable tracks (e.g. due to copyright restrictions)
+- **IMPROVE:** Enhanced startup summary to show loaded config, dotenv and ignore-playlists file paths
+- **IMPROVE:** Auto detect and display availability of `imgcat` binary for profile picture preview
+- **IMPROVE:** Simplified and renamed command-line arguments for improved usability
+- **NEW:** Implemented SIGHUP handler for dynamic reload of secrets from dotenv files
+- **NEW:** Added configuration option to control clearing the terminal screen at startup
+- **IMPROVE:** Changed connectivity check to use Spotify API endpoint for reliability
+- **IMPROVE:** Added check for missing pip dependencies with install guidance
+- **IMPROVE:** Allow disabling liveness check by setting interval to 0 (default changed to 12h)
+- **IMPROVE:** Improved handling of log file creation
+- **IMPROVE:** Refactored CSV file initialization and processing
+- **NEW:** Added support for `~` path expansion across all file paths
+- **IMPROVE:** Refactored code structure to support packaging for PyPI
+- **IMPROVE:** Enforced configuration option precedence: code defaults < config file < env vars < CLI flags
+- **IMPROVE:** Added warning about unsupported Python version
+- **IMPROVE:** Removed short option for `--send-test-email` to avoid ambiguity
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed edge cases while converting playlist entries to avoid NoneType errors ([#10](https://github.com/misiektoja/spotify_profile_monitor/issues/10))
+- **BUGFIX:** Improved playlist diff logic to ignore Spotify-owned playlists based on owner ID ([#9](https://github.com/misiektoja/spotify_profile_monitor/issues/9))
+- **BUGFIX:** Fixed false positives in playlist diff by ignoring collaborator display names
+- **BUGFIX:** Fixed imgcat command under Windows (use `echo. &` instead of `echo ;`)
+
 # Changes in 2.1 (07 Apr 2025)
 
 **Features and Improvements**:
