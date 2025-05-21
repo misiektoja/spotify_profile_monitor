@@ -1887,7 +1887,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     p_owner_id = spotify_extract_id_or_name(p_owner_uri)
 
                     # we do not get a list of tracks for playlists that are ignored
-                    if (playlists_to_skip and (p_uri_id in playlists_to_skip or p_owner_id in playlists_to_skip or p_owner_name in playlists_to_skip)) or (IGNORE_SPOTIFY_PLAYLISTS and p_owner == "Spotify"):
+                    if (playlists_to_skip and (p_uri_id in playlists_to_skip or p_owner_id in playlists_to_skip or p_owner_name in playlists_to_skip)) or (IGNORE_SPOTIFY_PLAYLISTS and p_owner_id == "spotify"):
                         effective_get_tracks = False
                     else:
                         effective_get_tracks = get_tracks
@@ -2026,7 +2026,7 @@ def spotify_print_public_playlists(list_of_playlists, playlists_to_skip=None):
                 p_owner_id = spotify_extract_id_or_name(p_owner_uri)
 
                 skipped_from_processing = ""
-                if (playlists_to_skip and (p_uri_id in playlists_to_skip or p_owner_id in playlists_to_skip or p_owner_name in playlists_to_skip)) or (IGNORE_SPOTIFY_PLAYLISTS and p_owner == "Spotify"):
+                if (playlists_to_skip and (p_uri_id in playlists_to_skip or p_owner_id in playlists_to_skip or p_owner_name in playlists_to_skip)) or (IGNORE_SPOTIFY_PLAYLISTS and p_owner_id == "spotify"):
                     skipped_from_processing = " [ IGNORED ]"
 
                 print(f"- '{p_name}'{skipped_from_processing}\n[ {p_url} ]\n[ songs: {p_tracks}, likes: {p_likes}, collaborators: {p_collaborators_count} ]\n[ owner: {p_owner} ]")
@@ -3003,7 +3003,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     p_owner_id = spotify_extract_id_or_name(p_owner_uri)
 
                     # we do not process playlists that are ignored
-                    if (playlists_to_skip and (p_uri_id in playlists_to_skip or p_owner_id in playlists_to_skip or p_owner_name in playlists_to_skip)) or (IGNORE_SPOTIFY_PLAYLISTS and p_owner == "Spotify"):
+                    if (playlists_to_skip and (p_uri_id in playlists_to_skip or p_owner_id in playlists_to_skip or p_owner_name in playlists_to_skip)) or (IGNORE_SPOTIFY_PLAYLISTS and p_owner_id == "spotify"):
                         continue
                     p_name = playlist.get("name", "")
                     p_url = spotify_convert_uri_to_url(p_uri)
