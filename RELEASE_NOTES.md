@@ -29,7 +29,7 @@ This is a high-level summary of the most important changes.
 
 **Bug fixes**:
 
-- **BUGFIX:** Fixed edge cases while converting playlist entries to avoid NoneType errors ([#10](https://github.com/misiektoja/spotify_profile_monitor/issues/10))
+- **BUGFIX:** Fixed edge cases while processing playlist entries to avoid NoneType errors ([#10](https://github.com/misiektoja/spotify_profile_monitor/issues/10))
 - **BUGFIX:** Improved playlist diff logic to ignore Spotify-owned playlists based on owner ID ([#9](https://github.com/misiektoja/spotify_profile_monitor/issues/9))
 - **BUGFIX:** Fixed false positives in playlist diff by ignoring collaborator display names
 - **BUGFIX:** Fixed imgcat command under Windows (use `echo. &` instead of `echo ;`)
