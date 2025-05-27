@@ -2,6 +2,12 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 2.2.1 (27 May 2025)
+
+**Bug fixes**:
+
+- **BUGFIX:** Add safeguards against API glitches while processing track diffs, collaborators and likes
+
 # Changes in 2.2 (21 May 2025)
 
 **Features and Improvements**:
