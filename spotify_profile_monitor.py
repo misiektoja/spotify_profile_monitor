@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.2.1
+v2.2.2
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -17,7 +17,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = "2.2.1"
+VERSION = "2.2.2"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -269,7 +269,7 @@ ALARM_RETRY = 10
 
 # Variables for caching functionality of the Spotify access token to avoid unnecessary refreshing
 SP_CACHED_ACCESS_TOKEN = None
-SP_TOKEN_EXPIRES_AT = 0
+SP_ACCESS_TOKEN_EXPIRES_AT = 0
 SP_CACHED_CLIENT_ID = ""
 SP_CACHED_USER_AGENT = ""
 
@@ -1179,11 +1179,11 @@ def refresh_token(sp_dc: str) -> dict:
 
 # Fetches Spotify access token based on provided SP_DC value
 def spotify_get_access_token(sp_dc: str):
-    global SP_CACHED_ACCESS_TOKEN, SP_TOKEN_EXPIRES_AT, SP_CACHED_CLIENT_ID, SP_CACHED_USER_AGENT
+    global SP_CACHED_ACCESS_TOKEN, SP_ACCESS_TOKEN_EXPIRES_AT, SP_CACHED_CLIENT_ID, SP_CACHED_USER_AGENT
 
     now = time.time()
 
-    if SP_CACHED_ACCESS_TOKEN and now < SP_TOKEN_EXPIRES_AT and check_token_validity(SP_CACHED_ACCESS_TOKEN, SP_CACHED_CLIENT_ID, SP_CACHED_USER_AGENT):
+    if SP_CACHED_ACCESS_TOKEN and now < SP_ACCESS_TOKEN_EXPIRES_AT and check_token_validity(SP_CACHED_ACCESS_TOKEN, SP_CACHED_CLIENT_ID, SP_CACHED_USER_AGENT):
         return SP_CACHED_ACCESS_TOKEN
 
     max_retries = TOKEN_MAX_RETRIES
@@ -1197,7 +1197,7 @@ def spotify_get_access_token(sp_dc: str):
         length = token_data["length"]
 
         SP_CACHED_ACCESS_TOKEN = token
-        SP_TOKEN_EXPIRES_AT = token_data["expires_at"]
+        SP_ACCESS_TOKEN_EXPIRES_AT = token_data["expires_at"]
         SP_CACHED_CLIENT_ID = client_id
         SP_CACHED_USER_AGENT = user_agent
 
@@ -1235,6 +1235,35 @@ def remove_key_from_list_of_dicts_copy(list_of_dicts, del_key):
     if not list_of_dicts:
         return []
     return [{k: v for k, v in d.items() if k != del_key} for d in list_of_dicts]
+
+
+# Displays the downloaded image for user's profile or playlist's artwork
+def display_tmp_pic(image_url, pic_file_tmp, imgcat_exe=None, is_profile=True):
+
+    if image_url:
+        if save_profile_pic(image_url, pic_file_tmp):
+            pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(pic_file_tmp)), pytz.timezone(LOCAL_TIMEZONE))
+            if not is_profile:
+                delta_seconds = abs((now_local() - pic_mdate_dt).total_seconds())
+                if delta_seconds <= 60:
+                    print("auto-generated")
+                else:
+                    print(f"user‐uploaded ({get_short_date_from_ts(pic_mdate_dt, always_show_year=True)} - {calculate_timespan(now_local(), pic_mdate_dt, show_seconds=False)} ago)")
+            else:
+                print(f"({get_short_date_from_ts(pic_mdate_dt, always_show_year=True)} - {calculate_timespan(now_local(), pic_mdate_dt, show_seconds=False)} ago)")
+            if imgcat_exe:
+                try:
+                    subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {pic_file_tmp}", shell=True, check=True)
+                except Exception:
+                    pass
+            try:
+                os.remove(pic_file_tmp)
+            except Exception:
+                pass
+        else:
+            print("")
+    else:
+        print("")
 
 
 # Converts Spotify URI (e.g. spotify:user:username) to URL (e.g. https://open.spotify.com/user/username)
@@ -1362,10 +1391,10 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
     playlist_id = playlist_uri.split(':', 2)[2]
 
     if get_tracks:
-        url1 = f"https://api.spotify.com/v1/playlists/{playlist_id}?fields=name,description,owner,followers,external_urls,tracks.total,collaborative"
+        url1 = f"https://api.spotify.com/v1/playlists/{playlist_id}?fields=name,description,owner,followers,external_urls,tracks.total,collaborative,images"
         url2 = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks?fields=next,total,items(added_at,track(name,uri,duration_ms),added_by),items(track(artists(name,uri)))"
     else:
-        url1 = f"https://api.spotify.com/v1/playlists/{playlist_id}?fields=name,description,owner,followers,external_urls,tracks.total"
+        url1 = f"https://api.spotify.com/v1/playlists/{playlist_id}?fields=name,description,owner,followers,external_urls,tracks.total,images"
         url2 = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks?fields=next,total,items(added_at)"
 
     headers = {
@@ -1380,6 +1409,7 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
         response1 = SESSION.get(url1, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         response1.raise_for_status()
         json_response1 = response1.json()
+        # print(json.dumps(json_response1))
 
         sp_playlist_tracks_concatenated_list = []
         next_url = url2
@@ -1404,6 +1434,8 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
         sp_playlist_owner_uri = json_response1["owner"].get("uri", "")
         sp_playlist_owner_url = json_response1["owner"]["external_urls"].get("spotify")
 
+        sp_playlist_image_url = (json_response1.get("images") or [{}])[0].get("url")
+
         sp_playlist_tracks = sp_playlist_tracks_concatenated_list
 
         sp_playlist_tracks_count = sp_playlist_tracks_count_before_filtering = json_response1["tracks"].get("total", 0)
@@ -1423,7 +1455,7 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
         sp_playlist_followers_count = int(json_response1["followers"].get("total", 0))
         sp_playlist_url = json_response1["external_urls"].get("spotify") + si
 
-        return {"sp_playlist_name": sp_playlist_name, "sp_playlist_collaborative": sp_playlist_collaborative, "sp_playlist_description": sp_playlist_description, "sp_playlist_owner": sp_playlist_owner, "sp_playlist_owner_url": sp_playlist_owner_url, "sp_playlist_tracks_count": sp_playlist_tracks_count, "sp_playlist_tracks_count_before_filtering": sp_playlist_tracks_count_before_filtering, "sp_playlist_tracks": sp_playlist_tracks, "sp_playlist_followers_count": sp_playlist_followers_count, "sp_playlist_url": sp_playlist_url, "sp_playlist_owner_uri": sp_playlist_owner_uri}
+        return {"sp_playlist_name": sp_playlist_name, "sp_playlist_collaborative": sp_playlist_collaborative, "sp_playlist_description": sp_playlist_description, "sp_playlist_owner": sp_playlist_owner, "sp_playlist_owner_url": sp_playlist_owner_url, "sp_playlist_tracks_count": sp_playlist_tracks_count, "sp_playlist_tracks_count_before_filtering": sp_playlist_tracks_count_before_filtering, "sp_playlist_tracks": sp_playlist_tracks, "sp_playlist_followers_count": sp_playlist_followers_count, "sp_playlist_url": sp_playlist_url, "sp_playlist_owner_uri": sp_playlist_owner_uri, "sp_playlist_image_url": sp_playlist_image_url}
 
     except Exception:
         raise
@@ -1568,6 +1600,8 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
     p_descr = html.unescape(sp_playlist_data.get("sp_playlist_description", ""))
     p_owner = sp_playlist_data.get("sp_playlist_owner", "")
 
+    p_image_url = sp_playlist_data.get("sp_playlist_image_url", "")
+
     print(f"Playlist '{p_name}' owned by '{p_owner}':\n")
 
     p_likes = sp_playlist_data.get("sp_playlist_followers_count", 0)
@@ -1648,6 +1682,12 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
         print(f"Last update:\t\t{p_last_track_date} ({p_last_track_date_since} ago)")
 
     print(f"Duration:\t\t{display_time(duration_sum)}")
+
+    if p_image_url:
+        # print(f"Playlist artwork URL:\t{p_image_url}")
+        print(f"Playlist artwork:\t", end="")
+
+        display_tmp_pic(p_image_url, f"spotify_{playlist_uri}_playlist_pic_tmp.jpeg", imgcat_exe, False)
 
     total_tracks = sum(user_track_counts.values())
 
@@ -2092,24 +2132,7 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
 
     print(f"User profile picture:\t{image_url != ''}", end=" ")
 
-    profile_pic_file_tmp = f"spotify_{user_uri_id}_profile_pic_tmp_info.jpeg"
-    if image_url:
-        if save_profile_pic(image_url, profile_pic_file_tmp):
-            profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file_tmp)), pytz.timezone(LOCAL_TIMEZONE))
-            print(f"({get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} - {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)")
-            if imgcat_exe:
-                try:
-                    subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {profile_pic_file_tmp}", shell=True, check=True)
-                except Exception:
-                    pass
-            try:
-                os.remove(profile_pic_file_tmp)
-            except Exception:
-                pass
-        else:
-            print("")
-    else:
-        print("")
+    display_tmp_pic(image_url, f"spotify_{user_uri_id}_profile_pic_tmp_info.jpeg", imgcat_exe, True)
 
     print(f"\nFollowers:\t\t{followers_count}")
     if followers:
@@ -2487,9 +2510,11 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
         sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
     except Exception as e:
+        err = str(e).lower()
+
         if "401" in str(e):
             SP_CACHED_ACCESS_TOKEN = None
-        if ('access token' in str(e)) or ('Unsuccessful token request' in str(e)):
+        if ("access token" in err) or ('Unsuccessful token request' in err):
             print(f"* Error: sp_dc might have expired!\n{str(e)}")
         elif '404' in str(e):
             print("* Error: User does not exist!")
@@ -2528,19 +2553,9 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     print(f"User URI ID:\t\t\t{user_uri_id}")
     print(f"User URL:\t\t\t{spotify_convert_uri_to_url(f'spotify:user:{user_uri_id}')}")
 
-    print(f"User profile picture:\t\t{image_url != ''}")
+    print(f"User profile picture:\t\t{image_url != ''}", end=" ")
 
-    profile_pic_file_tmp = f"spotify_profile_{FILE_SUFFIX}_pic_tmp_info.jpeg"
-    if image_url and imgcat_exe:
-        if save_profile_pic(image_url, profile_pic_file_tmp):
-            try:
-                subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {profile_pic_file_tmp}", shell=True, check=True)
-            except Exception:
-                pass
-            try:
-                os.remove(profile_pic_file_tmp)
-            except Exception:
-                pass
+    display_tmp_pic(image_url, f"spotify_profile_{FILE_SUFFIX}_pic_tmp_info.jpeg", imgcat_exe, True)
 
     print(f"\nFollowers:\t\t\t{followers_count}")
     print(f"Followings:\t\t\t{followings_count}")
@@ -2783,9 +2798,12 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             if platform.system() != 'Windows':
                 signal.alarm(0)
             print(f"* Error, retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}: {e}")
+
+            err = str(e).lower()
+
             if "401" in str(e):
                 SP_CACHED_ACCESS_TOKEN = None
-            if ('access token' in str(e)) or ('Unsuccessful token request' in str(e)):
+            if ("access token" in err) or ('Unsuccessful token request' in err):
                 print(f"* Error: sp_dc might have expired!")
                 if ERROR_NOTIFICATION and not email_sent:
                     m_subject = f"spotify_profile_monitor: sp_dc might have expired! (uri: {user_uri_id})"
@@ -3398,7 +3416,7 @@ def main():
         dest="error_notification",
         action="store_false",
         default=None,
-        help="Disable notifications on errors"
+        help="Disable emails on errors"
     )
     notify.add_argument(
         "--send-test-email",
