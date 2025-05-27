@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.2
+v2.2.1
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -17,7 +17,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = "2.2"
+VERSION = "2.2.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -2416,6 +2416,7 @@ def compare_images(path1, path2):
 def diff_tracks(list_a, list_b):
     def sig(d):
         return (d.get("uri"), d.get("artist"), d.get("track"), d.get("duration"), d.get("added_at"), d.get("added_by_id") or "")
+
     set_b = {sig(x) for x in list_b}
     return [x for x in list_a if sig(x) not in set_b]
 
@@ -3029,19 +3030,26 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                                 # Number of likes changed
                                 if p_likes != p_likes_old:
-                                    p_likes_diff = p_likes - p_likes_old
-                                    p_likes_diff_str = ""
-                                    if p_likes_diff > 0:
-                                        p_likes_diff_str = "+" + str(p_likes_diff)
-                                    else:
-                                        p_likes_diff_str = str(p_likes_diff)
-                                    p_message = f"* Playlist '{p_name}': number of likes changed from {p_likes_old} to {p_likes} ({p_likes_diff_str})\n* Playlist URL: {p_url}\n"
-                                    print(p_message)
+                                    try:
+                                        p_likes_diff = p_likes - p_likes_old
+                                        p_likes_diff_str = ""
+                                        if p_likes_diff > 0:
+                                            p_likes_diff_str = "+" + str(p_likes_diff)
+                                        else:
+                                            p_likes_diff_str = str(p_likes_diff)
+                                        p_message = f"* Playlist '{p_name}': number of likes changed from {p_likes_old} to {p_likes} ({p_likes_diff_str})\n* Playlist URL: {p_url}\n"
+                                        print(p_message)
+                                    except Exception as e:
+                                        print(f"* Error while processing likes for playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f": {e}" if e else ""))
+                                        print_cur_ts("Timestamp:\t\t\t")
+                                        continue
+
                                     try:
                                         if csv_file_name:
                                             write_csv_entry(csv_file_name, now_local_naive(), "Playlist Likes", p_name, p_likes_old, p_likes)
                                     except Exception as e:
                                         print(f"* Error: {e}")
+
                                     m_subject = f"Spotify user {username} number of likes for playlist '{p_name}' has changed! ({p_likes_diff_str}, {p_likes_old} -> {p_likes})"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                     if PROFILE_NOTIFICATION:
@@ -3052,16 +3060,22 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                                 # Number of collaborators changed
                                 if p_collaborators != p_collaborators_old:
-                                    p_collaborators_diff = p_collaborators - p_collaborators_old
-                                    p_collaborators_diff_str = ""
+                                    try:
 
-                                    if p_collaborators_diff > 0:
-                                        p_collaborators_diff_str = "+" + str(p_collaborators_diff)
-                                    else:
-                                        p_collaborators_diff_str = str(p_collaborators_diff)
+                                        p_collaborators_diff = p_collaborators - p_collaborators_old
+                                        p_collaborators_diff_str = ""
 
-                                    p_message = f"* Playlist '{p_name}': number of collaborators changed from {p_collaborators_old} to {p_collaborators} ({p_collaborators_diff_str})\n* Playlist URL: {p_url}\n"
-                                    print(p_message)
+                                        if p_collaborators_diff > 0:
+                                            p_collaborators_diff_str = "+" + str(p_collaborators_diff)
+                                        else:
+                                            p_collaborators_diff_str = str(p_collaborators_diff)
+
+                                        p_message = f"* Playlist '{p_name}': number of collaborators changed from {p_collaborators_old} to {p_collaborators} ({p_collaborators_diff_str})\n* Playlist URL: {p_url}\n"
+                                        print(p_message)
+                                    except Exception as e:
+                                        print(f"* Error while processing collaborators for playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f": {e}" if e else ""))
+                                        print_cur_ts("Timestamp:\t\t\t")
+                                        continue
 
                                     try:
                                         if csv_file_name:
@@ -3069,44 +3083,51 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                     except Exception as e:
                                         print(f"* Error: {e}")
 
-                                    added_keys = p_collaborators_list.keys() - p_collaborators_list_old.keys()
-                                    removed_keys = p_collaborators_list_old.keys() - p_collaborators_list.keys()
+                                    try:
 
-                                    added_collaborators = {key: p_collaborators_list[key] for key in added_keys}
-                                    removed_collaborators = {key: p_collaborators_list_old[key] for key in removed_keys}
+                                        added_keys = p_collaborators_list.keys() - p_collaborators_list_old.keys()
+                                        removed_keys = p_collaborators_list_old.keys() - p_collaborators_list.keys()
 
-                                    p_message_added_collaborators = ""
-                                    p_message_removed_collaborators = ""
+                                        added_collaborators = {key: p_collaborators_list[key] for key in added_keys}
+                                        removed_collaborators = {key: p_collaborators_list_old[key] for key in removed_keys}
 
-                                    if added_collaborators:
-                                        p_message_added_collaborators = "Added collaborators:\n\n"
+                                        p_message_added_collaborators = ""
+                                        p_message_removed_collaborators = ""
 
-                                        for collab_id, collab_name in added_collaborators.items():
-                                            added_collab = f'- {collab_name} [ {spotify_convert_uri_to_url(f"spotify:user:{collab_id}")} ]\n'
-                                            p_message_added_collaborators += added_collab
-                                            try:
-                                                if csv_file_name:
-                                                    write_csv_entry(csv_file_name, now_local_naive(), "Added Collaborator", p_name, "", collab_name)
-                                            except Exception as e:
-                                                print(f"* Error: {e}")
+                                        if added_collaborators:
+                                            p_message_added_collaborators = "Added collaborators:\n\n"
 
-                                        p_message_added_collaborators += "\n"
-                                        print(p_message_added_collaborators, end="")
+                                            for collab_id, collab_name in added_collaborators.items():
+                                                added_collab = f'- {collab_name} [ {spotify_convert_uri_to_url(f"spotify:user:{collab_id}")} ]\n'
+                                                p_message_added_collaborators += added_collab
+                                                try:
+                                                    if csv_file_name:
+                                                        write_csv_entry(csv_file_name, now_local_naive(), "Added Collaborator", p_name, "", collab_name)
+                                                except Exception as e:
+                                                    print(f"* Error: {e}")
 
-                                    if removed_collaborators:
-                                        p_message_removed_collaborators = "Removed collaborators:\n\n"
+                                            p_message_added_collaborators += "\n"
+                                            print(p_message_added_collaborators, end="")
 
-                                        for collab_id, collab_name in removed_collaborators.items():
-                                            removed_collab = f'- {collab_name} [ {spotify_convert_uri_to_url(f"spotify:user:{collab_id}")} ]\n'
-                                            p_message_removed_collaborators += removed_collab
-                                            try:
-                                                if csv_file_name:
-                                                    write_csv_entry(csv_file_name, now_local_naive(), "Removed Collaborator", p_name, collab_name, "")
-                                            except Exception as e:
-                                                print(f"* Error: {e}")
+                                        if removed_collaborators:
+                                            p_message_removed_collaborators = "Removed collaborators:\n\n"
 
-                                        p_message_removed_collaborators += "\n"
-                                        print(p_message_removed_collaborators, end="")
+                                            for collab_id, collab_name in removed_collaborators.items():
+                                                removed_collab = f'- {collab_name} [ {spotify_convert_uri_to_url(f"spotify:user:{collab_id}")} ]\n'
+                                                p_message_removed_collaborators += removed_collab
+                                                try:
+                                                    if csv_file_name:
+                                                        write_csv_entry(csv_file_name, now_local_naive(), "Removed Collaborator", p_name, collab_name, "")
+                                                except Exception as e:
+                                                    print(f"* Error: {e}")
+
+                                            p_message_removed_collaborators += "\n"
+                                            print(p_message_removed_collaborators, end="")
+
+                                    except Exception as e:
+                                        print(f"* Error while processing added/removed collaborators for playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f": {e}" if e else ""))
+                                        print_cur_ts("Timestamp:\t\t\t")
+                                        continue
 
                                     m_subject = f"Spotify user {username} number of collaborators for playlist '{p_name}' has changed! ({p_collaborators_diff_str}, {p_collaborators_old} -> {p_collaborators})"
                                     m_body = f"{p_message}\n{p_message_added_collaborators}{p_message_removed_collaborators}Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
@@ -3146,54 +3167,62 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                             p_message = f"* Playlist '{p_name}': list of tracks ({p_tracks}) have changed{p_after_str}\n* Playlist URL: {p_url}\n"
                                         print(p_message)
                                     except Exception as e:
-                                        print(f"* Error while processing data for playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f": {e}" if e else ""))
+                                        print(f"* Error while processing changed tracks for playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f": {e}" if e else ""))
                                         print_cur_ts("Timestamp:\t\t\t")
                                         continue
+
                                     try:
                                         if csv_file_name:
                                             write_csv_entry(csv_file_name, now_local_naive(), "Playlist Number of Tracks", p_name, p_tracks_old, p_tracks)
                                     except Exception as e:
                                         print(f"* Error: {e}")
 
-                                    removed_tracks = diff_tracks(p_tracks_list_old, p_tracks_list)
-                                    added_tracks = diff_tracks(p_tracks_list, p_tracks_list_old)
-                                    p_message_added_tracks = ""
-                                    p_message_removed_tracks = ""
+                                    try:
 
-                                    if added_tracks:
-                                        print("Added tracks:\n")
-                                        p_message_added_tracks = "Added tracks:\n\n"
+                                        removed_tracks = diff_tracks(p_tracks_list_old, p_tracks_list)
+                                        added_tracks = diff_tracks(p_tracks_list, p_tracks_list_old)
+                                        p_message_added_tracks = ""
+                                        p_message_removed_tracks = ""
 
-                                        for f_dict in added_tracks:
-                                            if "artist" in f_dict and "track" in f_dict:
-                                                apple_search_url, genius_search_url, youtube_music_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
-                                                tempuri = f'spotify:user:{f_dict["added_by_id"]}'
-                                                added_track = f'- {f_dict["artist"]} - {f_dict["track"]} [ {get_date_from_ts(f_dict["added_at"])}, {f_dict["added_by"]} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict["uri"])} ]\n[ Apple Music URL: {apple_search_url} ]\n[ YouTube Music URL: {youtube_music_search_url} ]\n[ Genius URL: {genius_search_url} ]\n[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
-                                                p_message_added_tracks += added_track
-                                                added_at_dt = f_dict['added_at']
-                                                print(added_track, end="")
-                                                try:
-                                                    if csv_file_name:
-                                                        write_csv_entry(csv_file_name, convert_to_local_naive(added_at_dt), "Added Track", p_name, f_dict['added_by'], f_dict["artist"] + " - " + f_dict["track"])
-                                                except Exception as e:
-                                                    print(f"* Error: {e}")
+                                        if added_tracks:
+                                            print("Added tracks:\n")
+                                            p_message_added_tracks = "Added tracks:\n\n"
 
-                                    if removed_tracks:
-                                        print("Removed tracks:\n")
-                                        p_message_removed_tracks = "Removed tracks:\n\n"
+                                            for f_dict in added_tracks:
+                                                if "artist" in f_dict and "track" in f_dict:
+                                                    apple_search_url, genius_search_url, youtube_music_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
+                                                    tempuri = f'spotify:user:{f_dict["added_by_id"]}'
+                                                    added_track = f'- {f_dict["artist"]} - {f_dict["track"]} [ {get_date_from_ts(f_dict["added_at"])}, {f_dict["added_by"]} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict["uri"])} ]\n[ Apple Music URL: {apple_search_url} ]\n[ YouTube Music URL: {youtube_music_search_url} ]\n[ Genius URL: {genius_search_url} ]\n[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
+                                                    p_message_added_tracks += added_track
+                                                    added_at_dt = f_dict['added_at']
+                                                    print(added_track, end="")
+                                                    try:
+                                                        if csv_file_name:
+                                                            write_csv_entry(csv_file_name, convert_to_local_naive(added_at_dt), "Added Track", p_name, f_dict['added_by'], f_dict["artist"] + " - " + f_dict["track"])
+                                                    except Exception as e:
+                                                        print(f"* Error: {e}")
 
-                                        for f_dict in removed_tracks:
-                                            if "artist" in f_dict and "track" in f_dict:
-                                                apple_search_url, genius_search_url, youtube_music_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
-                                                tempuri = f'spotify:user:{f_dict["added_by_id"]}'
-                                                removed_track = f'- {f_dict["artist"]} - {f_dict["track"]} [ {get_date_from_ts(f_dict["added_at"])}, {f_dict["added_by"]} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict["uri"])} ]\n[ Apple Music URL: {apple_search_url} ]\n[ YouTube Music URL: {youtube_music_search_url} ]\n[ Genius URL: {genius_search_url} ]\n[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
-                                                p_message_removed_tracks += removed_track
-                                                print(removed_track, end="")
-                                                try:
-                                                    if csv_file_name:
-                                                        write_csv_entry(csv_file_name, now_local_naive(), "Removed Track", p_name, f_dict["artist"] + " - " + f_dict["track"], "")
-                                                except Exception as e:
-                                                    print(f"* Error: {e}")
+                                        if removed_tracks:
+                                            print("Removed tracks:\n")
+                                            p_message_removed_tracks = "Removed tracks:\n\n"
+
+                                            for f_dict in removed_tracks:
+                                                if "artist" in f_dict and "track" in f_dict:
+                                                    apple_search_url, genius_search_url, youtube_music_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
+                                                    tempuri = f'spotify:user:{f_dict["added_by_id"]}'
+                                                    removed_track = f'- {f_dict["artist"]} - {f_dict["track"]} [ {get_date_from_ts(f_dict["added_at"])}, {f_dict["added_by"]} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict["uri"])} ]\n[ Apple Music URL: {apple_search_url} ]\n[ YouTube Music URL: {youtube_music_search_url} ]\n[ Genius URL: {genius_search_url} ]\n[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
+                                                    p_message_removed_tracks += removed_track
+                                                    print(removed_track, end="")
+                                                    try:
+                                                        if csv_file_name:
+                                                            write_csv_entry(csv_file_name, now_local_naive(), "Removed Track", p_name, f_dict["artist"] + " - " + f_dict["track"], "")
+                                                    except Exception as e:
+                                                        print(f"* Error: {e}")
+
+                                    except Exception as e:
+                                        print(f"* Error while processing added/removed tracks for playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f": {e}" if e else ""))
+                                        print_cur_ts("Timestamp:\t\t\t")
+                                        continue
 
                                     p_subject_after_str = ""
                                     if p_tracks_diff != 0:
