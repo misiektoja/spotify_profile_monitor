@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.2.2
+v2.3
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -17,7 +17,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = "2.2.2"
+VERSION = "2.3"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -139,7 +139,11 @@ RECENTLY_PLAYED_ARTISTS_LIMIT_INFO = 15
 
 # Occasionally, the Spotify API glitches and returns an empty list of user playlists
 # To avoid false alarms, we delay notifications until this happens PLAYLISTS_DISAPPEARED_COUNTER times in a row
-PLAYLISTS_DISAPPEARED_COUNTER = 2
+PLAYLISTS_DISAPPEARED_COUNTER = 3
+
+# Occasionally, the Spotify API glitches and returns an empty list of user followers / followings
+# To avoid false alarms, we delay notifications until this happens FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER times in a row
+FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER = 3
 
 # How often to print a "liveness check" message to the output; in seconds
 # Set to 0 to disable
@@ -231,6 +235,7 @@ PLAYLISTS_LIMIT = 0
 RECENTLY_PLAYED_ARTISTS_LIMIT = 0
 RECENTLY_PLAYED_ARTISTS_LIMIT_INFO = 0
 PLAYLISTS_DISAPPEARED_COUNTER = 0
+FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER = 0
 LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
@@ -1427,33 +1432,92 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
         sp_playlist_name = json_response1.get("name", "")
 
         # we fetch collaborative field for the future, for now it is always set to false by Spotify as a countermeasure against finding collaborative playlists by scraping
-        sp_playlist_collaborative = json_response1.get("collaborative", "")
+        sp_playlist_collaborative = json_response1.get("collaborative", False)
 
         sp_playlist_description = json_response1.get("description", "")
-        sp_playlist_owner = json_response1["owner"].get("display_name", "")
-        sp_playlist_owner_uri = json_response1["owner"].get("uri", "")
-        sp_playlist_owner_url = json_response1["owner"]["external_urls"].get("spotify")
+
+        owner_data = json_response1.get("owner")
+        if not isinstance(owner_data, dict):
+            raise ValueError("Playlist's owner data is missing or malformed")
+
+        sp_playlist_owner = owner_data.get("display_name", "")
+
+        sp_playlist_owner_uri = owner_data.get("uri")
+
+        if not sp_playlist_owner_uri:
+            raise ValueError(f"Playlist's owner URI is missing or empty")
+
+        sp_playlist_owner_url = (owner_data.get("external_urls") or {}).get("spotify")
 
         sp_playlist_image_url = (json_response1.get("images") or [{}])[0].get("url")
 
         sp_playlist_tracks = sp_playlist_tracks_concatenated_list
 
-        sp_playlist_tracks_count = sp_playlist_tracks_count_before_filtering = json_response1["tracks"].get("total", 0)
+        tracks_metadata = json_response1.get("tracks")
+        if not isinstance(tracks_metadata, dict):
+            raise ValueError("Playlist's tracks metadata is missing or malformed")
+
+        total_tracks_from_api = tracks_metadata.get("total")
+
+        if total_tracks_from_api is None:
+            raise ValueError("Playlist's total tracks number is missing or malformed")
+
+        sp_playlist_tracks_count = sp_playlist_tracks_count_before_filtering = int(total_tracks_from_api)
+
         if sp_playlist_tracks:
             sp_playlist_tracks_count_before_filtering_tmp = len(sp_playlist_tracks)
             if sp_playlist_tracks_count_before_filtering_tmp > 0:
                 sp_playlist_tracks_count_before_filtering = sp_playlist_tracks_count_before_filtering_tmp
 
         # filtering of unavailable tracks for example due to copyright issues
-        sp_playlist_tracks = [t for t in (sp_playlist_tracks or []) if t.get("track") and t["track"].get("artists", [{}])[0].get("name", "") and t["track"].get("name", "") and int(t["track"].get("duration_ms", 0)) >= 1000]
+        filtered_tracks_list = []
+
+        for t_item in sp_playlist_tracks_concatenated_list:
+            track_info = t_item.get("track")
+
+            if not isinstance(track_info, dict):
+                continue
+
+            artist_name = (track_info.get("artists", [{}]) or [{}])[0].get("name", "")
+            track_name = track_info.get("name", "")
+
+            if not (artist_name and track_name):
+                continue
+
+            duration_ms_value = track_info.get("duration_ms")
+
+            if duration_ms_value is None:
+                raise ValueError(f"Track '{track_name if track_name else 'Unknown Track'}' (URI: {track_info.get('uri', 'Unknown URI')}) in playlist {playlist_id} has a missing or null duration (duration_ms)")
+
+            try:
+                duration_ms_int = int(duration_ms_value)
+            except (ValueError, TypeError):
+                raise ValueError(f"Track '{track_name if track_name else 'Unknown Track'}' (URI: {track_info.get('uri', 'Unknown URI')}) in playlist {playlist_id} has an invalid, non-numeric duration_ms: '{duration_ms_value}'")
+
+            if duration_ms_int >= 1000:
+                filtered_tracks_list.append(t_item)
+
+        sp_playlist_tracks = filtered_tracks_list
 
         if sp_playlist_tracks:
             sp_playlist_tracks_count_tmp = len(sp_playlist_tracks)
             if sp_playlist_tracks_count_tmp > 0:
                 sp_playlist_tracks_count = sp_playlist_tracks_count_tmp
 
-        sp_playlist_followers_count = int(json_response1["followers"].get("total", 0))
-        sp_playlist_url = json_response1["external_urls"].get("spotify") + si
+        followers_data = json_response1.get("followers")
+        if not isinstance(followers_data, dict):
+            raise ValueError("Playlist's followers data is missing or malformed")
+
+        total_followers_from_api = followers_data.get("total")
+
+        if total_followers_from_api is None:
+            raise ValueError("Playlist's total number of saves / followers is missing or malformed")
+
+        sp_playlist_followers_count = int(total_followers_from_api)
+
+        sp_playlist_url = (json_response1.get("external_urls") or {}).get("spotify")
+        if sp_playlist_url:
+            sp_playlist_url += si
 
         return {"sp_playlist_name": sp_playlist_name, "sp_playlist_collaborative": sp_playlist_collaborative, "sp_playlist_description": sp_playlist_description, "sp_playlist_owner": sp_playlist_owner, "sp_playlist_owner_url": sp_playlist_owner_url, "sp_playlist_tracks_count": sp_playlist_tracks_count, "sp_playlist_tracks_count_before_filtering": sp_playlist_tracks_count_before_filtering, "sp_playlist_tracks": sp_playlist_tracks, "sp_playlist_followers_count": sp_playlist_followers_count, "sp_playlist_url": sp_playlist_url, "sp_playlist_owner_uri": sp_playlist_owner_uri, "sp_playlist_image_url": sp_playlist_image_url}
 
@@ -1477,39 +1541,61 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
         response = SESSION.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         response.raise_for_status()
         json_response = response.json()
+        # print(json.dumps(json_response, indent=2, sort_keys=True))
 
         sp_username = json_response.get("name", "")
-        sp_user_followers_count = json_response.get("followers_count", 0)
+
+        raw_followers_count = json_response.get("followers_count")
+        if raw_followers_count is None:
+            sp_user_followers_count = 0
+        else:
+            try:
+                sp_user_followers_count = int(raw_followers_count)
+            except (ValueError, TypeError):
+                raise ValueError(f"User {user_uri_id} followers count ('{raw_followers_count}') is not a valid integer")
+
         sp_user_show_follows = json_response.get("show_follows")
-        sp_user_followings_count = json_response.get("following_count", 0)
+
+        raw_following_count = json_response.get("following_count")
+        if raw_following_count is None:
+            sp_user_followings_count = 0
+        else:
+            try:
+                sp_user_followings_count = int(raw_following_count)
+            except (ValueError, TypeError):
+                raise ValueError(f"User {user_uri_id} followings count ('{raw_following_count}') is not a valid integer")
+
         sp_user_image_url = json_response.get("image_url", "")
 
+        actual_processed_playlists = []
+        sp_user_public_playlists_count = 0
+
         if get_playlists:
-            sp_user_public_playlists_uris = json_response.get("public_playlists", None)
-            sp_user_public_playlists_count = json_response.get("total_public_playlists_count", 0)
-        else:
-            sp_user_public_playlists_uris = None
-            sp_user_public_playlists_count = 0
+            raw_playlist_data_from_api = json_response.get("public_playlists")
 
-        if sp_user_public_playlists_uris:
-            if not GET_ALL_PLAYLISTS:
-                sp_user_public_playlists_uris[:] = [d for d in sp_user_public_playlists_uris if d.get('owner_uri', "") == 'spotify:user:' + str(user_uri_id)]
-            sp_user_public_playlists_count_tmp = len(sp_user_public_playlists_uris)
-            if sp_user_public_playlists_count_tmp > 0:
-                sp_user_public_playlists_count = sp_user_public_playlists_count_tmp
-            else:
-                sp_user_public_playlists_count = 0
+            if isinstance(raw_playlist_data_from_api, list):
+                current_list_to_process = raw_playlist_data_from_api
 
-            remove_key_from_list_of_dicts(sp_user_public_playlists_uris, 'image_url')
-            remove_key_from_list_of_dicts(sp_user_public_playlists_uris, 'is_following')
-            remove_key_from_list_of_dicts(sp_user_public_playlists_uris, 'name')
-            remove_key_from_list_of_dicts(sp_user_public_playlists_uris, 'followers_count')
+                if not GET_ALL_PLAYLISTS:
+                    current_list_to_process = [
+                        d for d in current_list_to_process
+                        if isinstance(d, dict) and d.get('owner_uri', "") == 'spotify:user:' + str(user_uri_id)
+                    ]
+
+                actual_processed_playlists = [d for d in current_list_to_process if isinstance(d, dict)]
+
+                remove_key_from_list_of_dicts(actual_processed_playlists, 'image_url')
+                remove_key_from_list_of_dicts(actual_processed_playlists, 'is_following')
+                remove_key_from_list_of_dicts(actual_processed_playlists, 'name')
+                remove_key_from_list_of_dicts(actual_processed_playlists, 'followers_count')
+
+                sp_user_public_playlists_count = len(actual_processed_playlists)
 
         sp_user_recently_played_artists = json_response.get("recently_played_artists")
         remove_key_from_list_of_dicts(sp_user_recently_played_artists, 'image_url')
         remove_key_from_list_of_dicts(sp_user_recently_played_artists, 'followers_count')
 
-        return {"sp_username": sp_username, "sp_user_followers_count": sp_user_followers_count, "sp_user_show_follows": sp_user_show_follows, "sp_user_followings_count": sp_user_followings_count, "sp_user_public_playlists_count": sp_user_public_playlists_count, "sp_user_public_playlists_uris": sp_user_public_playlists_uris, "sp_user_recently_played_artists": sp_user_recently_played_artists, "sp_user_image_url": sp_user_image_url}
+        return {"sp_username": sp_username, "sp_user_followers_count": sp_user_followers_count, "sp_user_show_follows": sp_user_show_follows, "sp_user_followings_count": sp_user_followings_count, "sp_user_public_playlists_count": sp_user_public_playlists_count, "sp_user_public_playlists_uris": actual_processed_playlists, "sp_user_recently_played_artists": sp_user_recently_played_artists, "sp_user_image_url": sp_user_image_url}
     except Exception:
         raise
 
@@ -2490,6 +2576,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     playlists = None
     playlists_old = None
     playlists_zeroed_counter = 0
+    followers_zeroed_counter = 0
+    followings_zeroed_counter = 0
 
     try:
         if csv_file_name:
@@ -2797,6 +2885,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         except Exception as e:
             if platform.system() != 'Windows':
                 signal.alarm(0)
+
             print(f"* Error, retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}: {e}")
 
             err = str(e).lower()
@@ -2880,22 +2969,80 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         recently_played_artists = sp_user_data["sp_user_recently_played_artists"]
 
         if followers_count != followers_old_count:
-            spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, PROFILE_NOTIFICATION, False)
+            if followers_count == 0:
+                followers_zeroed_counter += 1
+                if followers_zeroed_counter == FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER:
+                    print(f"* Spotify API: Followers count dropped from {followers_old_count} to 0 and has been 0 for {followers_zeroed_counter} checks; accepting 0 as the new baseline")
+                    spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, PROFILE_NOTIFICATION, False)
+                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print_cur_ts("Timestamp:\t\t\t")
+                    followers_old_count = followers_count
+                    followers_old = followers
+                    followers_zeroed_counter = 0
+                elif followers_zeroed_counter < FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER:
+                    print(f"* Spotify API: Followers count dropped from {followers_old_count} to 0, streak {followers_zeroed_counter}/{FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER}; old count and list retained")
+                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print_cur_ts("Timestamp:\t\t\t")
+            else:
+                if followers_old_count == 0 and followers_zeroed_counter >= FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER:
+                    print(f"* Spotify API: Followers count recovered to {followers_count}; previously was 0 for {followers_zeroed_counter} checks (old baseline was {followers_old_count})")
 
-            followers_old_count = followers_count
-            followers_old = followers
+                spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, PROFILE_NOTIFICATION, False)
+                print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                print_cur_ts("Timestamp:\t\t\t")
+                followers_old_count = followers_count
+                followers_old = followers
+                followers_zeroed_counter = 0
 
-            print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-            print_cur_ts("Timestamp:\t\t\t")
+        elif followers_count == followers_old_count:
+            if followers_count == 0:
+                followers_zeroed_counter = 0
+                followers_old = followers
+            else:
+                if followers_zeroed_counter > 0:
+                    print(f"* Spotify API: Followers count recovered to {followers_count} (matching old baseline) after a streak of {followers_zeroed_counter} checks")
+                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print_cur_ts("Timestamp:\t\t\t")
+                followers_zeroed_counter = 0
+                followers_old = followers
 
         if followings_count != followings_old_count:
-            spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, PROFILE_NOTIFICATION, False)
+            if followings_count == 0:
+                followings_zeroed_counter += 1
+                if followings_zeroed_counter == FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER:
+                    print(f"* Spotify API: Followings count dropped from {followings_old_count} to 0 and has been 0 for {followings_zeroed_counter} checks; accepting 0 as the new baseline")
+                    spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, PROFILE_NOTIFICATION, False)
+                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print_cur_ts("Timestamp:\t\t\t")
+                    followings_old_count = followings_count
+                    followings_old = followings
+                    followings_zeroed_counter = 0
+                elif followings_zeroed_counter < FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER:
+                    print(f"* Spotify API: Followings count dropped from {followings_old_count} to 0, streak {followings_zeroed_counter}/{FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER}; old count and list retained")
+                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print_cur_ts("Timestamp:\t\t\t")
+            else:
+                if followings_old_count == 0 and followings_zeroed_counter >= FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER:
+                    print(f"* Spotify API: Followings count recovered to {followings_count}; previously was 0 for {followings_zeroed_counter} checks (old baseline was {followings_old_count})")
 
-            followings_old_count = followings_count
-            followings_old = followings
+                spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, PROFILE_NOTIFICATION, False)
+                print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                print_cur_ts("Timestamp:\t\t\t")
+                followings_old_count = followings_count
+                followings_old = followings
+                followings_zeroed_counter = 0
 
-            print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
-            print_cur_ts("Timestamp:\t\t\t")
+        elif followings_count == followings_old_count:
+            if followings_count == 0:
+                followings_zeroed_counter = 0
+                followings_old = followings
+            else:
+                if followings_zeroed_counter > 0:
+                    print(f"* Spotify API: Followings count recovered to {followings_count} (matching old baseline) after a streak of {followings_zeroed_counter} checks")
+                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print_cur_ts("Timestamp:\t\t\t")
+                followings_zeroed_counter = 0
+                followings_old = followings
 
         # profile pic
 
@@ -3295,25 +3442,44 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             if not error_while_processing:
                 list_of_playlists_old = list_of_playlists
 
-            if playlists_count != playlists_old_count and (playlists or (not playlists and playlists_count == 0)):
-
+            if playlists_count != playlists_old_count:
                 if playlists_count == 0:
                     playlists_zeroed_counter += 1
-                else:
-                    playlists_zeroed_counter = 0
-
-                if playlists_zeroed_counter == PLAYLISTS_DISAPPEARED_COUNTER or playlists_count > 0:
-                    glitch_detected = spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists to profile", "Added Playlist", "Removed playlists from profile", "Removed Playlist", playlists_file, csv_file_name, PROFILE_NOTIFICATION, True, sp_accessToken)
-
-                    if not glitch_detected:
+                    if playlists_zeroed_counter == PLAYLISTS_DISAPPEARED_COUNTER:
+                        print(f"* Spotify API: Playlists count dropped from {playlists_old_count} to 0 and has been 0 for {playlists_zeroed_counter} checks; accepting 0 as the new baseline")
+                        spotify_print_changed_followers_followings_playlists(
+                            username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists to profile", "Added Playlist", "Removed playlists from profile", "Removed Playlist", playlists_file, csv_file_name, PROFILE_NOTIFICATION, True, sp_accessToken)
+                        print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                        print_cur_ts("Timestamp:\t\t\t")
                         playlists_old_count = playlists_count
                         playlists_old = playlists
                         playlists_zeroed_counter = 0
+                    elif playlists_zeroed_counter < PLAYLISTS_DISAPPEARED_COUNTER:
+                        print(f"* Spotify API: Playlists count dropped from {playlists_old_count} to 0, streak {playlists_zeroed_counter}/{PLAYLISTS_DISAPPEARED_COUNTER}; old count and list retained")
+                        print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                        print_cur_ts("Timestamp:\t\t\t")
+                else:
+                    if playlists_old_count == 0 and playlists_zeroed_counter >= PLAYLISTS_DISAPPEARED_COUNTER:
+                        print(f"* Spotify API: Playlists count recovered to {playlists_count}; previously was 0 for {playlists_zeroed_counter} checks (old baseline was {playlists_old_count})")
 
-                    else:
-                        print("* Possible Spotify API glitch detected, not reporting the number of changed playlists temporarily!\n")
+                    spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists to profile", "Added Playlist", "Removed playlists from profile", "Removed Playlist", playlists_file, csv_file_name, PROFILE_NOTIFICATION, True, sp_accessToken)
                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                     print_cur_ts("Timestamp:\t\t\t")
+                    playlists_old_count = playlists_count
+                    playlists_old = playlists
+                    playlists_zeroed_counter = 0
+
+            elif playlists_count == playlists_old_count:
+                if playlists_count == 0:
+                    playlists_zeroed_counter = 0
+                    playlists_old = playlists
+                else:
+                    if playlists_zeroed_counter > 0:
+                        print(f"* Spotify API: Playlists count recovered to {playlists_count} (matching old baseline) after a streak of {playlists_zeroed_counter} checks")
+                        print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                        print_cur_ts("Timestamp:\t\t\t")
+                    playlists_zeroed_counter = 0
+                    playlists_old = playlists
 
         alive_counter += 1
 
