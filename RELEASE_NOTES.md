@@ -2,6 +2,18 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 2.3 (09 Jun 2025)
+
+**Features and Improvements**:
+
+- **NEW:** Added support for a new method to obtain the Spotify access token ([#11](https://github.com/misiektoja/spotify_profile_monitor/issues/11)). This method uses captured credentials from the Spotify desktop client and a Protobuf-based login flow. It is intended for advanced users who want an indefinitely valid token with the widest scope. Check the [Spotify Desktop Client](https://github.com/misiektoja/spotify_profile_monitor/blob/main/README.md#spotify-desktop-client) for more info.
+- **NEW:** Added detection for whether a Spotify playlist's artwork is auto-generated or user-uploaded, along with the date and time the artwork was last changed
+- **NEW:** Added support for displaying playlist images in the terminal using `imgcat` on supported terminals
+
+**Bug fixes**:
+
+- **BUGFIX:** Improved handling of API glitches and count changes for playlists, followers and followings ([#12](https://github.com/misiektoja/spotify_profile_monitor/issues/12))
+
 # Changes in 2.2.1 (27 May 2025)
 
 **Bug fixes**:
