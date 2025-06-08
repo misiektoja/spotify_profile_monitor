@@ -39,7 +39,9 @@ NOTE: If you want to track Spotify friends' music activity, check out another to
 3. [Quick Start](#quick-start)
 4. [Configuration](#configuration)
    * [Configuration File](#configuration-file)
-   * [Spotify sp_dc Cookie](#spotify-sp_dc-cookie)
+   * [Spotify access token source](#spotify-access-token-source)
+      * [Spotify sp_dc Cookie](#spotify-sp_dc-cookie)
+      * [Spotify Desktop Client](#spotify-desktop-client)
    * [How to Get a Friend's User URI ID](#how-to-get-a-friends-user-uri-id)
    * [Spotify sha256 (optional)](#spotify-sha256-optional)
    * [Time Zone](#time-zone)
@@ -139,8 +141,23 @@ spotify_profile_monitor --generate-config > spotify_profile_monitor.conf
 
 Edit the `spotify_profile_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 
+<a id="spotify-access-token-source"></a>
+#### Spotify access token source
+
+The tool supports two methods for obtaining a Spotify access token.
+
+It can be configured via the `TOKEN_SOURCE` configuration option or the `--token-source` flag. 
+
+The **recommended method** is `cookie` which uses the sp_dc cookie to retrieve a token from the Spotify web endpoint. This method supports all features except fetching the list of liked tracks for the account that owns the access token (Spotify has recently restricted the token's scope).
+
+The **alternative method** is `client` which uses captured credentials from the Spotify desktop client and a Protobuf-based login flow. This approach is intended for advanced users who want an indefinitely valid token with the widest scope.
+
+If no method is specified, the tool defaults to the `cookie` method.
+
 <a id="spotify-sp_dc-cookie"></a>
-### Spotify sp_dc Cookie
+#### Spotify sp_dc Cookie
+
+It is default method used to obtain a Spotify access token.
 
 Log in to [https://open.spotify.com/](https://open.spotify.com/) in your web browser.
 
@@ -156,11 +173,50 @@ Provide the `SP_DC_COOKIE` secret using one of the following methods:
 Fallback:
  - Hard-code it in the code or config file
 
-The `sp_dc` cookie is typically valid for up to 2 weeks. You will be informed by the tool once the cookie expires (proper message on the console and in email).
+You will be informed by the tool once the `sp_dc` cookie expires (proper message on the console and in email).
 
 If you store the `SP_DC_COOKIE` in a dotenv file you can update its value and send a `SIGHUP` signal to the process to reload the file with the new `sp_dc` cookie without restarting the tool. More info in [Storing Secrets](#storing-secrets) and [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix).
 
-It is recommended to create a new Spotify account for use with the tool since we are not using the official Spotify Web API most of the time as most features needed by the tool (like fetching a list of followers/followings, followings count and recently played artists) are not available.
+**Important**: It is strongly recommended to use a separate Spotify account with this tool. It does not rely on the official Spotify Web API for many features (e.g. retrieving a list of followers/followings, followings count or recently played artists), as these are not supported by the public API.
+
+<a id="spotify-desktop-client"></a>
+#### Spotify Desktop Client
+
+To use credentials captured from the Spotify desktop client to obtain an access token, set the `TOKEN_SOURCE` configuration option to `client` or use the `--token-source client` flag.
+
+Run an intercepting proxy of your choice (like [Proxyman](https://proxyman.com)).
+
+Launch the Spotify desktop client and look for requests to `https://login{n}.spotify.com/v3/login`
+
+Note: The `login` part is suffixed with one or more digits (e.g. `login5.spotify.com`).
+
+If you don't see this request, log out from the client and log back in.
+
+Export the login request body (a binary Protobuf payload) to a file.
+
+In Proxyman: ***right click the request → Export → Request Body → Save File***.
+
+<p align="center">
+   <img src="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/assets/proxyman_export_protobuf.png" alt="proxyman_export_protobuf" width="80%"/>
+</p>
+
+Then run the tool with `-w <path-to-login-request-body-file>`:
+
+```sh
+spotify_profile_monitor --token-source client -w <path-to-login-request-body-file> <spotify_user_uri_id>
+```
+
+If successful, the tool will automatically extract the necessary fields and begin monitoring.
+
+You can also persist the Protobuf request file path using the `LOGIN_REQUEST_BODY_FILE` configuration option.
+
+The tool will automatically refresh both the access token and client token using the intercepted refresh token.
+
+Advanced options are available for further customization - refer to the configuration file comments. However, default settings should work for most cases.
+
+You will be informed by the tool once the refresh token expires (proper message on the console and in email).
+
+**Important**: It is strongly recommended to use a separate Spotify account with this tool. It does not rely on the official Spotify Web API for many features (e.g. retrieving a list of followers/followings, followings count or recently played artists), as these are not supported by the public API.
 
 <a id="how-to-get-a-friends-user-uri-id"></a>
 ### How to Get a Friend's User URI ID
@@ -189,7 +245,7 @@ Before using this feature make sure you followed the instructions [here](#spotif
 <a id="spotify-sha256-optional"></a>
 ### Spotify sha256 (optional)
 
-This step is optional and only necessary if you want to use the feature to search Spotify's catalog for users with a specific name to obtain their Spotify user URI ID (`-s` flag).
+This step is optional and only required if you want to use the feature that searches Spotify's catalog for users with a specific name to obtain their Spotify user URI ID (`-s` flag).
 
 To do this, you need to intercept your Spotify client's network traffic and obtain the sha256 value.
 
@@ -286,7 +342,7 @@ To monitor specific user for all profile changes (including playlists), just typ
 spotify_profile_monitor <spotify_user_uri_id>
 ```
 
-If you have not set `SP_DC_COOKIE` secret, you can use `-u` flag:
+If you use the default method to obtain a Spotify access token (`cookie`) and have not set `SP_DC_COOKIE` secret, you can use `-u` flag:
 
 ```sh
 spotify_profile_monitor <spotify_user_uri_id> -u "your_sp_dc_cookie_value"
@@ -488,7 +544,7 @@ If a change is detected, the old picture is moved to `spotify_profile_<user_uri_
 <a id="displaying-images-in-your-terminal"></a>
 ### Displaying Images in Your Terminal
 
-If you have `imgcat` installed, you can use the feature of displaying profile pictures right in your terminal. 
+If you have `imgcat` installed, you can enable inline display of profile pictures and playlist artwork directly in your terminal.
 
 To do this, set the path to your `imgcat` binary in the `IMGCAT_PATH` configuration option. 
 
@@ -551,7 +607,7 @@ List of supported signals:
 | USR1 | Toggle email notifications for user's profile changes (-p) |
 | TRAP | Increase the profile check timer (by 5 minutes) |
 | ABRT | Decrease the profile check timer (by 5 minutes) |
-| HUP | Reload secrets from .env file |
+| HUP | Reload secrets from .env file and token source credentials from Protobuf files |
 
 Send signals with `kill` or `pkill`, e.g.:
 
