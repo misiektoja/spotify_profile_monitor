@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.3
+v2.3.1
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -17,7 +17,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = "2.3"
+VERSION = "2.3.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -201,7 +201,7 @@ SP_LOGFILE = "spotify_profile_monitor"
 # Can also be disabled via the -d flag
 DISABLE_LOGGING = False
 
-# Width of horizontal line (─)
+# Width of horizontal line
 HORIZONTAL_LINE = 113
 
 # Whether to clear the terminal screen after starting the tool
@@ -533,7 +533,7 @@ def signal_handler(sig, frame):
 # Checks internet connectivity
 def check_internet(url=CHECK_INTERNET_URL, timeout=CHECK_INTERNET_TIMEOUT, verify=VERIFY_SSL):
     try:
-        _ = req.get(url, timeout=timeout, verify=verify)
+        _ = req.get(url, headers={'User-Agent': get_random_user_agent() if TOKEN_SOURCE == 'cookie' else get_random_spotify_user_agent()}, timeout=timeout, verify=verify)
         return True
     except req.RequestException as e:
         print(f"* No connectivity, please check your network:\n\n{e}")
@@ -1113,10 +1113,14 @@ def check_token_validity(access_token: str, client_id: Optional[str] = None, use
     url = "https://api.spotify.com/v1/me"
     headers = {"Authorization": f"Bearer {access_token}"}
 
-    if TOKEN_SOURCE == "cookie" and client_id is not None and user_agent is not None:
+    if user_agent is not None:
         headers.update({
-            "Client-Id": client_id,
-            "User-Agent": user_agent,
+            "User-Agent": user_agent
+        })
+
+    if TOKEN_SOURCE == "cookie" and client_id is not None:
+        headers.update({
+            "Client-Id": client_id
         })
 
     if platform.system() != 'Windows':
@@ -1489,12 +1493,6 @@ def read_varint(data, index):
 
 # Parses Spotify Protobuf login response
 def parse_protobuf_message(data):
-    """
-    Recursively parses a Protobuf message, returns a dictionary mapping tags to values
-
-    If a length-delimited field's first byte is a control character (i.e. < 0x20), we assume it is a nested message
-    and parse it recursively, otherwise we decode it as UTF-8
-    """
     index = 0
     result = {}
     while index < len(data):
@@ -1532,7 +1530,6 @@ def parse_protobuf_message(data):
 # (device_id, system_id, user_uri_id, refresh_token)
 def parse_request_body_file(file_path):
     """
-    Expected structure:
     {
       1: {
            1: "device_id",
@@ -1697,7 +1694,7 @@ def build_clienttoken_request_protobuf(app_version, device_id, system_id, cpu_ar
 def spotify_get_access_token_from_client(device_id, system_id, user_uri_id, refresh_token, client_token):
     global SP_CACHED_ACCESS_TOKEN, SP_CACHED_REFRESH_TOKEN, SP_ACCESS_TOKEN_EXPIRES_AT
 
-    if SP_CACHED_ACCESS_TOKEN and time.time() < SP_ACCESS_TOKEN_EXPIRES_AT and check_token_validity(SP_CACHED_ACCESS_TOKEN):
+    if SP_CACHED_ACCESS_TOKEN and time.time() < SP_ACCESS_TOKEN_EXPIRES_AT and check_token_validity(SP_CACHED_ACCESS_TOKEN, user_agent=USER_AGENT):
         return SP_CACHED_ACCESS_TOKEN
 
     if not client_token:
@@ -1709,8 +1706,8 @@ def spotify_get_access_token_from_client(device_id, system_id, user_uri_id, refr
     protobuf_body = build_spotify_auth_protobuf(device_id, system_id, user_uri_id, refresh_token)
 
     parsed_url = urlparse(LOGIN_URL)
-    host = parsed_url.netloc  # e.g., "login5.spotify.com"
-    origin = f"{parsed_url.scheme}://{parsed_url.netloc}"  # e.g., "https://login5.spotify.com"
+    host = parsed_url.netloc
+    origin = f"{parsed_url.scheme}://{parsed_url.netloc}"
 
     headers = {
         "Host": host,
@@ -1816,7 +1813,7 @@ def spotify_get_client_token(app_version, device_id, system_id, **device_overrid
     parsed = parse_protobuf_message(response.content)
     inner = parsed.get(2, {})
     client_token = deep_flatten(inner.get(1)) if inner.get(1) else None
-    ttl = int(inner.get(3, 0)) or 1209600   # ≈ 2 weeks fallback
+    ttl = int(inner.get(3, 0)) or 1209600
 
     if not client_token:
         raise Exception("clienttoken response did not contain a token")
@@ -1989,6 +1986,10 @@ def spotify_get_current_user(access_token) -> dict | None:
             "Client-Id": SP_CACHED_CLIENT_ID,
             "User-Agent": SP_CACHED_USER_AGENT,
         })
+    elif TOKEN_SOURCE == "client":
+        headers.update({
+            "User-Agent": USER_AGENT
+        })
 
     if platform.system() != 'Windows':
         signal.signal(signal.SIGALRM, timeout_handler)
@@ -2028,6 +2029,10 @@ def is_playlist_private(access_token, playlist_uri):
             "Client-Id": SP_CACHED_CLIENT_ID,
             "User-Agent": SP_CACHED_USER_AGENT,
         })
+    elif TOKEN_SOURCE == "client":
+        headers.update({
+            "User-Agent": USER_AGENT
+        })
 
     try:
         response = SESSION.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
@@ -2056,6 +2061,10 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
             "Client-Id": SP_CACHED_CLIENT_ID,
             "User-Agent": SP_CACHED_USER_AGENT,
         })
+    elif TOKEN_SOURCE == "client":
+        headers.update({
+            "User-Agent": USER_AGENT
+        })
     # add si parameter so link opens in native Spotify app after clicking
     si = "?si=1"
 
@@ -2063,7 +2072,6 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
         response1 = SESSION.get(url1, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         response1.raise_for_status()
         json_response1 = response1.json()
-        # print(json.dumps(json_response1))
 
         sp_playlist_tracks_concatenated_list = []
         next_url = url2
@@ -2071,7 +2079,6 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
             response2 = SESSION.get(next_url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
             response2.raise_for_status()
             json_response2 = response2.json()
-            # print(json.dumps(json_response2))
 
             for track in json_response2.get("items"):
                 sp_playlist_tracks_concatenated_list.append(track)
@@ -2187,6 +2194,10 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
             "Client-Id": SP_CACHED_CLIENT_ID,
             "User-Agent": SP_CACHED_USER_AGENT,
         })
+    elif TOKEN_SOURCE == "client":
+        headers.update({
+            "User-Agent": USER_AGENT
+        })
 
     try:
         response = SESSION.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
@@ -2261,6 +2272,10 @@ def spotify_get_user_followings(access_token, user_uri_id):
             "Client-Id": SP_CACHED_CLIENT_ID,
             "User-Agent": SP_CACHED_USER_AGENT,
         })
+    elif TOKEN_SOURCE == "client":
+        headers.update({
+            "User-Agent": USER_AGENT
+        })
 
     try:
         response = SESSION.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
@@ -2290,6 +2305,10 @@ def spotify_get_user_followers(access_token, user_uri_id):
         headers.update({
             "Client-Id": SP_CACHED_CLIENT_ID,
             "User-Agent": SP_CACHED_USER_AGENT,
+        })
+    elif TOKEN_SOURCE == "client":
+        headers.update({
+            "User-Agent": USER_AGENT
         })
 
     try:
@@ -2454,6 +2473,10 @@ def spotify_get_user_liked_tracks(access_token):
             "Client-Id": SP_CACHED_CLIENT_ID,
             "User-Agent": SP_CACHED_USER_AGENT,
         })
+    elif TOKEN_SOURCE == "client":
+        headers.update({
+            "User-Agent": USER_AGENT
+        })
 
     try:
         sp_playlist_tracks_concatenated_list = []
@@ -2464,7 +2487,6 @@ def spotify_get_user_liked_tracks(access_token):
             response = SESSION.get(next_url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
             response.raise_for_status()
             json_response = response.json()
-            # print(json.dumps(json_response, indent=2, sort_keys=True))
 
             for track in json_response.get("items", []):
                 sp_playlist_tracks_concatenated_list.append(track)
@@ -2595,6 +2617,10 @@ def spotify_search_users(access_token, username):
         headers.update({
             "Client-Id": SP_CACHED_CLIENT_ID,
             "User-Agent": SP_CACHED_USER_AGENT,
+        })
+    elif TOKEN_SOURCE == "client":
+        headers.update({
+            "User-Agent": USER_AGENT
         })
 
     print(f"* Searching for users with '{username}' string ...\n")
@@ -3146,7 +3172,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
 # Saves user's profile pic to selected file name
 def save_profile_pic(user_image_url, image_file_name):
     try:
-        image_response = req.get(user_image_url, timeout=FUNCTION_TIMEOUT, stream=True, verify=VERIFY_SSL)
+        image_response = req.get(user_image_url, headers={'User-Agent': get_random_user_agent() if TOKEN_SOURCE == 'cookie' else get_random_spotify_user_agent()}, timeout=FUNCTION_TIMEOUT, stream=True, verify=VERIFY_SSL)
         image_response.raise_for_status()
         url_time = image_response.headers.get('last-modified')
 
