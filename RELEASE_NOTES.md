@@ -2,6 +2,13 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 2.3.1 (10 Jun 2025)
+
+**Bug fixes**:
+
+- **BUGFIX:** Ensured all Spotify requests include the custom User-Agent header
+- **BUGFIX:** Fixed config file generation to work reliably on Windows systems ([#13](https://github.com/misiektoja/spotify_profile_monitor/issues/13))
+
 # Changes in 2.3 (09 Jun 2025)
 
 **Features and Improvements**:
