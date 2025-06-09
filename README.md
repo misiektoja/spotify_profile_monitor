@@ -4,6 +4,10 @@ spotify_profile_monitor is an OSINT tool for real-time monitoring of Spotify use
 
 NOTE: If you want to track Spotify friends' music activity, check out another tool I developed: [spotify_monitor](https://github.com/misiektoja/spotify_monitor).
 
+> Spotify made multiple changes to the web endpoint on June 10th 2025, which broke the **[sp_dc cookie](#spotify-sp_dc-cookie)** method.  
+> 📦 The issue is under investigation to determine if it can be restored.  
+> 👉 In the meantime, use **[desktop client](#spotify-desktop-client)** method instead.  
+
 <a id="features"></a>
 ## Features
 
@@ -186,9 +190,9 @@ To use credentials captured from the Spotify desktop client to obtain an access 
 
 Run an intercepting proxy of your choice (like [Proxyman](https://proxyman.com)).
 
-Launch the Spotify desktop client and look for requests to `https://login{n}.spotify.com/v3/login`
+Launch the Spotify desktop client and look for POST requests to `https://login{n}.spotify.com/v3/login`
 
-Note: The `login` part is suffixed with one or more digits (e.g. `login5.spotify.com`).
+Note: The `login` part is suffixed with one or more digits (e.g. `login5`).
 
 If you don't see this request, log out from the client and log back in.
 
@@ -254,9 +258,9 @@ To simulate the required request, search for the user in the Spotify client. The
 Display the details of one of these requests and copy the **sha256Hash** parameter value, then place it in the `SP_SHA256` secret.
 
 Example request:
-https://api-partner.spotify.com/pathfinder/v1/query?operationName=searchUsers&variables={"searchTerm":"spotify_user_uri_id","offset":0,"limit":5,"numberOfTopResults":5,"includeAudiobooks":false}&extensions={"persistedQuery":{"version":1,"sha256Hash":"XXXXXXXXXX"}}
+`https://api-partner.spotify.com/pathfinder/v1/query?operationName=searchUsers&variables={"searchTerm":"spotify_user_uri_id","offset":0,"limit":5,"numberOfTopResults":5,"includeAudiobooks":false}&extensions={"persistedQuery":{"version":1,"sha256Hash":"XXXXXXXXXX"}}`
 
-You are interested in the string marked as "XXXXXXXXXX" here. 
+You are interested in the string marked as `XXXXXXXXXX` here. 
 
 Provide the `SP_SHA256` secret using one of the following methods:
    - Set it as an [environment variable](#storing-secrets) (e.g. `export SP_SHA256=...`)
