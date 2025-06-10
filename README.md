@@ -4,10 +4,6 @@ spotify_profile_monitor is an OSINT tool for real-time monitoring of Spotify use
 
 NOTE: If you want to track Spotify friends' music activity, check out another tool I developed: [spotify_monitor](https://github.com/misiektoja/spotify_monitor).
 
-> Spotify made multiple changes to the web endpoint on June 10th 2025, which broke the **[sp_dc cookie](#spotify-sp_dc-cookie)** method.  
-> 📦 The issue is under investigation to determine if it can be restored.  
-> 👉 In the meantime, use **[desktop client](#spotify-desktop-client)** method instead.  
-
 <a id="features"></a>
 ## Features
 
