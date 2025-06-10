@@ -415,6 +415,7 @@ csvfieldnames_export = ['Date', 'Playlist Name', 'Artist', 'Track']
 imgcat_exe = ""
 
 CLI_CONFIG_PATH = None
+CLEAN_OUTPUT = False
 
 # to solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
@@ -2336,15 +2337,17 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
     except Exception as e:
         print(f"* Error: {e}")
 
-    list_operation = "* Listing & saving" if csv_file_name else "* Listing"
-
-    print(f"{list_operation} tracks for playlist '{playlist_url}' ...\n")
+    if not CLEAN_OUTPUT:
+        list_operation = "* Listing & saving" if csv_file_name else "* Listing"
+        print(f"{list_operation} tracks for playlist '{playlist_url}' ...\n")
 
     user_info = spotify_get_current_user(sp_accessToken)
     if user_info:
-        print(f"Token belongs to:\t{user_info.get('display_name', '')} (via {TOKEN_SOURCE})\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
+        if not CLEAN_OUTPUT:
+            print(f"Token belongs to:\t{user_info.get('display_name', '')} (via {TOKEN_SOURCE})\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
 
-    print("─" * HORIZONTAL_LINE)
+    if not CLEAN_OUTPUT:
+	    print("─" * HORIZONTAL_LINE)
 
     user_id_name_mapping = {}
     user_track_counts = Counter()
@@ -2359,7 +2362,8 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
 
     p_image_url = sp_playlist_data.get("sp_playlist_image_url", "")
 
-    print(f"Playlist '{p_name}' owned by '{p_owner}':\n")
+    if not CLEAN_OUTPUT:
+	    print(f"Playlist '{p_name}' owned by '{p_owner}':\n")
 
     p_likes = sp_playlist_data.get("sp_playlist_followers_count", 0)
     p_tracks = sp_playlist_data.get("sp_playlist_tracks_count", 0)
@@ -2368,6 +2372,8 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
     added_at_ts_lowest = 0
     added_at_ts_highest = 0
     duration_sum = 0
+    tracks_list = []
+
     if p_tracks_list is not None:
         for index, track in enumerate(p_tracks_list or []):
             track_info = track.get("track")
@@ -2410,8 +2416,12 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
                     added_at_ts_highest = added_at_dt_ts
                 added_at_dt_str = get_short_date_from_ts(added_at_dt, show_weekday=False, show_seconds=True, always_show_year=True)
                 added_at_dt_week_day = calendar.day_abbr[added_at_dt.weekday()]
-                artist_track = artist_track[:75]
-                line_new = '%75s    %20s    %3s     %10s' % (artist_track, added_at_dt_str, added_at_dt_week_day, added_by_name)
+                if not CLEAN_OUTPUT:
+                    artist_track = artist_track[:75]
+                    line_new = '%75s    %20s    %3s     %10s' % (artist_track, added_at_dt_str, added_at_dt_week_day, added_by_name)
+                else:
+                    line_new = f"{artist_track}"
+                    tracks_list.append(line_new)
                 print(line_new)
 
                 try:
@@ -2420,43 +2430,53 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
                 except Exception as e:
                     print(f"* Error: {e}")
 
-    print(f"\nName:\t\t\t'{p_name}'")
-    if p_descr:
-        print(f"Description:\t\t'{p_descr}'")
+    if not CLEAN_OUTPUT:
+        print(f"\nName:\t\t\t'{p_name}'")
+        if p_descr:
+                print(f"Description:\t\t'{p_descr}'")
 
-    songs_display = f"{p_tracks} ({p_tracks_before_filtering - p_tracks} filtered out)" if p_tracks_before_filtering > p_tracks else f"{p_tracks}"
+        songs_display = f"{p_tracks} ({p_tracks_before_filtering - p_tracks} filtered out)" if p_tracks_before_filtering > p_tracks else f"{p_tracks}"
 
-    print(f"URL:\t\t\t{playlist_url}\nSongs:\t\t\t{songs_display}\nLikes:\t\t\t{p_likes}")
+        print(f"URL:\t\t\t{playlist_url}\nSongs:\t\t\t{songs_display}\nLikes:\t\t\t{p_likes}")
 
-    if added_at_ts_lowest > 0:
-        p_creation_date = get_date_from_ts(int(added_at_ts_lowest))
-        p_creation_date_since = calculate_timespan(int(time.time()), int(added_at_ts_lowest))
-        print(f"Creation date:\t\t{p_creation_date} ({p_creation_date_since} ago)")
+        if added_at_ts_lowest > 0:
+            p_creation_date = get_date_from_ts(int(added_at_ts_lowest))
+            p_creation_date_since = calculate_timespan(int(time.time()), int(added_at_ts_lowest))
+            print(f"Creation date:\t\t{p_creation_date} ({p_creation_date_since} ago)")
 
-    if added_at_ts_highest > 0:
-        p_last_track_date = get_date_from_ts(int(added_at_ts_highest))
-        p_last_track_date_since = calculate_timespan(int(time.time()), int(added_at_ts_highest))
-        print(f"Last update:\t\t{p_last_track_date} ({p_last_track_date_since} ago)")
+        if added_at_ts_highest > 0:
+            p_last_track_date = get_date_from_ts(int(added_at_ts_highest))
+            p_last_track_date_since = calculate_timespan(int(time.time()), int(added_at_ts_highest))
+            print(f"Last update:\t\t{p_last_track_date} ({p_last_track_date_since} ago)")
 
-    print(f"Duration:\t\t{display_time(duration_sum)}")
+        print(f"Duration:\t\t{display_time(duration_sum)}")
+    else:
+        try:
+            if CLEAN_OUTPUT and csv_file_name:
+                # Open the file in write mode and write the lines
+                with open(csv_file_name, "w") as file:
+                    file.writelines([track + '\n' for track in tracks_list])
+                    # print(f"\nSuccessfully wrote to {csv_file_name}.")
+        except Exception as e:
+            print(f"* Error writing to the output file {csv_file_name} - {e}")
 
-    if p_image_url:
+    if p_image_url and not CLEAN_OUTPUT:
         # print(f"Playlist artwork URL:\t{p_image_url}")
         print(f"Playlist artwork:\t", end="")
 
         display_tmp_pic(p_image_url, f"spotify_{playlist_uri}_playlist_pic_tmp.jpeg", imgcat_exe, False)
 
-    total_tracks = sum(user_track_counts.values())
+        total_tracks = sum(user_track_counts.values())
 
-    if len(user_id_name_mapping) > 1:
+        if len(user_id_name_mapping) > 1:
 
-        print(f"\nCollaborators ({len(user_id_name_mapping)}):\n")
+            print(f"\nCollaborators ({len(user_id_name_mapping)}):\n")
 
-        for collab_id, collab_name in user_id_name_mapping.items():
-            count = user_track_counts.get(collab_id, 0)
-            percent = (count / total_tracks * 100) if total_tracks else 0
-            url = spotify_convert_uri_to_url(f"spotify:user:{collab_id}")
-            print(f"- {collab_name} [songs: {count}, {percent:.1f}%] [URL: {url}]")
+            for collab_id, collab_name in user_id_name_mapping.items():
+                count = user_track_counts.get(collab_id, 0)
+                percent = (count / total_tracks * 100) if total_tracks else 0
+                url = spotify_convert_uri_to_url(f"spotify:user:{collab_id}")
+                print(f"- {collab_name} [songs: {count}, {percent:.1f}%] [URL: {url}]")
 
 
 # Returns detailed information about tracks liked by the user owning the access token
@@ -2523,16 +2543,18 @@ def spotify_list_liked_tracks(sp_accessToken, csv_file_name, format_type=2):
     except Exception as e:
         print(f"* Error: {e}")
 
-    list_operation = "* Listing & saving" if csv_file_name else "* Listing"
-
-    print(f"{list_operation} liked tracks by the user owning the token ...\n")
+    if not CLEAN_OUTPUT:
+        list_operation = "* Listing & saving" if csv_file_name else "* Listing"
+        print(f"{list_operation} liked tracks by the user owning the token ...\n")
 
     user_info = spotify_get_current_user(sp_accessToken)
     if user_info:
         username = user_info.get("display_name", "")
-        print(f"Token belongs to:\t{username} (via {TOKEN_SOURCE})\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
+        if not CLEAN_OUTPUT:
+            print(f"Token belongs to:\t{username} (via {TOKEN_SOURCE})\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
 
-    print("─" * HORIZONTAL_LINE)
+    if not CLEAN_OUTPUT:
+        print("─" * HORIZONTAL_LINE)
 
     sp_playlist_data = spotify_get_user_liked_tracks(sp_accessToken)
 
@@ -2542,6 +2564,7 @@ def spotify_list_liked_tracks(sp_accessToken, csv_file_name, format_type=2):
     added_at_ts_lowest = 0
     added_at_ts_highest = 0
     duration_sum = 0
+    tracks_list = []
 
     if p_tracks_list is not None:
         for index, track in enumerate(reversed(p_tracks_list or [])):
@@ -2567,31 +2590,45 @@ def spotify_list_liked_tracks(sp_accessToken, csv_file_name, format_type=2):
                     added_at_ts_highest = added_at_dt_ts
                 added_at_dt_str = get_short_date_from_ts(added_at_dt, show_weekday=False, show_seconds=True, always_show_year=True)
                 added_at_dt_week_day = calendar.day_abbr[added_at_dt.weekday()]
-                artist_track = artist_track[:75]
-                line_new = '%80s    %20s    %3s' % (artist_track, added_at_dt_str, added_at_dt_week_day)
+                if not CLEAN_OUTPUT:
+                    artist_track = artist_track[:75]
+                    line_new = '%80s    %20s    %3s' % (artist_track, added_at_dt_str, added_at_dt_week_day)
+                else:
+                    line_new = f"{artist_track}"
+                    tracks_list.append(line_new)
                 print(line_new)
                 try:
-                    if csv_file_name:
+                    if csv_file_name and not CLEAN_OUTPUT:
                         write_csv_entry(csv_file_name, convert_to_local_naive(added_at_dt), *(("Added Track", "Liked Songs", username, artist_track) if format_type == 1 else ("", "Liked Songs", p_artist, p_track)), format_type)
                 except Exception as e:
                     print(f"* Error: {e}")
 
-    songs_display = f"{p_tracks} ({p_tracks_before_filtering - p_tracks} filtered out)" if p_tracks_before_filtering > p_tracks else f"{p_tracks}"
+    if not CLEAN_OUTPUT:
+        songs_display = f"{p_tracks} ({p_tracks_before_filtering - p_tracks} filtered out)" if p_tracks_before_filtering > p_tracks else f"{p_tracks}"
 
-    print(f"Songs:\t\t\t{songs_display}")
+        print(f"Songs:\t\t\t{songs_display}")
 
-    if added_at_ts_lowest > 0:
-        p_creation_date = get_date_from_ts(int(added_at_ts_lowest))
-        p_creation_date_since = calculate_timespan(int(time.time()), int(added_at_ts_lowest))
-        print(f"Creation date:\t\t{p_creation_date} ({p_creation_date_since} ago)")
+        if added_at_ts_lowest > 0:
+            p_creation_date = get_date_from_ts(int(added_at_ts_lowest))
+            p_creation_date_since = calculate_timespan(int(time.time()), int(added_at_ts_lowest))
+            print(f"Creation date:\t\t{p_creation_date} ({p_creation_date_since} ago)")
 
-    if added_at_ts_highest > 0:
-        p_last_track_date = get_date_from_ts(int(added_at_ts_highest))
-        p_last_track_date_since = calculate_timespan(int(time.time()), int(added_at_ts_highest))
-        print(f"Last update:\t\t{p_last_track_date} ({p_last_track_date_since} ago)")
+        if added_at_ts_highest > 0:
+            p_last_track_date = get_date_from_ts(int(added_at_ts_highest))
+            p_last_track_date_since = calculate_timespan(int(time.time()), int(added_at_ts_highest))
+            print(f"Last update:\t\t{p_last_track_date} ({p_last_track_date_since} ago)")
 
-    print(f"Duration:\t\t{display_time(duration_sum)}")
-
+        print(f"Duration:\t\t{display_time(duration_sum)}")
+    else:
+        try:
+            if CLEAN_OUTPUT and csv_file_name:
+                # Open the file in write mode and write the lines
+                with open(csv_file_name, "w") as file:
+                    file.writelines([track + '\n' for track in tracks_list])
+                    # print(f"\nSuccessfully wrote to {csv_file_name}.")
+        except Exception as e:
+            print(f"* Error writing to the output file {csv_file_name} - {e}")
+        
 
 # Compares two lists of dictionaries
 def compare_two_lists_of_dicts(list1: list, list2: list):
@@ -4204,6 +4241,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
 def main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, SP_LOGFILE, PROFILE_NOTIFICATION, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, ALARM_TIMEOUT, pyotp
+    global CLEAN_OUTPUT
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -4212,15 +4250,6 @@ def main():
     if "--version" in sys.argv:
         print(f"{os.path.basename(sys.argv[0])} v{VERSION}")
         sys.exit(0)
-
-    stdout_bck = sys.stdout
-
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
-
-    clear_screen(CLEAR_SCREEN)
-
-    print(f"Spotify Profile Monitoring Tool v{VERSION}\n")
 
     parser = argparse.ArgumentParser(
         prog="spotify_profile_monitor",
@@ -4400,6 +4429,12 @@ def main():
         type=str,
         help="Write all profile changes to CSV file"
     )
+    conf.add_argument(
+        "-o", "--export-for-spotify-monitor", 
+        dest="export_for_spotify_monitor",
+        action="store_true",
+        help="Simplified output for exporting playlists (-l) or liked songs (-x) into 'spotify_monitor'",
+    )
     opts.add_argument(
         "-t", "--playlists-to-skip",
         dest="playlists_to_skip",
@@ -4445,7 +4480,20 @@ def main():
 
     args = parser.parse_args()
 
-    if len(sys.argv) == 1:
+    if args.export_for_spotify_monitor:
+        CLEAN_OUTPUT = True
+       
+    if not CLEAN_OUTPUT:
+        stdout_bck = sys.stdout
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
+        clear_screen(CLEAR_SCREEN)
+                                                                                           
+        print(f"Spotify Profile Monitoring Tool v{VERSION}\n")
+
+    if len(sys.argv) == 1:                                                             
         parser.print_help(sys.stderr)
         sys.exit(1)
 
