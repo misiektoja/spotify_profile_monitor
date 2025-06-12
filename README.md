@@ -20,7 +20,7 @@ NOTE: If you want to track Spotify friends' music activity, check out another to
 - Attaching changed profile pictures directly to email notifications
 - Displaying the profile picture right in your terminal (if you have `imgcat` installed)
 - Additional functionalities on top of the monitoring mode allowing to display detailed info about the user, list of followers & followings, recently played artists and possibility to search for users in Spotify catalog with specific names
-- Ability to display and export the list of tracks for a specific playlist (including **Liked Songs** for the user who owns the Spotify access token)
+- Ability to display and export the list of tracks for a specific playlist (including Liked Songs for the user who owns the Spotify access token)
 - Saving all profile changes (including playlists) with timestamps to the CSV file
 - Clickable Spotify, Apple Music, YouTube Music and Genius Lyrics search URLs printed in the console & included in email notifications
 - Possibility to control the running copy of the script via signals
