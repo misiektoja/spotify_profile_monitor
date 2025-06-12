@@ -2,6 +2,16 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 2.4 (13 Jun 2025)
+
+**Features and Improvements**:
+
+- **NEW:** Added new `-o` / `--export-for-spotify-monitor` flag for simplified output when exporting playlists (-l) or liked songs (-x) to allow direct import into `spotify_monitor` (thanks [@tomballgithub](https://github.com/tomballgithub))
+- **NEW:** Added new config option (`USER_AGENT`) and flag (`--user-agent`) to set Spotify user agent string
+- **NEW:** Ensured all Spotify requests now include the same user agent, if not specified - it is randomly generated per session for specific type of token source
+- **IMPROVE:** Improved detection when a Spotify user URI ID has been removed
+- **IMPROVE:** Added more descriptive error messages and covered additional corner cases
+
 # Changes in 2.3.2 (10 Jun 2025)
 
 **Bug fixes**:
