@@ -426,6 +426,13 @@ If you want to display similar information for **Liked Songs** playlist for the 
 spotify_profile_monitor -x
 ```
 
+If you want to import the listings from `-l` or `-x` directly into [Spotify Monitor](https://github.com/misiektoja/spotify_monitor) as set of tracks to monitor, use the `-o` flag to ensure appropriate formatting:
+
+```sh
+spotify_profile_monitor -o -x
+spotify_profile_monitor -o -l "https://open.spotify.com/playlist/playlist_uri_id" -b spotify_playlist_tracks.csv
+```
+
 If you want to display details for a specific Spotify user profile URL (i.e. user URI ID, list and number of followers and followings, recently played artists, list and number of user's playlists with basic statistics like when created, last updated, description, number of tracks and likes) then use the `-i` flag:
 
 ```sh
