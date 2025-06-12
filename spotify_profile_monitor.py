@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.3.2
+v2.4
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -17,7 +17,7 @@ tzlocal (optional)
 python-dotenv (optional)
 """
 
-VERSION = "2.3.2"
+VERSION = "2.4"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -178,6 +178,10 @@ CSV_FILE = ""
 # 1 - default format used for activity logging ['Date', 'Type', 'Name', 'Old', 'New']
 # 2 - playlist dump format ['Date', 'Playlist Name', 'Artist', 'Track']
 CSV_FILE_FORMAT_EXPORT = 2
+
+# Set to true if you want the simplified output when exporting playlists (-l) or liked songs (-x) to allow
+# direct import into spotify_monitor tool
+CLEAN_OUTPUT = False
 
 # Filename with Spotify playlists to ignore
 # Can also be set using the -t flag
@@ -353,6 +357,7 @@ CHECK_INTERNET_TIMEOUT = 0
 VERIFY_SSL = False
 CSV_FILE = ""
 CSV_FILE_FORMAT_EXPORT = 0
+CLEAN_OUTPUT = False
 PLAYLISTS_TO_SKIP_FILE = ""
 DOTENV_FILE = ""
 FILE_SUFFIX = ""
@@ -415,7 +420,6 @@ csvfieldnames_export = ['Date', 'Playlist Name', 'Artist', 'Track']
 imgcat_exe = ""
 
 CLI_CONFIG_PATH = None
-CLEAN_OUTPUT = False
 
 # to solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
@@ -1298,6 +1302,8 @@ def refresh_token(sp_dc: str) -> dict:
         "Cookie": f"sp_dc={sp_dc}",
     }
 
+    last_err = ""
+
     try:
         if platform.system() != "Windows":
             signal.signal(signal.SIGALRM, timeout_handler)
@@ -1308,8 +1314,9 @@ def refresh_token(sp_dc: str) -> dict:
         data = response.json()
         token = data.get("accessToken", "")
 
-    except (req.RequestException, TimeoutException, req.HTTPError, ValueError):
+    except (req.RequestException, TimeoutException, req.HTTPError, ValueError) as e:
         transport = False
+        last_err = str(e)
     finally:
         if platform.system() != "Windows":
             signal.alarm(0)
@@ -1327,14 +1334,15 @@ def refresh_token(sp_dc: str) -> dict:
             data = response.json()
             token = data.get("accessToken", "")
 
-        except (req.RequestException, TimeoutException, req.HTTPError, ValueError):
+        except (req.RequestException, TimeoutException, req.HTTPError, ValueError) as e:
             init = False
+            last_err = str(e)
         finally:
             if platform.system() != "Windows":
                 signal.alarm(0)
 
     if not init or not data or "accessToken" not in data:
-        raise Exception("refresh_token(): Unsuccessful token request")
+        raise Exception(f"refresh_token(): Unsuccessful token request{': ' + last_err if last_err else ''}")
 
     return {
         "access_token": token,
@@ -1737,6 +1745,22 @@ def spotify_get_access_token_from_client(device_id, system_id, user_uri_id, refr
         elif response.headers.get("client-token-error") == "EXPIRED_CLIENTTOKEN":
             raise Exception(f"Request failed with status {response.status_code}: expired client token")
 
+        try:
+            error_json = response.json()
+        except ValueError:
+            error_json = {}
+
+        if error_json.get("error") == "invalid_grant":
+            desc = error_json.get("error_description", "")
+            if "refresh token" in desc.lower() and "revoked" in desc.lower():
+                raise Exception(f"Request failed with status {response.status_code}: refresh token has been revoked")
+            elif "refresh token" in desc.lower() and "expired" in desc.lower():
+                raise Exception(f"Request failed with status {response.status_code}: refresh token has expired")
+            elif "invalid refresh token" in desc.lower():
+                raise Exception(f"Request failed with status {response.status_code}: refresh token is invalid")
+            else:
+                raise Exception(f"Request failed with status {response.status_code}: invalid grant during refresh ({desc})")
+
         raise Exception(f"Request failed with status code {response.status_code}\nResponse Headers: {response.headers}\nResponse Content (raw): {response.content}\nResponse text: {response.text}")
 
     parsed = parse_protobuf_message(response.content)
@@ -2019,6 +2043,31 @@ def spotify_get_current_user(access_token) -> dict | None:
 def is_playlist_private(access_token, playlist_uri):
     playlist_id = playlist_uri.split(':', 2)[2]
     url = f"https://api.spotify.com/v1/playlists/{playlist_id}?fields=id"
+
+    headers = {"Authorization": f"Bearer {access_token}"}
+
+    if TOKEN_SOURCE == "cookie":
+        headers.update({
+            "Client-Id": SP_CACHED_CLIENT_ID,
+            "User-Agent": SP_CACHED_USER_AGENT,
+        })
+    elif TOKEN_SOURCE == "client":
+        headers.update({
+            "User-Agent": USER_AGENT
+        })
+
+    try:
+        response = SESSION.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
+        if response.status_code == 404:
+            return True
+        return False
+    except Exception:
+        return False
+
+
+# Checks if a Spotify user URI ID has been deleted
+def is_user_removed(access_token, user_uri_id):
+    url = f"https://api.spotify.com/v1/users/{user_uri_id}"
 
     headers = {"Authorization": f"Bearer {access_token}"}
 
@@ -2342,12 +2391,11 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
         print(f"{list_operation} tracks for playlist '{playlist_url}' ...\n")
 
     user_info = spotify_get_current_user(sp_accessToken)
-    if user_info:
-        if not CLEAN_OUTPUT:
-            print(f"Token belongs to:\t{user_info.get('display_name', '')} (via {TOKEN_SOURCE})\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
+    if user_info and not CLEAN_OUTPUT:
+        print(f"Token belongs to:\t{user_info.get('display_name', '')} (via {TOKEN_SOURCE})\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
 
     if not CLEAN_OUTPUT:
-	    print("─" * HORIZONTAL_LINE)
+        print("─" * HORIZONTAL_LINE)
 
     user_id_name_mapping = {}
     user_track_counts = Counter()
@@ -2363,7 +2411,7 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
     p_image_url = sp_playlist_data.get("sp_playlist_image_url", "")
 
     if not CLEAN_OUTPUT:
-	    print(f"Playlist '{p_name}' owned by '{p_owner}':\n")
+        print(f"Playlist '{p_name}' owned by '{p_owner}':\n")
 
     p_likes = sp_playlist_data.get("sp_playlist_followers_count", 0)
     p_tracks = sp_playlist_data.get("sp_playlist_tracks_count", 0)
@@ -2433,7 +2481,7 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
     if not CLEAN_OUTPUT:
         print(f"\nName:\t\t\t'{p_name}'")
         if p_descr:
-                print(f"Description:\t\t'{p_descr}'")
+            print(f"Description:\t\t'{p_descr}'")
 
         songs_display = f"{p_tracks} ({p_tracks_before_filtering - p_tracks} filtered out)" if p_tracks_before_filtering > p_tracks else f"{p_tracks}"
 
@@ -2453,10 +2501,8 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
     else:
         try:
             if CLEAN_OUTPUT and csv_file_name:
-                # Open the file in write mode and write the lines
                 with open(csv_file_name, "w") as file:
                     file.writelines([track + '\n' for track in tracks_list])
-                    # print(f"\nSuccessfully wrote to {csv_file_name}.")
         except Exception as e:
             print(f"* Error writing to the output file {csv_file_name} - {e}")
 
@@ -2622,13 +2668,11 @@ def spotify_list_liked_tracks(sp_accessToken, csv_file_name, format_type=2):
     else:
         try:
             if CLEAN_OUTPUT and csv_file_name:
-                # Open the file in write mode and write the lines
                 with open(csv_file_name, "w") as file:
                     file.writelines([track + '\n' for track in tracks_list])
-                    # print(f"\nSuccessfully wrote to {csv_file_name}.")
         except Exception as e:
             print(f"* Error writing to the output file {csv_file_name} - {e}")
-        
+
 
 # Compares two lists of dictionaries
 def compare_two_lists_of_dicts(list1: list, list2: list):
@@ -3288,7 +3332,7 @@ def resolve_executable(path):
     raise FileNotFoundError(f"Could not find executable '{path}'")
 
 
-# Main function that monitors profile changes of the specified Spotify user URI ID
+# Monitors profile changes of the specified Spotify user URI ID
 def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     global SP_CACHED_ACCESS_TOKEN
     playlists_count = 0
@@ -3298,6 +3342,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     playlists_zeroed_counter = 0
     followers_zeroed_counter = 0
     followings_zeroed_counter = 0
+    sp_accessToken = ""
 
     try:
         if csv_file_name:
@@ -3326,15 +3371,18 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         if TOKEN_SOURCE == 'cookie' and '401' in err:
             SP_CACHED_ACCESS_TOKEN = None
 
-        client_errs = ['access token', 'invalid client token', 'expired client token']
-        cookie_errs = ['access token', 'unsuccessful token request']
+        client_errs = ['access token', 'invalid client token', 'expired client token', 'refresh token has been revoked', 'refresh token has expired', 'refresh token is invalid', 'invalid grant during refresh']
+        cookie_errs = ['access token', 'unauthorized']
 
         if TOKEN_SOURCE == 'client' and any(k in err for k in client_errs):
-            print(f"* Error: client token or refresh token might have expired!\n{str(e)}")
+            print(f"* Error: client or refresh token may be invalid or expired!\n{str(e)}")
         elif TOKEN_SOURCE == 'cookie' and any(k in err for k in cookie_errs):
-            print(f"* Error: sp_dc might have expired!\n{str(e)}")
+            print(f"* Error: sp_dc may be invalid or expired!\n{str(e)}")
         elif '404' in err:
-            print("* Error: User does not exist!")
+            if is_user_removed(sp_accessToken, user_uri_id):
+                print(f"* Error: User '{user_uri_id}' does not exist!")
+            else:
+                print(f"* Error: {e}")
         else:
             print(f"* Error: {e}")
 
@@ -3592,7 +3640,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     email_sent = False
     alive_counter = 0
 
-    # Main loop
+    # Primary loop
     while True:
         # Sometimes Spotify network functions halt even though we specified the timeout
         # To overcome this we use alarm signal functionality to kill it inevitably, not available on Windows
@@ -3626,38 +3674,39 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             if TOKEN_SOURCE == 'cookie' and '401' in err:
                 SP_CACHED_ACCESS_TOKEN = None
 
-            client_errs = ['access token', 'invalid client token', 'expired client token']
-            cookie_errs = ['access token', 'unsuccessful token request']
+            client_errs = ['access token', 'invalid client token', 'expired client token', 'refresh token has been revoked', 'refresh token has expired', 'refresh token is invalid', 'invalid grant during refresh']
+            cookie_errs = ['access token', 'unauthorized']
 
             if TOKEN_SOURCE == 'client' and any(k in err for k in client_errs):
-                print(f"* Error: client token or refresh token might have expired!")
+                print(f"* Error: client or refresh token may be invalid or expired!")
                 if ERROR_NOTIFICATION and not email_sent:
-                    m_subject = f"spotify_profile_monitor: client token or refresh token might have expired! (uri: {user_uri_id})"
-                    m_body = f"Client token or refresh token might have expired!\n{e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                    m_body_html = f"<html><head></head><body>Client token or refresh token might have expired!<br>{escape(str(e))}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
+                    m_subject = f"spotify_profile_monitor: client or refresh token may be invalid or expired! (uri: {user_uri_id})"
+                    m_body = f"Client or refresh token may be invalid or expired!\n{e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                    m_body_html = f"<html><head></head><body>Client or refresh token may be invalid or expired!<br>{escape(str(e))}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, m_body_html, SMTP_SSL)
                     email_sent = True
 
             elif TOKEN_SOURCE == 'cookie' and any(k in err for k in cookie_errs):
-                print(f"* Error: sp_dc might have expired!")
+                print(f"* Error: sp_dc may be invalid or expired!")
                 if ERROR_NOTIFICATION and not email_sent:
-                    m_subject = f"spotify_profile_monitor: sp_dc might have expired! (uri: {user_uri_id})"
-                    m_body = f"sp_dc might have expired!\n{e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                    m_body_html = f"<html><head></head><body>sp_dc might have expired!<br>{escape(str(e))}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
+                    m_subject = f"spotify_profile_monitor: sp_dc may be invalid or expired! (uri: {user_uri_id})"
+                    m_body = f"sp_dc may be invalid or expired!\n{e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                    m_body_html = f"<html><head></head><body>sp_dc may be invalid or expired!<br>{escape(str(e))}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, m_body_html, SMTP_SSL)
                     email_sent = True
 
-            elif '404' in err:
-                print("* Error: User might have removed the account !")
-                if ERROR_NOTIFICATION and not email_sent:
-                    m_subject = f"spotify_profile_monitor: user might have removed the account! (uri: {user_uri_id})"
-                    m_body = f"User might have removed the account: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                    m_body_html = f"<html><head></head><body>User might have removed the account: {escape(str(e))}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-                    email_sent = True
+            elif 'not found' in err or '404' in err:
+                if is_user_removed(sp_accessToken, user_uri_id):
+                    print(f"* Error: User '{user_uri_id}' might have removed the account!")
+                    if ERROR_NOTIFICATION and not email_sent:
+                        m_subject = f"spotify_profile_monitor: user might have removed the account! (uri: {user_uri_id})"
+                        m_body = f"User might have removed the account: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                        m_body_html = f"<html><head></head><body>User might have removed the account: {escape(str(e))}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
+                        print(f"Sending email notification to {RECEIVER_EMAIL}")
+                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                        email_sent = True
 
             print_cur_ts("Timestamp:\t\t\t")
             time.sleep(SPOTIFY_ERROR_INTERVAL)
@@ -4240,8 +4289,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
 
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, SP_LOGFILE, PROFILE_NOTIFICATION, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, ALARM_TIMEOUT, pyotp
-    global CLEAN_OUTPUT
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, SP_LOGFILE, PROFILE_NOTIFICATION, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, ALARM_TIMEOUT, pyotp, CLEAN_OUTPUT
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -4250,6 +4298,9 @@ def main():
     if "--version" in sys.argv:
         print(f"{os.path.basename(sys.argv[0])} v{VERSION}")
         sys.exit(0)
+
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
     parser = argparse.ArgumentParser(
         prog="spotify_profile_monitor",
@@ -4429,18 +4480,18 @@ def main():
         type=str,
         help="Write all profile changes to CSV file"
     )
-    conf.add_argument(
-        "-o", "--export-for-spotify-monitor", 
-        dest="export_for_spotify_monitor",
-        action="store_true",
-        help="Simplified output for exporting playlists (-l) or liked songs (-x) into 'spotify_monitor'",
-    )
     opts.add_argument(
         "-t", "--playlists-to-skip",
         dest="playlists_to_skip",
         metavar="PLAYLISTS_FILE",
         type=str,
         help="Filename with Spotify playlists to ignore"
+    )
+    opts.add_argument(
+        "-o", "--export-for-spotify-monitor",
+        dest="export_for_spotify_monitor",
+        action="store_true",
+        help="Simplified output for exporting playlists (-l) or liked songs (-x) into 'spotify_monitor'",
     )
     opts.add_argument(
         "-j", "--no-profile-pic-detect",
@@ -4482,18 +4533,15 @@ def main():
 
     if args.export_for_spotify_monitor:
         CLEAN_OUTPUT = True
-       
+
     if not CLEAN_OUTPUT:
         stdout_bck = sys.stdout
 
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-
         clear_screen(CLEAR_SCREEN)
-                                                                                           
+
         print(f"Spotify Profile Monitoring Tool v{VERSION}\n")
 
-    if len(sys.argv) == 1:                                                             
+    if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(1)
 
@@ -4796,6 +4844,7 @@ def main():
         sys.exit(1)
 
     if args.user_profile_details:
+        sp_accessToken = ""
         try:
             if TOKEN_SOURCE == "client":
                 sp_accessToken = spotify_get_access_token_from_client_auto(DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN)
@@ -4803,14 +4852,19 @@ def main():
                 sp_accessToken = spotify_get_access_token_from_sp_dc(SP_DC_COOKIE)
             spotify_get_user_details(sp_accessToken, args.user_id)
         except Exception as e:
-            if 'Not Found' in str(e) or '404 Client' in str(e):
-                print("* Error: User does not exist")
+            err = str(e).lower()
+            if 'not found' in err or '404' in err:
+                if is_user_removed(sp_accessToken, args.user_id):
+                    print(f"* Error: User '{args.user_id}' does not exist!")
+                else:
+                    print(f"* Error: {e}")
             else:
                 print(f"* Error: {e}")
             sys.exit(1)
         sys.exit(0)
 
     if args.recently_played_artists:
+        sp_accessToken = ""
         try:
             if TOKEN_SOURCE == "client":
                 sp_accessToken = spotify_get_access_token_from_client_auto(DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN)
@@ -4818,14 +4872,19 @@ def main():
                 sp_accessToken = spotify_get_access_token_from_sp_dc(SP_DC_COOKIE)
             spotify_get_recently_played_artists(sp_accessToken, args.user_id)
         except Exception as e:
-            if 'Not Found' in str(e) or '404 Client' in str(e):
-                print("* Error: User does not exist")
+            err = str(e).lower()
+            if 'not found' in err or '404' in err:
+                if is_user_removed(sp_accessToken, args.user_id):
+                    print(f"* Error: User '{args.user_id}' does not exist!")
+                else:
+                    print(f"* Error: {e}")
             else:
                 print(f"* Error: {e}")
             sys.exit(1)
         sys.exit(0)
 
     if args.followers_and_followings:
+        sp_accessToken = ""
         try:
             if TOKEN_SOURCE == "client":
                 sp_accessToken = spotify_get_access_token_from_client_auto(DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN)
@@ -4833,8 +4892,12 @@ def main():
                 sp_accessToken = spotify_get_access_token_from_sp_dc(SP_DC_COOKIE)
             spotify_get_followers_and_followings(sp_accessToken, args.user_id)
         except Exception as e:
-            if 'Not Found' in str(e) or '404 Client' in str(e):
-                print("* Error: User does not exist")
+            err = str(e).lower()
+            if 'not found' in err or '404' in err:
+                if is_user_removed(sp_accessToken, args.user_id):
+                    print(f"* Error: User '{args.user_id}' does not exist!")
+                else:
+                    print(f"* Error: {e}")
             else:
                 print(f"* Error: {e}")
             sys.exit(1)
