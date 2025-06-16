@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.4
+v2.5
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -11,13 +11,14 @@ Python pip3 requirements:
 requests
 python-dateutil
 urllib3
-pyotp (needed when the token source is set to cookie)
+pyotp (optional, needed when the token source is set to cookie)
 pytz
 tzlocal (optional)
 python-dotenv (optional)
+spotipy (optional, needed when the token source is set to oauth_app)
 """
 
-VERSION = "2.4"
+VERSION = "2.5"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -26,27 +27,26 @@ VERSION = "2.4"
 CONFIG_BLOCK = """
 # Select the method used to obtain the Spotify access token
 # Available options:
-#   cookie  - uses the sp_dc cookie to retrieve a token via the Spotify web endpoint (recommended)
-#   client  - uses captured credentials from the Spotify desktop client and a Protobuf-based login flow (for advanced users)
+#   cookie    - uses the sp_dc cookie to retrieve a token via the Spotify web endpoint (recommended)
+#   oauth_app - uses the Client Credentials OAuth flow (app-level token for public data, has some limitations)
+#   client    - uses captured credentials from the Spotify desktop client and a Protobuf-based login flow (for advanced users)
 TOKEN_SOURCE = "cookie"
 
-# ------------------------------------------------
+# ---------------------------------------------------------------------
 
 # The section below is used when the token source is set to 'cookie'
-# (to configure the alternative 'client' method, see the section at the end of this config block)
+# (to configure the alternative 'oauth_app' or 'client' methods, see the section at the end of this config block)
 #
-# Log in to Spotify web client (https://open.spotify.com/) and retrieve your sp_dc cookie
-# Use your web browser's dev console or "Cookie-Editor" by cgagnier to extract it easily: https://cookie-editor.com/
-#
-# Provide the SP_DC_COOKIE secret using one of the following methods:
+# - Log in to Spotify web client (https://open.spotify.com/) and retrieve your sp_dc cookie
+#   (use your web browser's dev console or "Cookie-Editor" by cgagnier to extract it easily: https://cookie-editor.com/)
+# - Provide the SP_DC_COOKIE secret using one of the following methods:
 #   - Pass it at runtime with -u / --spotify-dc-cookie
 #   - Set it as an environment variable (e.g. export SP_DC_COOKIE=...)
 #   - Add it to ".env" file (SP_DC_COOKIE=...) for persistent use
-# Fallback:
-#   - Hard-code it in the code or config file
+#   - Fallback: hard-code it in the code or config file
 SP_DC_COOKIE = "your_sp_dc_cookie_value"
 
-# ------------------------------------------------
+# ---------------------------------------------------------------------
 
 # SMTP settings for sending email notifications
 # If left as-is, no notifications will be sent
@@ -235,44 +235,91 @@ TOKEN_MAX_RETRIES = 10
 # Used only when the token source is set to 'cookie'
 TOKEN_RETRY_TIMEOUT = 0.5  # 0.5 second
 
-# ------------------------------------------------
-# The section below is used when the token source is set to 'client'
-#
-# To extract device_id, system_id, user_uri_id and refresh_token from binary login request Protobuf file:
-#
-# - run an intercepting proxy of your choice (like Proxyman)
-# - launch the Spotify desktop client and look for requests to: https://login{n}.spotify.com/v3/login
-#   note: the 'login' part is suffixed with one or more digits
-# - export the login request body (a binary Protobuf payload) to a file
-#   (e.g. in Proxyman: right click the request -> Export -> Request Body -> Save File -> <login-request-body-file>)
-#
-# Can also be set using the -w flag
-LOGIN_REQUEST_BODY_FILE = ""
+# ---------------------------------------------------------------------
 
-# Alternatively, set the configuration options below manually
+# The section below is used when the token source is set to 'oauth_app'
+# (Client Credentials OAuth Flow)
 #
-# For the binary login request Protobuf body, if your proxy supports Protobuf decoding, extract:
-#   - DEVICE_ID
-#   - SYSTEM_ID
-#   - USER_URI_ID
-#   - REFRESH_TOKEN
-# and assign them to respective configuration options
+# To obtain the credentials:
+#   - Log in to Spotify Developer dashboard: https://developer.spotify.com/dashboard
+#   - Create a new app
+#   - For 'Redirect URL', use: http://127.0.0.1:1234
+#   - Select 'Web API' as the intended API
+#   - Copy the 'Client ID' and 'Client Secret'
 #
-# Alternatively, you can use protoc tool (part of Protobuf pip package) to decode the binary:
-#   protoc --decode_raw < <path-to-login-request-body-file>
-#
-# If you decided to set the configuration options manually, it is recommended to provide the REFRESH_TOKEN
-# secret using one of the following methods:
-#   - Set it as an environment variable (e.g. export REFRESH_TOKEN=...)
-#   - Add it to ".env" file (REFRESH_TOKEN=...) for persistent use
+# Provide the SP_CLIENT_ID and SP_CLIENT_SECRET secrets using one of the following methods:
+#   - Pass it at runtime with -r / --oauth-app-creds (use SP_CLIENT_ID:SP_CLIENT_SECRET format - note the colon separator)
+#   - Set it as an environment variable (e.g. export SP_CLIENT_ID=...; export SP_CLIENT_SECRET=...)
+#   - Add it to ".env" file (SP_CLIENT_ID=... and SP_CLIENT_SECRET=...) for persistent use
 # Fallback:
 #   - Hard-code it in the code or config file
+#
+# The tool automatically refreshes the access token, so it remains valid indefinitely
+SP_CLIENT_ID = "your_spotify_app_client_id"
+SP_CLIENT_SECRET = "your_spotify_app_client_secret"
+
+# Path to cache file used to store OAuth app access tokens across tool restarts
+# Set to empty to use in-memory cache only
+SP_APP_TOKENS_FILE = ".spotify-profile-monitor-oauth-app.json"
+
+# ---------------------------------------------------------------------
+
+# The section below is used when the token source is set to 'client'
+#
+# - Run an intercepting proxy of your choice (like Proxyman)
+# - Launch the Spotify desktop client and look for requests to: https://login{n}.spotify.com/v3/login
+#   (the 'login' part is suffixed with one or more digits)
+# - Export the login request body (a binary Protobuf payload) to a file
+#   (e.g. in Proxyman: right click the request -> Export -> Request Body -> Save File -> <login-request-body-file>)
+#
+# To automatically extract DEVICE_ID, SYSTEM_ID, USER_URI_ID and REFRESH_TOKEN from the exported binary login
+# request Protobuf file:
+#
+# - Run the tool with the -w flag to indicate an exported file or specify its file name below
+LOGIN_REQUEST_BODY_FILE = ""
+
+# Alternatively, you can manually set the DEVICE_ID, SYSTEM_ID, USER_URI_ID and REFRESH_TOKEN options
+# (however, using the automated method described above is recommended)
+#
+# These values can be extracted using one of the following methods:
+#
+# - Run spotify_profile_monitor with the -w flag without specifying SPOTIFY_USER_URI_ID - it will decode the file and
+#   print the values to stdout, example:
+#       spotify_profile_monitor --token-source client -w <path-to-login-request-body-file>
+#
+# - Use the protoc tool (part of protobuf pip package):
+#       pip install protobuf
+#       protoc --decode_raw < <path-to-login-request-body-file>
+#
+# - Use the built-in Protobuf decoder in your intercepting proxy (if supported)
+#
+# The Protobuf structure is as follows:
+#
+#    {
+#      1: {
+#           1: "DEVICE_ID",
+#           2: "SYSTEM_ID"
+#         },
+#      100: {
+#           1: "USER_URI_ID",
+#           2: "REFRESH_TOKEN"
+#         }
+#    }
+#
+# Provide the extracted values below (DEVICE_ID, SYSTEM_ID, USER_URI_ID). The REFRESH_TOKEN secret can be
+# supplied using one of the following methods:
+#   - Set it as an environment variable (e.g. export REFRESH_TOKEN=...)
+#   - Add it to ".env" file (REFRESH_TOKEN=...) for persistent use
+#   - Fallback: hard-code it in the code or config file
 DEVICE_ID = "your_spotify_app_device_id"
 SYSTEM_ID = "your_spotify_app_system_id"
 USER_URI_ID = "your_spotify_user_uri_id"
 REFRESH_TOKEN = "your_spotify_app_refresh_token"
 
-# Default values below are typically fine - only modify if necessary
+# ----------------------------------------------
+# Advanced options for 'client' token source
+# Modifying the values below is NOT recommended!
+# ----------------------------------------------
 
 # Spotify login URL
 LOGIN_URL = "https://login5.spotify.com/v3/login"
@@ -280,12 +327,58 @@ LOGIN_URL = "https://login5.spotify.com/v3/login"
 # Spotify client token URL
 CLIENTTOKEN_URL = "https://clienttoken.spotify.com/v1/clienttoken"
 
-# Optional: specify app version manually (e.g. '1.2.62.580.g7e3d9a4f')
-# Leave empty to auto-generate from USER_AGENT
-APP_VERSION = ""
+# Platform-specific values for token generation so the Spotify client token requests match your exact Spotify desktop
+# client build (arch, OS build, app version etc.)
+#
+# - Run an intercepting proxy of your choice (like Proxyman)
+# - Launch the Spotify desktop client and look for requests to: https://clienttoken.spotify.com/v1/clienttoken
+#   (these requests are sent every time client token expires, usually every 2 weeks)
+# - Export the client token request body (a binary Protobuf payload) to a file
+#   (e.g. in Proxyman: right click the request -> Export -> Request Body -> Save File -> <clienttoken-request-body-file>)
+#
+# To automatically extract APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR and CLIENT_MODEL from the
+# exported binary client token request Protobuf file:
+#
+# - Run the tool with the hidden -z flag to indicate an exported file or specify its file name below
+CLIENTTOKEN_REQUEST_BODY_FILE = ""
 
-# Platform-specific values for token generation, typically leave unchanged
-# You can also extract these from a captured client token request Protobuf file (see below)
+# Alternatively, you can manually set the APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR and
+# CLIENT_MODEL options
+#
+# These values can be extracted using one of the following methods:
+#
+# - run spotify_profile_monitor with the hidden -z flag without specifying SPOTIFY_USER_URI_ID - it will decode the file
+#   and print the values to stdout, example:
+#       spotify_profile_monitor --token-source client -z <path-to-clienttoken-request-body-file>
+#
+# - use the protoc tool (part of protobuf pip package):
+#       pip install protobuf
+#       protoc --decode_raw < <path-to-clienttoken-request-body-file>
+#
+# - use the built-in Protobuf decoder in your intercepting proxy (if supported)
+#
+# The Protobuf structure is as follows:
+#
+# 1: 1
+# 2 {
+#   1: "APP_VERSION"
+#   2: "DEVICE_ID"
+#   3 {
+#     1 {
+#       4 {
+#         1: "CPU_ARCH"
+#         3: "OS_BUILD"
+#         4: "PLATFORM"
+#         5: "OS_MAJOR"
+#         6: "OS_MINOR"
+#         8: "CLIENT_MODEL"
+#       }
+#     }
+#     2: "SYSTEM_ID"
+#   }
+# }
+#
+# Provide the extracted values below (except for DEVICE_ID and SYSTEM_ID as it was already provided via -w)
 CPU_ARCH = 10
 OS_BUILD = 19045
 PLATFORM = 2
@@ -293,19 +386,11 @@ OS_MAJOR = 9
 OS_MINOR = 9
 CLIENT_MODEL = 34404
 
-# Optional: to extract app_version, cpu_arch, os_build, platform, os_major, os_minor and client_model from
-# binary client token request Protobuf file:
-#
-# - run an intercepting proxy of your choice (like Proxyman)
-# - launch the Spotify desktop client and look for requests to: https://clienttoken.spotify.com/v1/clienttoken
-#   (these requests are sent every time client token expires, usually every 2 weeks)
-# - export the client token request body (a binary Protobuf payload) to a file
-#   (e.g. in Proxyman: right click the request -> Export -> Request Body -> Save File -> <clienttoken-request-body-file>)
-#
-# Can also be set via the -z flag
-CLIENTTOKEN_REQUEST_BODY_FILE = ""
+# App version (e.g. '1.2.62.580.g7e3d9a4f')
+# Leave empty to auto-generate from USER_AGENT
+APP_VERSION = ""
 
-# ------------------------------------------------
+# ---------------------------------------------------------------------
 """
 
 # -------------------------
@@ -316,6 +401,9 @@ CLIENTTOKEN_REQUEST_BODY_FILE = ""
 # Do not change values below - modify them in the configuration section or config file instead
 TOKEN_SOURCE = ""
 SP_DC_COOKIE = ""
+SP_CLIENT_ID = ""
+SP_CLIENT_SECRET = ""
+SP_APP_TOKENS_FILE = ""
 LOGIN_REQUEST_BODY_FILE = ""
 CLIENTTOKEN_REQUEST_BODY_FILE = ""
 LOGIN_URL = ""
@@ -381,7 +469,7 @@ exec(CONFIG_BLOCK, globals())
 DEFAULT_CONFIG_FILENAME = "spotify_profile_monitor.conf"
 
 # List of secret keys to load from env/config
-SECRET_KEYS = ("SP_DC_COOKIE", "REFRESH_TOKEN", "SP_SHA256", "SMTP_PASSWORD")
+SECRET_KEYS = ("SP_DC_COOKIE", "SP_CLIENT_ID", "SP_CLIENT_SECRET", "REFRESH_TOKEN", "SP_SHA256", "SMTP_PASSWORD")
 
 # Strings removed from track names for generating proper Genius search URLs
 re_search_str = r'remaster|extended|original mix|remix|original soundtrack|radio( |-)edit|\(feat\.|( \(.*version\))|( - .*version)'
@@ -459,7 +547,7 @@ import csv
 try:
     import pytz
 except ModuleNotFoundError:
-    raise SystemExit("Error: Couldn't find the pytz library !\n\nTo install it, run:\n    pip3 install pytz\n\nOnce installed, re-run this tool")
+    raise SystemExit("Error: Couldn't find the pytz library !\n\nTo install it, run:\n    pip install pytz\n\nOnce installed, re-run this tool")
 try:
     from tzlocal import get_localzone
 except ImportError:
@@ -497,7 +585,8 @@ retry = Retry(
     backoff_factor=1,
     status_forcelist=[429, 500, 502, 503, 504],
     allowed_methods=["GET", "HEAD", "OPTIONS"],
-    raise_on_status=False
+    raise_on_status=False,
+    respect_retry_after_header=True
 )
 
 adapter = HTTPAdapter(max_retries=retry, pool_connections=100, pool_maxsize=100)
@@ -1049,7 +1138,7 @@ def reload_secrets_signal_handler(sig, frame):
         if LOGIN_REQUEST_BODY_FILE:
             if os.path.isfile(LOGIN_REQUEST_BODY_FILE):
                 try:
-                    DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN = parse_request_body_file(LOGIN_REQUEST_BODY_FILE)
+                    DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN = parse_login_request_body_file(LOGIN_REQUEST_BODY_FILE)
                 except Exception as e:
                     print(f"* Error: Protobuf file ({LOGIN_REQUEST_BODY_FILE}) cannot be processed: {e}")
                 else:
@@ -1118,7 +1207,11 @@ def spotify_extract_id_or_name(s):
 
 # Sends a lightweight request to check Spotify token validity
 def check_token_validity(access_token: str, client_id: Optional[str] = None, user_agent: Optional[str] = None) -> bool:
-    url = "https://api.spotify.com/v1/me"
+    url1 = "https://api.spotify.com/v1/me"
+    url2 = "https://api.spotify.com/v1/browse/categories?limit=1&fields=categories.items(id)"
+
+    url = url2 if TOKEN_SOURCE == "oauth_app" else url1
+
     headers = {"Authorization": f"Bearer {access_token}"}
 
     if user_agent is not None:
@@ -1272,7 +1365,7 @@ def generate_totp():
     return pyotp.TOTP(secret, digits=6, interval=30)
 
 
-# Retrieves a new Spotify access token using the sp_dc cookie, tries first with mode "transport" and if needed with "init"
+# Refreshes the Spotify access token using the sp_dc cookie, tries first with mode "transport" and if needed with "init"
 def refresh_access_token_from_sp_dc(sp_dc: str) -> dict:
     transport = True
     init = True
@@ -1382,11 +1475,7 @@ def spotify_get_access_token_from_sp_dc(sp_dc: str):
             retry += 1
             time.sleep(TOKEN_RETRY_TIMEOUT)
         else:
-            # print("* Token is valid")
             break
-
-    # print("Spotify Access Token:", SP_CACHED_ACCESS_TOKEN)
-    # print("Token expires at:", time.ctime(SP_TOKEN_EXPIRES_AT))
 
     if retry == max_retries:
         if SP_CACHED_ACCESS_TOKEN is not None:
@@ -1395,6 +1484,37 @@ def spotify_get_access_token_from_sp_dc(sp_dc: str):
             return SP_CACHED_ACCESS_TOKEN
         else:
             raise RuntimeError(f"Failed to obtain a valid Spotify access token after {max_retries} attempts")
+
+    return SP_CACHED_ACCESS_TOKEN
+
+
+# ----------------------------------------------------------
+# Supporting functions when token source is set to oauth_app
+# ----------------------------------------------------------
+
+
+# Fetches Spotify access token based on provided sp_client_id & sp_client_secret values (Client Credentials OAuth Flow)
+def spotify_get_access_token_from_oauth_app(sp_client_id, sp_client_secret):
+    global SP_CACHED_ACCESS_TOKEN
+
+    try:
+        from spotipy.oauth2 import SpotifyClientCredentials
+        from spotipy.cache_handler import CacheFileHandler, MemoryCacheHandler
+    except ImportError:
+        print("* Warning: the 'spotipy' package is required for 'oauth_app' token source, install it with `pip install spotipy`")
+        return None
+
+    if SP_CACHED_ACCESS_TOKEN and check_token_validity(SP_CACHED_ACCESS_TOKEN):
+        return SP_CACHED_ACCESS_TOKEN
+
+    if SP_APP_TOKENS_FILE:
+        cache_handler = CacheFileHandler(cache_path=SP_APP_TOKENS_FILE)
+    else:
+        cache_handler = MemoryCacheHandler()
+
+    auth_manager = SpotifyClientCredentials(client_id=sp_client_id, client_secret=sp_client_secret, cache_handler=cache_handler)
+
+    SP_CACHED_ACCESS_TOKEN = auth_manager.get_access_token(as_dict=False)
 
     return SP_CACHED_ACCESS_TOKEN
 
@@ -1460,13 +1580,15 @@ def encode_nested_field(tag, nested_bytes):
 # Builds the Spotify Protobuf login request body
 def build_spotify_auth_protobuf(device_id, system_id, user_uri_id, refresh_token):
     """
-    1 {
-      1: "device_id"
-      2: "system_id"
-    }
-    100 {
-      1: "user_uri_id"
-      2: "refresh_token"
+    {
+      1: {
+           1: "device_id",
+           2: "system_id"
+         },
+      100: {
+           1: "user_uri_id",
+           2: "refresh_token"
+         }
     }
     """
     device_info_msg = encode_string_field(1, device_id) + encode_string_field(2, system_id)
@@ -1531,7 +1653,7 @@ def parse_protobuf_message(data):
 
 # Parses the Protobuf-encoded login request body file (as dumped for example by Proxyman) and returns a tuple:
 # (device_id, system_id, user_uri_id, refresh_token)
-def parse_request_body_file(file_path):
+def parse_login_request_body_file(file_path):
     """
     {
       1: {
@@ -1608,6 +1730,26 @@ def ensure_dict(value):
 # Parses the Protobuf-encoded client token request body file (as dumped for example by Proxyman) and returns a tuple:
 # (app_version, device_id, system_id, cpu_arch, os_build, platform, os_major, os_minor, client_model)
 def parse_clienttoken_request_body_file(file_path):
+    """
+        1: 1 (const)
+        2: {
+          1: "app_version"
+          2: "device_id"
+          3: {
+            1: {
+              4: {
+                1: "cpu_arch"
+                3: "os_build"
+                4: "platform"
+                5: "os_major"
+                6: "os_minor"
+                8: "client_model"
+              }
+            }
+            2: "system_id"
+          }
+        }
+    """
 
     with open(file_path, "rb") as f:
         data = f.read()
@@ -1668,13 +1810,20 @@ def build_clienttoken_request_protobuf(app_version, device_id, system_id, cpu_ar
     """
         1: 1 (const)
         2: {
-          1: app_version
-          2: device_id
+          1: "app_version"
+          2: "device_id"
           3: {
             1: {
-              4: device_details
+              4: {
+                1: "cpu_arch"
+                3: "os_build"
+                4: "platform"
+                5: "os_major"
+                6: "os_minor"
+                8: "client_model"
+              }
             }
-            2: system_id
+            2: "system_id"
           }
         }
     """
@@ -1999,7 +2148,16 @@ def spotify_convert_url_to_uri(url):
 
 
 # Gets basic information about access token owner
-def spotify_get_current_user(access_token) -> dict | None:
+def spotify_get_current_user_or_app(access_token) -> dict | None:
+
+    if TOKEN_SOURCE == "oauth_app":
+
+        app_info = {
+            "type": "app_token",
+            "client_id": SP_CLIENT_ID
+        }
+        return app_info
+
     url = "https://api.spotify.com/v1/me"
 
     headers = {
@@ -2223,85 +2381,111 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
 
 # Returns detailed info about user with specified URI
 def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_played_limit):
-    if get_playlists:
-        url = f"https://spclient.wg.spotify.com/user-profile-view/v3/profile/{user_uri_id}?playlist_limit={PLAYLISTS_LIMIT}&artist_limit={recently_played_limit}&episode_limit=10&market=from_token"
-    else:
-        url = f"https://spclient.wg.spotify.com/user-profile-view/v3/profile/{user_uri_id}?playlist_limit=0&artist_limit={recently_played_limit}&episode_limit=10&market=from_token"
-    headers = {
-        "Authorization": f"Bearer {access_token}",
-        "User-Agent": USER_AGENT
+    # URL used for cookie and client token sources
+    url1 = f"https://spclient.wg.spotify.com/user-profile-view/v3/profile/{user_uri_id}?playlist_limit={PLAYLISTS_LIMIT if get_playlists else 0}&artist_limit={recently_played_limit}&episode_limit=10&market=from_token"
+
+    # URLs used for oauth_app token source
+    url2 = f"https://api.spotify.com/v1/users/{user_uri_id}"
+    url2_pl = f"https://api.spotify.com/v1/users/{user_uri_id}/playlists?limit={PLAYLISTS_LIMIT if get_playlists else 0}"
+
+    def _rq(url: str, **kw) -> dict:
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "User-Agent": USER_AGENT,
+            **kw.pop("extra_headers", {})
+        }
+        if TOKEN_SOURCE == "cookie":
+            headers["Client-Id"] = SP_CACHED_CLIENT_ID
+        response = SESSION.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL, **kw)
+        response.raise_for_status()
+        return response.json()
+
+    def _trim(items: list[dict], keys=("image_url", "is_following", "name", "followers_count")) -> list[dict]:
+        if isinstance(items, list):
+            for d in items:
+                for k in keys:
+                    d.pop(k, None)
+        return items or []
+
+    def _safe_int(raw, field: str) -> int:
+        if raw is None:
+            return 0
+        try:
+            return int(raw)
+        except (ValueError, TypeError):
+            raise ValueError(f"User {user_uri_id} {field} count ('{raw}') is not a valid integer")
+
+    out = {
+        "sp_username": "",
+        "sp_user_followers_count": 0,
+        "sp_user_show_follows": None,
+        "sp_user_followings_count": 0,
+        "sp_user_public_playlists_count": 0,
+        "sp_user_public_playlists_uris": [],
+        "sp_user_recently_played_artists": [],
+        "sp_user_image_url": ""
     }
 
-    if TOKEN_SOURCE == "cookie":
-        headers.update({
-            "Client-Id": SP_CACHED_CLIENT_ID
+    if TOKEN_SOURCE in {"cookie", "client"}:
+
+        json_response = _rq(url1)
+
+        out.update({
+            "sp_username": json_response.get("name", ""),
+            "sp_user_followers_count": _safe_int(json_response.get("followers_count"), "followers"),
+            "sp_user_show_follows": json_response.get("show_follows"),
+            "sp_user_followings_count": _safe_int(json_response.get("following_count"), "followings"),
+            "sp_user_image_url": json_response.get("image_url", "")
         })
-
-    try:
-        response = SESSION.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
-        response.raise_for_status()
-        json_response = response.json()
-        # print(json.dumps(json_response, indent=2, sort_keys=True))
-
-        sp_username = json_response.get("name", "")
-
-        raw_followers_count = json_response.get("followers_count")
-        if raw_followers_count is None:
-            sp_user_followers_count = 0
-        else:
-            try:
-                sp_user_followers_count = int(raw_followers_count)
-            except (ValueError, TypeError):
-                raise ValueError(f"User {user_uri_id} followers count ('{raw_followers_count}') is not a valid integer")
-
-        sp_user_show_follows = json_response.get("show_follows")
-
-        raw_following_count = json_response.get("following_count")
-        if raw_following_count is None:
-            sp_user_followings_count = 0
-        else:
-            try:
-                sp_user_followings_count = int(raw_following_count)
-            except (ValueError, TypeError):
-                raise ValueError(f"User {user_uri_id} followings count ('{raw_following_count}') is not a valid integer")
-
-        sp_user_image_url = json_response.get("image_url", "")
-
-        actual_processed_playlists = []
-        sp_user_public_playlists_count = 0
 
         if get_playlists:
             raw_playlist_data_from_api = json_response.get("public_playlists")
+            current_list_to_process = raw_playlist_data_from_api if isinstance(raw_playlist_data_from_api, list) else []
 
-            if isinstance(raw_playlist_data_from_api, list):
-                current_list_to_process = raw_playlist_data_from_api
+            if not GET_ALL_PLAYLISTS:
+                current_list_to_process = [d for d in current_list_to_process if isinstance(d, dict) and d.get("owner_uri") == f"spotify:user:{user_uri_id}"]
 
-                if not GET_ALL_PLAYLISTS:
-                    current_list_to_process = [
-                        d for d in current_list_to_process
-                        if isinstance(d, dict) and d.get('owner_uri', "") == 'spotify:user:' + str(user_uri_id)
-                    ]
+            actual_processed_playlists = [d for d in current_list_to_process if isinstance(d, dict)]
 
-                actual_processed_playlists = [d for d in current_list_to_process if isinstance(d, dict)]
+            trimmed_playlists = _trim(actual_processed_playlists)
 
-                remove_key_from_list_of_dicts(actual_processed_playlists, 'image_url')
-                remove_key_from_list_of_dicts(actual_processed_playlists, 'is_following')
-                remove_key_from_list_of_dicts(actual_processed_playlists, 'name')
-                remove_key_from_list_of_dicts(actual_processed_playlists, 'followers_count')
+            out["sp_user_public_playlists_uris"] = trimmed_playlists
+            out["sp_user_public_playlists_count"] = len(trimmed_playlists)
 
-                sp_user_public_playlists_count = len(actual_processed_playlists)
+        raw_artists = json_response.get("recently_played_artists")
+        artists_data = raw_artists if isinstance(raw_artists, list) else []
+        for d in artists_data:
+            if isinstance(d, dict):
+                d.pop("image_url", None)
+                d.pop("followers_count", None)
+        out["sp_user_recently_played_artists"] = artists_data
 
-        sp_user_recently_played_artists = json_response.get("recently_played_artists")
-        remove_key_from_list_of_dicts(sp_user_recently_played_artists, 'image_url')
-        remove_key_from_list_of_dicts(sp_user_recently_played_artists, 'followers_count')
+    else:  # app-only token
+        json_response = _rq(url2)
 
-        return {"sp_username": sp_username, "sp_user_followers_count": sp_user_followers_count, "sp_user_show_follows": sp_user_show_follows, "sp_user_followings_count": sp_user_followings_count, "sp_user_public_playlists_count": sp_user_public_playlists_count, "sp_user_public_playlists_uris": actual_processed_playlists, "sp_user_recently_played_artists": sp_user_recently_played_artists, "sp_user_image_url": sp_user_image_url}
-    except Exception:
-        raise
+        out.update({
+            "sp_username": json_response.get("display_name", ""),
+            "sp_user_followers_count": _safe_int((json_response.get("followers") or {}).get("total"), "followers"),
+            "sp_user_image_url": (json_response.get("images") or [{}])[0].get("url", "")
+        })
+
+        if get_playlists:
+            while url2_pl:
+                json_response = _rq(url2_pl)
+                raw_playlist_data_from_api = json_response.get("items")
+                current_list_to_process = raw_playlist_data_from_api if isinstance(raw_playlist_data_from_api, list) else []
+                out["sp_user_public_playlists_uris"].extend({"uri": p.get("uri"), "owner_uri": p.get("owner", {}).get("uri")} for p in current_list_to_process if isinstance(p, dict) and (GET_ALL_PLAYLISTS or p.get("owner", {}).get("uri") == f"spotify:user:{user_uri_id}"))
+                url2_pl = json_response.get("next")
+            out["sp_user_public_playlists_count"] = len(out["sp_user_public_playlists_uris"])
+
+    return out
 
 
 # Returns followings for user with specified URI
 def spotify_get_user_followings(access_token, user_uri_id):
+    if TOKEN_SOURCE not in {"cookie", "client"}:
+        return {"sp_user_followings": []}
+
     url = f"https://spclient.wg.spotify.com/user-profile-view/v3/profile/{user_uri_id}/following?market=from_token"
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -2334,6 +2518,9 @@ def spotify_get_user_followings(access_token, user_uri_id):
 
 # Returns followers for user with specified URI
 def spotify_get_user_followers(access_token, user_uri_id):
+    if TOKEN_SOURCE not in {"cookie", "client"}:
+        return {"sp_user_followers": []}
+
     url = f"https://spclient.wg.spotify.com/user-profile-view/v3/profile/{user_uri_id}/followers?market=from_token"
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -2377,9 +2564,12 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
         list_operation = "* Listing & saving" if csv_file_name else "* Listing"
         print(f"{list_operation} tracks for playlist '{playlist_url}' ...\n")
 
-    user_info = spotify_get_current_user(sp_accessToken)
+    user_info = spotify_get_current_user_or_app(sp_accessToken)
     if user_info and not CLEAN_OUTPUT:
-        print(f"Token belongs to:\t{user_info.get('display_name', '')} (via {TOKEN_SOURCE})\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
+        if TOKEN_SOURCE == "oauth_app":
+            print(f"Token belongs to:\t{user_info.get('client_id', '')} (via {TOKEN_SOURCE})\n")
+        else:
+            print(f"Token belongs to:\t{user_info.get('display_name', '')} (via {TOKEN_SOURCE})\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
 
     if not CLEAN_OUTPUT:
         print("─" * HORIZONTAL_LINE)
@@ -2576,13 +2766,16 @@ def spotify_list_liked_tracks(sp_accessToken, csv_file_name, format_type=2):
 
     if not CLEAN_OUTPUT:
         list_operation = "* Listing & saving" if csv_file_name else "* Listing"
-        print(f"{list_operation} liked tracks by the user owning the token ...\n")
+        print(f"{list_operation} liked tracks for the user owning the token ...\n")
 
-    user_info = spotify_get_current_user(sp_accessToken)
+    user_info = spotify_get_current_user_or_app(sp_accessToken)
     if user_info:
         username = user_info.get("display_name", "")
         if not CLEAN_OUTPUT:
-            print(f"Token belongs to:\t{username} (via {TOKEN_SOURCE})\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
+            if TOKEN_SOURCE == "oauth_app":
+                print(f"Token belongs to:\t{user_info.get('client_id', '')} (via {TOKEN_SOURCE})\n")
+            else:
+                print(f"Token belongs to:\t{username} (via {TOKEN_SOURCE})\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
 
     if not CLEAN_OUTPUT:
         print("─" * HORIZONTAL_LINE)
@@ -2686,9 +2879,12 @@ def spotify_search_users(access_token, username):
 
     print(f"* Searching for users with '{username}' string ...\n")
 
-    user_info = spotify_get_current_user(access_token)
+    user_info = spotify_get_current_user_or_app(access_token)
     if user_info:
-        print(f"Token belongs to:\t{user_info.get('display_name', '')} (via {TOKEN_SOURCE})\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
+        if TOKEN_SOURCE == "oauth_app":
+            print(f"Token belongs to:\t{user_info.get('client_id', '')} (via {TOKEN_SOURCE})\n")
+        else:
+            print(f"Token belongs to:\t{user_info.get('display_name', '')} (via {TOKEN_SOURCE})\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
 
     print("─" * HORIZONTAL_LINE)
 
@@ -2927,9 +3123,12 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
 
     print(f"* Getting detailed info for user with URI ID '{user_uri_id}' ...\n")
 
-    user_info = spotify_get_current_user(sp_accessToken)
+    user_info = spotify_get_current_user_or_app(sp_accessToken)
     if user_info:
-        print(f"Token belongs to:\t{user_info.get('display_name', '')} (via {TOKEN_SOURCE})\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
+        if TOKEN_SOURCE == "oauth_app":
+            print(f"Token belongs to:\t{user_info.get('client_id', '')} (via {TOKEN_SOURCE})\n")
+        else:
+            print(f"Token belongs to:\t{user_info.get('display_name', '')} (via {TOKEN_SOURCE})\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
 
     sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS, RECENTLY_PLAYED_ARTISTS_LIMIT_INFO)
     sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
@@ -2967,13 +3166,13 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
 
     display_tmp_pic(image_url, f"spotify_{user_uri_id}_profile_pic_tmp_info.jpeg", imgcat_exe, True)
 
-    print(f"\nFollowers:\t\t{followers_count}")
+    print(f"\nFollowers:\t\t{followers_count}" + (" (list not supported with oauth_app)" if TOKEN_SOURCE == "oauth_app" else ""))
     if followers:
         print()
         for f_dict in followers:
             if "name" in f_dict and "uri" in f_dict:
                 print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
-    print(f"\nFollowings:\t\t{followings_count}")
+    print(f"\nFollowings:\t\t{followings_count}" + (" (list and count not supported with oauth_app)" if TOKEN_SOURCE == "oauth_app" else ""))
     if followings:
         print()
         for f_dict in followings:
@@ -2999,9 +3198,12 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
 def spotify_get_recently_played_artists(sp_accessToken, user_uri_id):
     print(f"* Getting list of recently played artists for user with URI ID '{user_uri_id}' ...\n")
 
-    user_info = spotify_get_current_user(sp_accessToken)
+    user_info = spotify_get_current_user_or_app(sp_accessToken)
     if user_info:
-        print(f"Token belongs to:\t{user_info.get('display_name', '')} (via {TOKEN_SOURCE})\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
+        if TOKEN_SOURCE == "oauth_app":
+            print(f"Token belongs to:\t{user_info.get('client_id', '')} (via {TOKEN_SOURCE})\n")
+        else:
+            print(f"Token belongs to:\t{user_info.get('display_name', '')} (via {TOKEN_SOURCE})\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
 
     sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, False, RECENTLY_PLAYED_ARTISTS_LIMIT)
 
@@ -3029,9 +3231,12 @@ def spotify_get_recently_played_artists(sp_accessToken, user_uri_id):
 def spotify_get_followers_and_followings(sp_accessToken, user_uri_id):
     print(f"* Getting followers & followings for user with URI ID '{user_uri_id}' ...\n")
 
-    user_info = spotify_get_current_user(sp_accessToken)
+    user_info = spotify_get_current_user_or_app(sp_accessToken)
     if user_info:
-        print(f"Token belongs to:\t{user_info.get('display_name', '')} (via {TOKEN_SOURCE})\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
+        if TOKEN_SOURCE == "oauth_app":
+            print(f"Token belongs to:\t{user_info.get('client_id', '')} (via {TOKEN_SOURCE})\n")
+        else:
+            print(f"Token belongs to:\t{user_info.get('display_name', '')} (via {TOKEN_SOURCE})\n\t\t\t[ {user_info.get('spotify_url')} ]\n")
 
     sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, False, 0)
     image_url = sp_user_data["sp_user_image_url"]
@@ -3061,13 +3266,13 @@ def spotify_get_followers_and_followings(sp_accessToken, user_uri_id):
 
     print(f"User profile picture:\t{image_url != ''}")
 
-    print(f"\nFollowers:\t\t{followers_count}")
+    print(f"\nFollowers:\t\t{followers_count}" + (" (list not supported with oauth_app)" if TOKEN_SOURCE == "oauth_app" else ""))
     if followers:
         print()
         for f_dict in followers:
             if "name" in f_dict and "uri" in f_dict:
                 print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
-    print(f"\nFollowings:\t\t{followings_count}")
+    print(f"\nFollowings:\t\t{followings_count}" + (" (list and count not supported with oauth_app)" if TOKEN_SOURCE == "oauth_app" else ""))
     if followings:
         print()
         for f_dict in followings:
@@ -3100,7 +3305,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
     added_f_list_mbody = ""
     removed_f_list_mbody = ""
 
-    if added_f_list or removed_f_list:
+    if added_f_list or removed_f_list or ((f_str == "Followers" or f_str == "Followings") and TOKEN_SOURCE == "oauth_app"):
         print(f"* {f_str} number changed {f_str_by_or_from} user {username} from {f_old_count} to {f_count} ({f_diff_str})\n")
 
     if added_f_list:
@@ -3342,10 +3547,12 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     try:
         if TOKEN_SOURCE == "client":
             sp_accessToken = spotify_get_access_token_from_client_auto(DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN)
+        elif TOKEN_SOURCE == "oauth_app":
+            sp_accessToken = spotify_get_access_token_from_oauth_app(SP_CLIENT_ID, SP_CLIENT_SECRET)
         else:
             sp_accessToken = spotify_get_access_token_from_sp_dc(SP_DC_COOKIE)
         sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS, 0)
-        user_info = spotify_get_current_user(sp_accessToken)
+        user_info = spotify_get_current_user_or_app(sp_accessToken)
         sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
         sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
     except Exception as e:
@@ -3372,7 +3579,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         sys.exit(1)
 
     if user_info:
-        print(f"Token belongs to:\t\t{user_info.get('display_name', '')} (via {TOKEN_SOURCE})\n\t\t\t\t[ {user_info.get('spotify_url')} ]\n")
+        if TOKEN_SOURCE == "oauth_app":
+            print(f"Token belongs to:\t\t{user_info.get('client_id', '')} (via {TOKEN_SOURCE})\n")
+        else:
+            print(f"Token belongs to:\t\t{user_info.get('display_name', '')} (via {TOKEN_SOURCE})\n\t\t\t\t[ {user_info.get('spotify_url')} ]\n")
 
     username = sp_user_data["sp_username"]
     image_url = sp_user_data["sp_user_image_url"]
@@ -3407,7 +3617,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     display_tmp_pic(image_url, f"spotify_profile_{FILE_SUFFIX}_pic_tmp_info.jpeg", imgcat_exe, True)
 
     print(f"\nFollowers:\t\t\t{followers_count}")
-    print(f"Followings:\t\t\t{followings_count}")
+    print(f"Followings:\t\t\t{followings_count}" + (" (count not supported with oauth_app)" if TOKEN_SOURCE == "oauth_app" else ""))
 
     list_of_playlists = []
 
@@ -3633,6 +3843,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         try:
             if TOKEN_SOURCE == "client":
                 sp_accessToken = spotify_get_access_token_from_client_auto(DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN)
+            elif TOKEN_SOURCE == "oauth_app":
+                sp_accessToken = spotify_get_access_token_from_oauth_app(SP_CLIENT_ID, SP_CLIENT_SECRET)
             else:
                 sp_accessToken = spotify_get_access_token_from_sp_dc(SP_DC_COOKIE)
             sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS, 0)
@@ -4272,7 +4484,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
 
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, SP_LOGFILE, PROFILE_NOTIFICATION, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, ALARM_TIMEOUT, pyotp, CLEAN_OUTPUT, USER_AGENT
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, SP_CLIENT_ID, SP_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, SP_LOGFILE, PROFILE_NOTIFICATION, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, ALARM_TIMEOUT, pyotp, CLEAN_OUTPUT, USER_AGENT, SP_APP_TOKENS_FILE
 
     if "--generate-config" in sys.argv:
         print(CONFIG_BLOCK.strip("\n"))
@@ -4330,13 +4542,13 @@ def main():
     parser.add_argument(
         "--token-source",
         dest="token_source",
-        choices=["cookie", "client"],
-        help="Method to obtain Spotify access token: 'cookie' (via sp_dc cookie) or 'client' (via desktop client login protobuf)"
+        choices=["cookie", "client", "oauth_app"],
+        help="Method to obtain Spotify access token: 'cookie' (via sp_dc cookie), 'client' (via desktop client login protobuf) or 'oauth_app' (via client credentials oauth flow)"
     )
 
-    # Cookie token source credentials (used when token source is set to cookie)
-    api_creds = parser.add_argument_group("Cookie token source credentials")
-    api_creds.add_argument(
+    # Auth details used when token source is set to cookie
+    cookie_auth = parser.add_argument_group("Auth details for 'cookie' token source")
+    cookie_auth.add_argument(
         "-u", "--spotify-dc-cookie",
         dest="spotify_dc_cookie",
         metavar="SP_DC_COOKIE",
@@ -4344,20 +4556,30 @@ def main():
         help="Spotify sp_dc cookie"
     )
 
-    # Client token source credentials (used when token source is set to client)
-    client_creds = parser.add_argument_group("Client token source credentials")
-    client_creds.add_argument(
+    # Auth details used when token source is set to client
+    client_auth = parser.add_argument_group("Auth details for 'client' token source")
+    client_auth.add_argument(
         "-w", "--login-request-body-file",
         dest="login_request_body_file",
         metavar="PROTOBUF_FILENAME",
         help="Read device_id, system_id, user_uri_id and refresh_token from binary Protobuf login file"
     )
 
-    client_creds.add_argument(
+    client_auth.add_argument(
         "-z", "--clienttoken-request-body-file",
         dest="clienttoken_request_body_file",
         metavar="PROTOBUF_FILENAME",
-        help="Read app_version, cpu_arch, os_build, platform, os_major, os_minor and client_model from binary Protobuf client token file"
+        # help="Read app_version, cpu_arch, os_build, platform, os_major, os_minor and client_model from binary Protobuf client token file"
+        help=argparse.SUPPRESS
+    )
+
+    # Auth details used when token source is set to oauth_app
+    oauth_app_auth = parser.add_argument_group("Auth details for 'oauth_app' token source")
+    oauth_app_auth.add_argument(
+        "-r", "--oauth-app-creds",
+        dest="oauth_app_creds",
+        metavar='SPOTIFY_CLIENT_ID:SPOTIFY_CLIENT_SECRET',
+        help="Spotify OAuth app client credentials - specify both values as SPOTIFY_CLIENT_ID:SPOTIFY_CLIENT_SECRET"
     )
 
     # Notifications
@@ -4577,7 +4799,7 @@ def main():
         except ImportError:
             env_path = DOTENV_FILE if DOTENV_FILE else None
             if env_path:
-                print(f"* Warning: Cannot load dotenv file '{env_path}' because 'python-dotenv' is not installed\n\nTo install it, run:\n    pip3 install python-dotenv\n\nOnce installed, re-run this tool\n")
+                print(f"* Warning: Cannot load dotenv file '{env_path}' because 'python-dotenv' is not installed\n\nTo install it, run:\n    pip install python-dotenv\n\nOnce installed, re-run this tool\n")
 
     if env_path:
         for secret in SECRET_KEYS:
@@ -4613,7 +4835,13 @@ def main():
         try:
             import pyotp
         except ModuleNotFoundError:
-            raise SystemExit("Error: Couldn't find the pyotp library !\n\nTo install it, run:\n    pip3 install pyotp\n\nOnce installed, re-run this tool")
+            raise SystemExit("Error: Couldn't find the pyotp library !\n\nTo install it, run:\n    pip install pyotp\n\nOnce installed, re-run this tool")
+
+    if TOKEN_SOURCE == "oauth_app":
+        try:
+            from spotipy.oauth2 import SpotifyClientCredentials
+        except ModuleNotFoundError:
+            raise SystemExit("Error: Couldn't find the spotipy library !\n\nTo install it, run:\n    pip install spotipy\n\nOnce installed, re-run this tool")
 
     if args.user_agent:
         USER_AGENT = args.user_agent
@@ -4663,7 +4891,7 @@ def main():
         if LOGIN_REQUEST_BODY_FILE:
             if os.path.isfile(LOGIN_REQUEST_BODY_FILE):
                 try:
-                    DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN = parse_request_body_file(LOGIN_REQUEST_BODY_FILE)
+                    DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN = parse_login_request_body_file(LOGIN_REQUEST_BODY_FILE)
                 except Exception as e:
                     print(f"* Error: Protobuf file ({LOGIN_REQUEST_BODY_FILE}) cannot be processed: {e}")
                     sys.exit(1)
@@ -4679,19 +4907,28 @@ def main():
                 print(f"* Error: Protobuf file ({LOGIN_REQUEST_BODY_FILE}) does not exist")
                 sys.exit(1)
 
-        if any([
-            not LOGIN_URL,
-            not USER_AGENT,
-            not DEVICE_ID,
-            DEVICE_ID == "your_spotify_app_device_id",
-            not SYSTEM_ID,
-            SYSTEM_ID == "your_spotify_app_system_id",
-            not USER_URI_ID,
-            USER_URI_ID == "your_spotify_user_uri_id",
-            not REFRESH_TOKEN,
-            REFRESH_TOKEN == "your_spotify_app_refresh_token",
-        ]):
-            print("* Error: Some login values are empty or incorrect")
+        vals = {
+            "LOGIN_URL": LOGIN_URL,
+            "USER_AGENT": USER_AGENT,
+            "DEVICE_ID": DEVICE_ID,
+            "SYSTEM_ID": SYSTEM_ID,
+            "USER_URI_ID": USER_URI_ID,
+            "REFRESH_TOKEN": REFRESH_TOKEN,
+        }
+        placeholders = {
+            "DEVICE_ID": "your_spotify_app_device_id",
+            "SYSTEM_ID": "your_spotify_app_system_id",
+            "USER_URI_ID": "your_spotify_user_uri_id",
+            "REFRESH_TOKEN": "your_spotify_app_refresh_token",
+        }
+
+        bad = [
+            f"{k} {'missing' if not v else 'is placeholder'}"
+            for k, v in vals.items()
+            if not v or placeholders.get(k) == v
+        ]
+        if bad:
+            print("* Error:", "; ".join(bad))
             sys.exit(1)
 
         clienttoken_request_body_file_param = False
@@ -4735,6 +4972,22 @@ def main():
         else:
             APP_VERSION = app_version_default
 
+    elif TOKEN_SOURCE == "oauth_app":
+        if args.oauth_app_creds:
+            try:
+                SP_CLIENT_ID, SP_CLIENT_SECRET = args.oauth_app_creds.split(":")
+            except ValueError:
+                print("* Error: -r / --oauth-app-creds has invalid format - use SP_CLIENT_ID:SP_CLIENT_SECRET")
+                sys.exit(1)
+
+        if any([
+            not SP_CLIENT_ID,
+            SP_CLIENT_ID == "your_spotify_app_client_id",
+            not SP_CLIENT_SECRET,
+            SP_CLIENT_SECRET == "your_spotify_app_client_secret",
+        ]):
+            print("* Error: SP_CLIENT_ID or SP_CLIENT_SECRET (-r / --oauth-app-creds) value is empty or incorrect")
+            sys.exit(1)
     else:
         if args.spotify_dc_cookie:
             SP_DC_COOKIE = args.spotify_dc_cookie
@@ -4749,24 +5002,32 @@ def main():
         except Exception:
             pass
 
+    if SP_APP_TOKENS_FILE:
+        SP_APP_TOKENS_FILE = os.path.expanduser(SP_APP_TOKENS_FILE)
+
     if args.show_user_info:
         print("* Getting basic information about access token owner ...\n")
         try:
             if TOKEN_SOURCE == "client":
                 sp_accessToken = spotify_get_access_token_from_client_auto(DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN)
+            elif TOKEN_SOURCE == "oauth_app":
+                sp_accessToken = spotify_get_access_token_from_oauth_app(SP_CLIENT_ID, SP_CLIENT_SECRET)
             else:
                 sp_accessToken = spotify_get_access_token_from_sp_dc(SP_DC_COOKIE)
-            user_info = spotify_get_current_user(sp_accessToken)
+            user_info = spotify_get_current_user_or_app(sp_accessToken)
 
             if user_info:
-                print(f"Token fetched via {TOKEN_SOURCE} belongs to:\n")
+                print(f"Token fetched via '{TOKEN_SOURCE}' belongs to:\n")
 
-                print(f"Username:\t\t{user_info.get('display_name', '')}")
-                print(f"User URI ID:\t\t{user_info.get('uri', '').split('spotify:user:', 1)[1]}")
-                print(f"User URL:\t\t{user_info.get('spotify_url', '')}")
-                print(f"User e-mail:\t\t{user_info.get('email', '')}")
-                print(f"User country:\t\t{user_info.get('country', '')}")
-                print(f"Is Premium?:\t\t{user_info.get('is_premium', '')}")
+                if TOKEN_SOURCE == "oauth_app":
+                    print(f"App client ID:\t\t{user_info.get('client_id', '')}")
+                else:
+                    print(f"Username:\t\t{user_info.get('display_name', '')}")
+                    print(f"User URI ID:\t\t{user_info.get('uri', '').split('spotify:user:', 1)[1]}")
+                    print(f"User URL:\t\t{user_info.get('spotify_url', '')}")
+                    print(f"User e-mail:\t\t{user_info.get('email', '')}")
+                    print(f"User country:\t\t{user_info.get('country', '')}")
+                    print(f"Is Premium?:\t\t{user_info.get('is_premium', '')}")
             else:
                 print("Failed to retrieve user info.")
 
@@ -4794,6 +5055,8 @@ def main():
         try:
             if TOKEN_SOURCE == "client":
                 sp_accessToken = spotify_get_access_token_from_client_auto(DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN)
+            elif TOKEN_SOURCE == "oauth_app":
+                sp_accessToken = spotify_get_access_token_from_oauth_app(SP_CLIENT_ID, SP_CLIENT_SECRET)
             else:
                 sp_accessToken = spotify_get_access_token_from_sp_dc(SP_DC_COOKIE)
             spotify_list_tracks_for_playlist(sp_accessToken, args.list_tracks_for_playlist, CSV_FILE, CSV_FILE_FORMAT_EXPORT)
@@ -4806,9 +5069,14 @@ def main():
         sys.exit(0)
 
     if args.list_liked_tracks:
+        if TOKEN_SOURCE != "client":
+            print(f"* Error: List of liked tracks is not supported with the '{TOKEN_SOURCE}' method ! Use the 'client' token source instead !")
+            sys.exit(2)
         try:
             if TOKEN_SOURCE == "client":
                 sp_accessToken = spotify_get_access_token_from_client_auto(DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN)
+            elif TOKEN_SOURCE == "oauth_app":
+                sp_accessToken = spotify_get_access_token_from_oauth_app(SP_CLIENT_ID, SP_CLIENT_SECRET)
             else:
                 sp_accessToken = spotify_get_access_token_from_sp_dc(SP_DC_COOKIE)
             spotify_list_liked_tracks(sp_accessToken, CSV_FILE, CSV_FILE_FORMAT_EXPORT)
@@ -4821,12 +5089,17 @@ def main():
         sys.exit(0)
 
     if args.search_username:
+        if TOKEN_SOURCE not in ("cookie", "client"):
+            print(f"* Error: Search feature is not supported with the '{TOKEN_SOURCE}' method ! Use a different token source !")
+            sys.exit(2)
         if not SP_SHA256 or SP_SHA256 == "your_spotify_client_sha256":
             print("* Error: Wrong SP_SHA256 value !")
             sys.exit(1)
         try:
             if TOKEN_SOURCE == "client":
                 sp_accessToken = spotify_get_access_token_from_client_auto(DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN)
+            elif TOKEN_SOURCE == "oauth_app":
+                sp_accessToken = spotify_get_access_token_from_oauth_app(SP_CLIENT_ID, SP_CLIENT_SECRET)
             else:
                 sp_accessToken = spotify_get_access_token_from_sp_dc(SP_DC_COOKIE)
             spotify_search_users(sp_accessToken, args.search_username)
@@ -4844,6 +5117,8 @@ def main():
         try:
             if TOKEN_SOURCE == "client":
                 sp_accessToken = spotify_get_access_token_from_client_auto(DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN)
+            elif TOKEN_SOURCE == "oauth_app":
+                sp_accessToken = spotify_get_access_token_from_oauth_app(SP_CLIENT_ID, SP_CLIENT_SECRET)
             else:
                 sp_accessToken = spotify_get_access_token_from_sp_dc(SP_DC_COOKIE)
             spotify_get_user_details(sp_accessToken, args.user_id)
@@ -4860,10 +5135,15 @@ def main():
         sys.exit(0)
 
     if args.recently_played_artists:
+        if TOKEN_SOURCE not in ("cookie", "client"):
+            print(f"* Error: List of recently played artists is not supported with the '{TOKEN_SOURCE}' method ! Use a different token source !")
+            sys.exit(2)
         sp_accessToken = ""
         try:
             if TOKEN_SOURCE == "client":
                 sp_accessToken = spotify_get_access_token_from_client_auto(DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN)
+            elif TOKEN_SOURCE == "oauth_app":
+                sp_accessToken = spotify_get_access_token_from_oauth_app(SP_CLIENT_ID, SP_CLIENT_SECRET)
             else:
                 sp_accessToken = spotify_get_access_token_from_sp_dc(SP_DC_COOKIE)
             spotify_get_recently_played_artists(sp_accessToken, args.user_id)
@@ -4884,6 +5164,8 @@ def main():
         try:
             if TOKEN_SOURCE == "client":
                 sp_accessToken = spotify_get_access_token_from_client_auto(DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN)
+            elif TOKEN_SOURCE == "oauth_app":
+                sp_accessToken = spotify_get_access_token_from_oauth_app(SP_CLIENT_ID, SP_CLIENT_SECRET)
             else:
                 sp_accessToken = spotify_get_access_token_from_sp_dc(SP_DC_COOKIE)
             spotify_get_followers_and_followings(sp_accessToken, args.user_id)
@@ -4973,6 +5255,8 @@ def main():
     print(f"* Ignore listed playlists:\t{bool(PLAYLISTS_TO_SKIP_FILE)}" + (f" ({PLAYLISTS_TO_SKIP_FILE})" if PLAYLISTS_TO_SKIP_FILE else ""))
     print(f"* Display profile pics:\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
     print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
+    if TOKEN_SOURCE == "oauth_app":
+        print(f"* Spotify token cache file:\t{SP_APP_TOKENS_FILE or 'None (memory only)'}")
     print(f"* Configuration file:\t\t{cfg_path}")
     print(f"* Dotenv file:\t\t\t{env_path or 'None'}")
     print(f"* Local timezone:\t\t{LOCAL_TIMEZONE}\n")
