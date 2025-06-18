@@ -2,6 +2,16 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 2.5.2 (18 Jun 2025)
+
+**Features and Improvements**:
+
+- **NEW:** Added two new methods (`oauth_app`, `oauth_user`) to obtain Spotify access tokens using official Spotify API (Client Credentials and Authorization Code OAuth flows - requires Spotipy). Check the [Spotify OAuth App](https://github.com/misiektoja/spotify_profile_monitor/blob/main/README.md#spotify-oauth-app) and [Spotify OAuth User](https://github.com/misiektoja/spotify_profile_monitor/blob/main/README.md#spotify-oauth-user) for more info.
+- **IMPROVE:** HTTPAdapter now honors the Retry-After header on 429 responses for better Spotify API rate limit handling
+- **IMPROVE:** Suppressed -z / --clienttoken-request-body-file from help output to reduce confusion (flag remains functional, but hidden)
+- **IMPROVE:** Clarifications in inline comments explaining how to configure Spotify Desktop client method
+- **IMPROVE:** Applied custom user agent to Spotipy-generated requests
+
 # Changes in 2.4 (13 Jun 2025)
 
 **Features and Improvements**:
@@ -9,7 +19,7 @@ This is a high-level summary of the most important changes.
 - **NEW:** Added new `-o` / `--export-for-spotify-monitor` flag for simplified output when exporting playlists (-l) or liked songs (-x) to allow direct import into `spotify_monitor` (thanks [@tomballgithub](https://github.com/tomballgithub))
 - **NEW:** Added new config option (`USER_AGENT`) and flag (`--user-agent`) to set Spotify user agent string
 - **NEW:** Ensured all Spotify requests now include the same user agent, if not specified - it is randomly generated per session for specific type of token source
-- **IMPROVE:** Improved detection when a Spotify user URI ID has been removed
+- **IMPROVE:** Improved detection when a Spotify user has been removed
 - **IMPROVE:** Added more descriptive error messages and covered additional corner cases
 
 # Changes in 2.3.2 (10 Jun 2025)
