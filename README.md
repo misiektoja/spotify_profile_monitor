@@ -23,6 +23,7 @@ NOTE: If you want to track Spotify friends' music activity, check out another to
 - Ability to display and export the list of tracks for a specific playlist (including Liked Songs for the user who owns the Spotify access token)
 - Saving all profile changes (including playlists) with timestamps to the CSV file
 - Clickable Spotify, Apple Music, YouTube Music and Genius Lyrics search URLs printed in the console & included in email notifications
+- Support for four different methods to get a Spotify access token (`sp_dc cookie`, `desktop client`, `OAuth app`, `OAuth user`)
 - Possibility to control the running copy of the script via signals
 
 <p align="center">
@@ -42,6 +43,8 @@ NOTE: If you want to track Spotify friends' music activity, check out another to
    * [Spotify access token source](#spotify-access-token-source)
       * [Spotify sp_dc Cookie](#spotify-sp_dc-cookie)
       * [Spotify Desktop Client](#spotify-desktop-client)
+      * [Spotify OAuth App](#spotify-oauth-app)
+      * [Spotify OAuth User](#spotify-oauth-user)
    * [How to Get a Friend's User URI ID](#how-to-get-a-friends-user-uri-id)
    * [Spotify sha256 (optional)](#spotify-sha256-optional)
    * [Time Zone](#time-zone)
@@ -65,7 +68,7 @@ NOTE: If you want to track Spotify friends' music activity, check out another to
 ## Requirements
 
 * Python 3.6 or higher
-* Libraries: `requests`, `python-dateutil`, `urllib3`, `pyotp`, `pytz`, `tzlocal`, `python-dotenv`
+* Libraries: `requests`, `python-dateutil`, `urllib3`, `pyotp`, `pytz`, `tzlocal`, `python-dotenv`, [Spotipy](https://github.com/spotipy-dev/spotipy)
 
 Tested on:
 
@@ -93,7 +96,7 @@ Download the *[spotify_profile_monitor.py](https://raw.githubusercontent.com/mis
 Install dependencies via pip:
 
 ```sh
-pip install requests python-dateutil urllib3 pyotp pytz tzlocal python-dotenv
+pip install requests python-dateutil urllib3 pyotp pytz tzlocal python-dotenv spotipy
 ```
 
 Alternatively, from the downloaded *[requirements.txt](https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/requirements.txt)*:
@@ -142,65 +145,94 @@ spotify_profile_monitor --generate-config > spotify_profile_monitor.conf
 Edit the `spotify_profile_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 
 <a id="spotify-access-token-source"></a>
-#### Spotify access token source
+### Spotify access token source
 
-The tool supports two methods for obtaining a Spotify access token.
+The tool supports four methods for obtaining a Spotify access token.
 
 It can be configured via the `TOKEN_SOURCE` configuration option or the `--token-source` flag. 
 
-The **recommended method** is `cookie` which uses the sp_dc cookie to retrieve a token from the Spotify web endpoint. This method supports all features except fetching the list of liked tracks for the account that owns the access token (Spotify has recently restricted the token's scope).
+**Recommended: `cookie`** 
 
-The **alternative method** is `client` which uses captured credentials from the Spotify desktop client and a Protobuf-based login flow. This approach is intended for advanced users who want an indefinitely valid token with the widest scope.
+Uses the `sp_dc` cookie to retrieve a token from the Spotify web endpoint. This method is easy to set up and supports all features except fetching the list of liked tracks for the account that owns the access token (due to recent Spotify token's scope restrictions).
+
+**Alternative: `client`** 
+
+Uses captured credentials from the Spotify desktop client and a Protobuf-based login flow. It's more complex to set up, but supports all features. This method is intended for advanced users who want a long-lasting token with the broadest possible access.
+
+**Safe fallback: `oauth_app`** 
+
+Relies on the official Spotify Web API (Client Credentials OAuth flow). This method is easy to set up and safe to use, but has several limitations. The following features are **not** supported:
+- viewing the list of followers/followings
+- accessing the followings count (only the followers count is tracked)
+- getting the list of recently played artists
+- showing other users' playlists added to user profile (unless the user is a collaborator on a playlist owned by other user)
+- fetching the list of liked tracks for the account that owns the access token
+- searching for Spotify users by name
+
+**Personal: `oauth_user`**
+
+Dedicated to tracking the authenticated user's own account via the official Spotify Web API (Authorization Code OAuth flow). I personally use this mode to monitor changes to my own account - such as new or lost followers/followings, likes on my playlists or when a collaborator adds a new song. You can also use this mode to track other users.
+
+This method is easy to set up and safe to use, but has several limitations. 
+
+The following features are **not** supported when monitoring **your own account**:
+- viewing the list of followers
+- viewing the complete list of followings (only followed artists are available; followed users are not included)
+- searching for Spotify users by name
+
+**Note**: If you use `oauth_user` to monitor your own account, the tool will list all your playlists, including private ones.
+
+The following features are **not** supported when monitoring **another user** in this mode:
+- viewing the list of followers/followings
+- accessing the followings count (only the followers count is tracked)
+- getting the list of recently played artists
+- showing other users' playlists added to user profile (unless the user is a collaborator on a playlist owned by other user)
+- searching for Spotify users by name
 
 If no method is specified, the tool defaults to the `cookie` method.
+
+**Important**: It is strongly recommended to use a separate Spotify account with this tool if you obtain access tokens via the `cookie` or `client` methods. These methods interact with internal, undocumented endpoints for many features (like retrieving a list of followers/followings, followings count or recently played artists). If you prefer to use your regular Spotify account, consider the `oauth_app` or `oauth_user` methods - while they have some limitations, the tool remains fully functional with them. That said, while I've never encountered any issues on my own accounts, I can't guarantee that Spotify won't impose restrictions in the future - you've been warned.
 
 <a id="spotify-sp_dc-cookie"></a>
 #### Spotify sp_dc Cookie
 
-It is default method used to obtain a Spotify access token.
+This is the default method used to obtain a Spotify access token.
 
-Log in to [https://open.spotify.com/](https://open.spotify.com/) in your web browser.
+- Log in to [https://open.spotify.com/](https://open.spotify.com/) in your web browser.
 
-Locate and copy the value of the `sp_dc` cookie.
+- Locate and copy the value of the `sp_dc` cookie.
+   - Use your web browser's dev console or **Cookie-Editor** by cgagnier to extract it easily: [https://cookie-editor.com/](https://cookie-editor.com/)
 
-Use your web browser's dev console or **Cookie-Editor** by cgagnier to extract it easily: [https://cookie-editor.com/](https://cookie-editor.com/)
+- Provide the `SP_DC_COOKIE` secret using one of the following methods:
+   - Pass it at runtime with `-u` / `--spotify-dc-cookie`
+   - Set it as an [environment variable](#storing-secrets) (e.g. `export SP_DC_COOKIE=...`)
+   - Add it to [.env file](#storing-secrets) (`SP_DC_COOKIE=...`) for persistent use
+   - Fallback: hard-code it in the code or config file
 
-Provide the `SP_DC_COOKIE` secret using one of the following methods:
- - Pass it at runtime with `-u` / `--spotify-dc-cookie`
- - Set it as an [environment variable](#storing-secrets) (e.g. `export SP_DC_COOKIE=...`)
- - Add it to [.env file](#storing-secrets) (`SP_DC_COOKIE=...`) for persistent use
+If your `sp_dc` cookie expires, the tool will notify you via the console and email. In that case, you'll need to grab the new `sp_dc` cookie value.
 
-Fallback:
- - Hard-code it in the code or config file
-
-You will be informed by the tool once the `sp_dc` cookie expires (proper message on the console and in email).
-
-If you store the `SP_DC_COOKIE` in a dotenv file you can update its value and send a `SIGHUP` signal to the process to reload the file with the new `sp_dc` cookie without restarting the tool. More info in [Storing Secrets](#storing-secrets) and [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix).
-
-**Important**: It is strongly recommended to use a separate Spotify account with this tool. It does not rely on the official Spotify Web API for many features (e.g. retrieving a list of followers/followings, followings count or recently played artists), as these are not supported by the public API.
+If you store the `SP_DC_COOKIE` in a dotenv file you can update its value and send a `SIGHUP` signal to reload the file with the new `sp_dc` cookie without restarting the tool. More info in [Storing Secrets](#storing-secrets) and [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix).
 
 <a id="spotify-desktop-client"></a>
 #### Spotify Desktop Client
 
-To use credentials captured from the Spotify desktop client to obtain an access token, set the `TOKEN_SOURCE` configuration option to `client` or use the `--token-source client` flag.
+This is the alternative method used to obtain a Spotify access token which simulates a login from the real Spotify desktop app using credentials intercepted from a real session.
 
-Run an intercepting proxy of your choice (like [Proxyman](https://proxyman.com)).
+- Run an intercepting proxy of your choice (like [Proxyman](https://proxyman.com)).
 
-Launch the Spotify desktop client and look for POST requests to `https://login{n}.spotify.com/v3/login`
+- Launch the Spotify desktop client and look for POST requests to `https://login{n}.spotify.com/v3/login`
+   - Note: The `login` part is suffixed with one or more digits (e.g. `login5`).
 
-Note: The `login` part is suffixed with one or more digits (e.g. `login5`).
+- If you don't see this request, log out from the Spotify desktop client and log back in.
 
-If you don't see this request, log out from the client and log back in.
-
-Export the login request body (a binary Protobuf payload) to a file.
-
-In Proxyman: ***right click the request → Export → Request Body → Save File***.
+- Export the login request body (a binary Protobuf payload) to a file (e.g. ***login-request-body-file***)
+   - In Proxyman: **right click the request → Export → Request Body → Save File**.
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/assets/proxyman_export_protobuf.png" alt="proxyman_export_protobuf" width="80%"/>
 </p>
 
-Then run the tool with `-w <path-to-login-request-body-file>`:
+- Run the tool with `--token-source client -w <path-to-login-request-body-file>`:
 
 ```sh
 spotify_profile_monitor --token-source client -w <path-to-login-request-body-file> <spotify_user_uri_id>
@@ -208,15 +240,87 @@ spotify_profile_monitor --token-source client -w <path-to-login-request-body-fil
 
 If successful, the tool will automatically extract the necessary fields and begin monitoring.
 
-You can also persist the Protobuf request file path using the `LOGIN_REQUEST_BODY_FILE` configuration option.
+Instead of using the `-w` flag each time, you can persist the Protobuf login request file path by setting the `LOGIN_REQUEST_BODY_FILE` configuration option.
+
+The same applies to `--token-source client` flag - you can persist it via `TOKEN_SOURCE` configuration option set to `client`.
 
 The tool will automatically refresh both the access token and client token using the intercepted refresh token.
 
-Advanced options are available for further customization - refer to the configuration file comments. However, default settings should work for most cases.
+If your refresh token expires, the tool will notify you via the console and email. In that case, you'll need to re-export the login request body. 
 
-You will be informed by the tool once the refresh token expires (proper message on the console and in email).
+If you re-export the login request body to the same file name, you can send a `SIGHUP` signal to reload the file with the new refresh token without restarting the tool. More info in [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix).
 
-**Important**: It is strongly recommended to use a separate Spotify account with this tool. It does not rely on the official Spotify Web API for many features (e.g. retrieving a list of followers/followings, followings count or recently played artists), as these are not supported by the public API.
+Advanced options are available for further customization - refer to the configuration file comments. However, the default settings are suitable for most users and modifying other values is generally NOT recommended.
+
+<a id="spotify-oauth-app"></a>
+#### Spotify OAuth App
+
+This method uses an official Spotify Web API (Client Credentials OAuth flow).
+
+- Log in to Spotify Developer dashboard: https://developer.spotify.com/dashboard
+
+- Create a new app
+
+- For **Redirect URL**, use: http://127.0.0.1:1234
+
+- Select **Web API** as the intended API
+
+- Copy the **Client ID** and **Client Secret**
+
+- Provide the `SP_APP_CLIENT_ID` and `SP_APP_CLIENT_SECRET` secrets using one of the following methods:
+   - Pass it at runtime with `-r` / `--oauth-app-creds`
+      - Use `SP_APP_CLIENT_ID`:`SP_APP_CLIENT_SECRET` format - note the colon separator
+   - Set it as an [environment variable](#storing-secrets) (e.g. `export SP_APP_CLIENT_ID=...; export SP_APP_CLIENT_SECRET=...`)
+   - Add it to [.env file](#storing-secrets) (`SP_APP_CLIENT_ID=...` and `SP_APP_CLIENT_SECRET=...`) for persistent use
+   - Fallback: hard-code it in the code or config file
+
+You can use the same client ID and secret values as those used for the [Spotify OAuth User](#spotify-oauth-user).
+
+Example:
+
+```sh
+spotify_profile_monitor --token-source oauth_app -r "your_spotify_app_client_id:your_spotify_app_client_secret" <spotify_user_uri_id>
+```
+
+The tool takes care of refreshing the access token so it should remain valid indefinitely.
+
+If you store the `SP_APP_CLIENT_ID` and `SP_APP_CLIENT_SECRET` in a dotenv file you can update their values and send a `SIGHUP` signal to reload the file with the new secret values without restarting the tool. More info in [Storing Secrets](#storing-secrets) and [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix).
+
+<a id="spotify-oauth-user"></a>
+#### Spotify OAuth User
+
+This method uses an official Spotify Web API (Authorization Code OAuth flow).
+
+- Log in to Spotify Developer dashboard: https://developer.spotify.com/dashboard
+
+- Create a new app
+
+- For **Redirect URL**, use: http://127.0.0.1:1234
+
+- Select **Web API** as the intended API
+
+- Copy the **Client ID** and **Client Secret** (the secret is not required if you're using `PKCE` mode)
+
+- Provide the `SP_USER_CLIENT_ID` and `SP_USER_CLIENT_SECRET` secrets using one of the following methods:
+   - Pass it at runtime with `-n` / `--oauth-user-creds`
+      - Use `SP_USER_CLIENT_ID`:`SP_USER_CLIENT_SECRET` format - note the colon separator
+   - Set it as an [environment variable](#storing-secrets) (e.g. `export SP_USER_CLIENT_ID=...; export SP_USER_CLIENT_SECRET=...`)
+   - Add it to [.env file](#storing-secrets) (`SP_USER_CLIENT_ID=...` and `SP_USER_CLIENT_SECRET=...`) for persistent use
+   - Fallback: hard-code it in the code or config file
+
+To use `PKCE` mode, set SP_USER_CLIENT_SECRET to an empty string ("").
+
+You can use the same client ID and secret values as those used for the [Spotify OAuth App](#spotify-oauth-app).
+
+Example:
+
+```sh
+spotify_profile_monitor --token-source oauth_user -r "your_spotify_user_client_id:your_spotify_user_client_secret" <spotify_user_uri_id>
+```
+
+The tool takes care of refreshing the access token so it should remain valid indefinitely.
+
+If you store the `SP_USER_CLIENT_ID` and `SP_USER_CLIENT_SECRET` in a dotenv file you can update their values and send a `SIGHUP` signal to reload the file with the new secret values without restarting the tool. More info in [Storing Secrets](#storing-secrets) and [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix).
 
 <a id="how-to-get-a-friends-user-uri-id"></a>
 ### How to Get a Friend's User URI ID
@@ -245,25 +349,25 @@ Before using this feature make sure you followed the instructions [here](#spotif
 <a id="spotify-sha256-optional"></a>
 ### Spotify sha256 (optional)
 
-This step is optional and only required if you want to use the feature that searches Spotify's catalog for users with a specific name to obtain their Spotify user URI ID (`-s` flag).
+This step is optional and only required if you want to use the feature that searches Spotify's catalog for users with a specific name to obtain their Spotify user URI ID (`-s` flag). To do this, you must intercept your Spotify client's network traffic and extract the required `sha256Hash` value.
 
-To do this, you need to intercept your Spotify client's network traffic and obtain the sha256 value.
+- Run an intercepting proxy of your choice (like [Proxyman](https://proxyman.com)).
 
-To simulate the required request, search for the user in the Spotify client. Then, in the intercepting proxy, look for requests with the `searchUsers` or `searchDesktop` operation name.
+- Launch the Spotify desktop client and search for some user
 
-Display the details of one of these requests and copy the **sha256Hash** parameter value, then place it in the `SP_SHA256` secret.
+- Look for requests with the `searchUsers` or `searchDesktop` operation name
+
+- Display the details of one of these requests and copy the **sha256Hash** parameter value (string marked as `XXXXXXXXXX` below) 
 
 Example request:
 `https://api-partner.spotify.com/pathfinder/v1/query?operationName=searchUsers&variables={"searchTerm":"spotify_user_uri_id","offset":0,"limit":5,"numberOfTopResults":5,"includeAudiobooks":false}&extensions={"persistedQuery":{"version":1,"sha256Hash":"XXXXXXXXXX"}}`
 
-You are interested in the string marked as `XXXXXXXXXX` here. 
 
-Provide the `SP_SHA256` secret using one of the following methods:
+
+ - Provide the `SP_SHA256` secret using one of the following methods:
    - Set it as an [environment variable](#storing-secrets) (e.g. `export SP_SHA256=...`)
    - Add it to [.env file](#storing-secrets) (`SP_SHA256=...`) for persistent use
- 
- Fallback:
-   - Hard-code it in the code or config file
+   - Fallback: hard-code it in the code or config file
 
 <a id="time-zone"></a>
 ### Time Zone
@@ -294,12 +398,17 @@ spotify_profile_monitor --send-test-email
 <a id="storing-secrets"></a>
 ### Storing Secrets
 
-It is recommended to store secrets like `SP_DC_COOKIE`, `SP_SHA256` or `SMTP_PASSWORD` as either an environment variable or in a dotenv file.
+It is recommended to store secrets like `SP_DC_COOKIE`, `SP_APP_CLIENT_ID`, `SP_APP_CLIENT_SECRET`, `SP_USER_CLIENT_ID`, `SP_USER_CLIENT_SECRET`, `REFRESH_TOKEN`, `SP_SHA256` or `SMTP_PASSWORD` as either an environment variable or in a dotenv file.
 
-Set environment variables using `export` on **Linux/Unix/macOS/WSL** systems:
+Set the needed environment variables using `export` on **Linux/Unix/macOS/WSL** systems:
 
 ```sh
 export SP_DC_COOKIE="your_sp_dc_cookie_value"
+export SP_APP_CLIENT_ID="your_spotify_app_client_id"
+export SP_APP_CLIENT_SECRET="your_spotify_app_client_secret"
+export SP_USER_CLIENT_ID="your_spotify_user_client_id"
+export SP_USER_CLIENT_SECRET="your_spotify_user_client_secret"
+export REFRESH_TOKEN="your_spotify_app_refresh_token"
 export SP_SHA256="your_spotify_client_sha256"
 export SMTP_PASSWORD="your_smtp_password"
 ```
@@ -310,6 +419,11 @@ Alternatively store them persistently in a dotenv file (recommended):
 
 ```ini
 SP_DC_COOKIE="your_sp_dc_cookie_value"
+SP_APP_CLIENT_ID="your_spotify_app_client_id"
+SP_APP_CLIENT_SECRET="your_spotify_app_client_secret"
+SP_USER_CLIENT_ID="your_spotify_user_client_id"
+SP_USER_CLIENT_SECRET="your_spotify_user_client_secret"
+REFRESH_TOKEN="your_spotify_app_refresh_token"
 SP_SHA256="your_spotify_client_sha256"
 SMTP_PASSWORD="your_smtp_password"
 ```
