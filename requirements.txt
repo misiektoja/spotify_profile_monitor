@@ -5,3 +5,4 @@ pyotp
 pytz
 tzlocal
 python-dotenv
+spotipy
