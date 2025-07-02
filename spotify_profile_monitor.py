@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.5.2
+v2.5.3
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -18,7 +18,7 @@ python-dotenv (optional)
 spotipy (optional, needed when the token source is set to oauth_app)
 """
 
-VERSION = "2.5.2"
+VERSION = "2.5.3"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -1393,10 +1393,10 @@ def generate_totp():
     import pyotp
 
     secret_cipher_dict = {
-        "8" : [37, 84, 32, 76, 87, 90, 87, 47, 13, 75, 48, 54, 44, 28, 19, 21, 22],
-        "7" : [59, 91, 66, 74, 30, 66, 74, 38, 46, 50, 72, 61, 44, 71, 86, 39, 89],
-        "6" : [21, 24, 85, 46, 48, 35, 33, 8, 11, 63, 76, 12, 55, 77, 14, 7, 54],
-        "5" : [12, 56, 76, 33, 88, 44, 88, 33, 78, 78, 11, 66, 22, 22, 55, 69, 54]
+        "8": [37, 84, 32, 76, 87, 90, 87, 47, 13, 75, 48, 54, 44, 28, 19, 21, 22],
+        "7": [59, 91, 66, 74, 30, 66, 74, 38, 46, 50, 72, 61, 44, 71, 86, 39, 89],
+        "6": [21, 24, 85, 46, 48, 35, 33, 8, 11, 63, 76, 12, 55, 77, 14, 7, 54],
+        "5": [12, 56, 76, 33, 88, 44, 88, 33, 78, 78, 11, 66, 22, 22, 55, 69, 54]
     }
     secret_cipher_bytes = secret_cipher_dict["8"]
 
@@ -3778,14 +3778,14 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             SP_CACHED_ACCESS_TOKEN = None
 
         client_errs = ['access token', 'invalid client token', 'expired client token', 'refresh token has been revoked', 'refresh token has expired', 'refresh token is invalid', 'invalid grant during refresh']
-        cookie_errs = ['access token', 'unauthorized']
+        cookie_errs = ['access token', 'unauthorized', 'unsuccessful token request']
         oauth_app_errs = ['invalid_client', 'invalid_client_id', 'could not authenticate you', '401']
         oauth_user_errs = ['invalid_client', 'invalid_grant', 'invalid_scope', 'authorization_required', 'refresh token has been revoked', 'refresh token has expired']
 
         if TOKEN_SOURCE == 'client' and any(k in err for k in client_errs):
             print(f"* Error: client or refresh token may be invalid or expired!\n{str(e)}")
         elif TOKEN_SOURCE == 'cookie' and any(k in err for k in cookie_errs):
-            print(f"* Error: sp_dc may be invalid or expired!\n{str(e)}")
+            print(f"* Error: sp_dc may be invalid/expired or Spotify has broken sth again!\n{str(e)}")
         elif TOKEN_SOURCE == 'oauth_app' and any(k in err for k in oauth_app_errs):
             print(f"* Error: OAuth-app client_id/client_secret may be invalid or expired!\n{str(e)}")
         elif TOKEN_SOURCE == 'oauth_user' and any(k in err for k in oauth_user_errs):
@@ -4108,7 +4108,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 SP_CACHED_ACCESS_TOKEN = None
 
             client_errs = ['access token', 'invalid client token', 'expired client token', 'refresh token has been revoked', 'refresh token has expired', 'refresh token is invalid', 'invalid grant during refresh']
-            cookie_errs = ['access token', 'unauthorized']
+            cookie_errs = ['access token', 'unauthorized', 'unsuccessful token request']
             oauth_app_errs = ['invalid_client', 'invalid_client_id', 'could not authenticate you', '401']
             oauth_user_errs = ['invalid_client', 'invalid_grant', 'invalid_scope', 'authorization_required', 'refresh token has been revoked', 'refresh token has expired']
 
@@ -4123,11 +4123,11 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     email_sent = True
 
             elif TOKEN_SOURCE == 'cookie' and any(k in err for k in cookie_errs):
-                print(f"* Error: sp_dc may be invalid or expired!")
+                print(f"* Error: sp_dc may be invalid/expired or Spotify has broken sth again!")
                 if ERROR_NOTIFICATION and not email_sent:
-                    m_subject = f"spotify_profile_monitor: sp_dc may be invalid or expired! (uri: {user_uri_id})"
-                    m_body = f"sp_dc may be invalid or expired!\n{e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                    m_body_html = f"<html><head></head><body>sp_dc may be invalid or expired!<br>{escape(str(e))}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
+                    m_subject = f"spotify_profile_monitor: sp_dc may be invalid/expired or Spotify has broken sth again! (uri: {user_uri_id})"
+                    m_body = f"sp_dc may be invalid/expired or Spotify has broken sth again!\n{e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                    m_body_html = f"<html><head></head><body>sp_dc may be invalid/expired or Spotify has broken sth again!<br>{escape(str(e))}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, m_body_html, SMTP_SSL)
                     email_sent = True
