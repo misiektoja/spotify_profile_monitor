@@ -2,11 +2,18 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 2.5.3 (02 Jul 2025)
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed web-player access token retrieval via sp_dc cookie by updating secret cipher bytes (thanks [@WurdahMekanik](https://github.com/WurdahMekanik))
+- **BUGFIX:** Fixed missing email alerts for failed token requests when using sp_dc cookie method
+
 # Changes in 2.5.2 (18 Jun 2025)
 
 **Features and Improvements**:
 
-- **NEW:** Added two new methods (`oauth_app`, `oauth_user`) to obtain Spotify access tokens using official Spotify API (Client Credentials and Authorization Code OAuth flows - requires Spotipy). Check the [Spotify OAuth App](https://github.com/misiektoja/spotify_profile_monitor/blob/main/README.md#spotify-oauth-app) and [Spotify OAuth User](https://github.com/misiektoja/spotify_profile_monitor/blob/main/README.md#spotify-oauth-user) for more info.
+- **NEW:** Added two new methods (`oauth_app`, `oauth_user`) to obtain Spotify access tokens using official Spotify API (Client Credentials and Authorization Code OAuth flows - requires Spotipy). Check the [Spotify OAuth App](https://github.com/misiektoja/spotify_profile_monitor#spotify-oauth-app) and [Spotify OAuth User](https://github.com/misiektoja/spotify_profile_monitor#spotify-oauth-user) for more info.
 - **IMPROVE:** HTTPAdapter now honors the Retry-After header on 429 responses for better Spotify API rate limit handling
 - **IMPROVE:** Suppressed -z / --clienttoken-request-body-file from help output to reduce confusion (flag remains functional, but hidden)
 - **IMPROVE:** Clarifications in inline comments explaining how to configure Spotify Desktop client method
@@ -39,7 +46,7 @@ This is a high-level summary of the most important changes.
 
 **Features and Improvements**:
 
-- **NEW:** Added support for a new method to obtain the Spotify access token ([#11](https://github.com/misiektoja/spotify_profile_monitor/issues/11)). This method uses captured credentials from the Spotify desktop client and a Protobuf-based login flow. It is intended for advanced users who want an indefinitely valid token with the widest scope. Check the [Spotify Desktop Client](https://github.com/misiektoja/spotify_profile_monitor/blob/main/README.md#spotify-desktop-client) for more info.
+- **NEW:** Added support for a new method to obtain the Spotify access token ([#11](https://github.com/misiektoja/spotify_profile_monitor/issues/11)). This method uses captured credentials from the Spotify desktop client and a Protobuf-based login flow. It is intended for advanced users who want an indefinitely valid token with the widest scope. Check the [Spotify Desktop Client](https://github.com/misiektoja/spotify_profile_monitor#spotify-desktop-client) for more info.
 - **NEW:** Added detection for whether a Spotify playlist's artwork is auto-generated or user-uploaded, along with the date and time the artwork was last changed
 - **NEW:** Added support for displaying playlist images in the terminal using `imgcat` on supported terminals
 
