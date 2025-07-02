@@ -1,6 +1,6 @@
 # spotify_profile_monitor
 
-spotify_profile_monitor is an OSINT tool for real-time monitoring of Spotify users' activities and profile changes including playlists.
+OSINT tool for real-time monitoring of Spotify users' activities and profile changes including playlists.
 
 NOTE: If you want to track Spotify friends' music activity, check out another tool I developed: [spotify_monitor](https://github.com/misiektoja/spotify_monitor).
 
@@ -217,6 +217,8 @@ If you store the `SP_DC_COOKIE` in a dotenv file you can update its value and se
 #### Spotify Desktop Client
 
 This is the alternative method used to obtain a Spotify access token which simulates a login from the real Spotify desktop app using credentials intercepted from a real session.
+
+**NOTE**: Spotify appears to have changed something in client versions released after June 2025 (likely a switch to HTTP/3 and/or certificate pinning). You may need to use an older version of the Spotify desktop client for this method to work.
 
 - Run an intercepting proxy of your choice (like [Proxyman](https://proxyman.com)).
 
