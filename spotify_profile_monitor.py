@@ -5557,7 +5557,7 @@ def main():
         ERROR_NOTIFICATION = False
 
     print(f"* Spotify polling intervals:\t[check: {display_time(SPOTIFY_CHECK_INTERVAL)}] [error: {display_time(SPOTIFY_ERROR_INTERVAL)}]")
-    print(f"* Email notifications:\t\t[profile changes = {PROFILE_NOTIFICATION}] [followers/followings = {FOLLOWERS_FOLLOWINGS_NOTIFICATION}]\n\t\t\t\t[errors = {ERROR_NOTIFICATION}]")
+    print(f"* Email notifications:\t\t[profile changes = {PROFILE_NOTIFICATION}] [followers/followings = {FOLLOWERS_FOLLOWINGS_NOTIFICATION}]\n*\t\t\t\t[errors = {ERROR_NOTIFICATION}]")
     print(f"* Token source:\t\t\t{TOKEN_SOURCE}")
     print(f"* Profile pic changes:\t\t{DETECT_CHANGED_PROFILE_PIC}")
     print(f"* Playlist changes:\t\t{DETECT_CHANGES_IN_PLAYLISTS}")
