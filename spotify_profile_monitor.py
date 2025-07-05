@@ -137,6 +137,21 @@ DETECT_CHANGES_IN_PLAYLISTS = True
 # Can also be enabled via the -k flag
 GET_ALL_PLAYLISTS = False
 
+# The Spotify API sometimes doesn't provide specific public shared playlists for a user.
+# This allows you to add one or more playlists to be monitored
+#
+# Replace {playlist_id} with the ID of the playlist to monitor, and replace {user_id} with the ID for the owner of the playlist
+#
+# ADD_PLAYLISTS_TO_MONITOR = [
+#   {'uri': 'spotify:playlist:{playlist_id}', 'owner_name': '{user_id}', 'owner_uri': 'spotify:user:{user_id}'},
+#   {'uri': 'spotify:playlist:{playlist_id}', 'owner_name': '{user_id}', 'owner_uri': 'spotify:user:{user_id}'}
+# ]
+#
+# example: [ {'uri': 'spotify:playlist:6pYPhRkJMSg1d7j8RHgJK1', 'owner_name': 'teocida', 'owner_uri': 'spotify:user:teocida'} ]
+# example: [ {'uri': 'spotify:playlist:0AyBQ5uEhJgdh2NFcMe6wb', 'owner_name': 'uwacwfv5hr23atg1v3dez1sxs', 'owner_uri': 'spotify:user:uwacwfv5hr23atg1v3dez1sxs'} ]
+#
+ADD_PLAYLISTS_TO_MONITOR = []
+
 # Ignore Spotify-owned playlists when monitoring?
 # Set to True to avoid tracking Spotify-generated playlists that often change frequently (likes, tracks etc.)
 IGNORE_SPOTIFY_PLAYLISTS = True
@@ -478,6 +493,7 @@ IMGCAT_PATH = ""
 SP_SHA256 = ""
 DETECT_CHANGES_IN_PLAYLISTS = False
 GET_ALL_PLAYLISTS = False
+ADD_PLAYLISTS_TO_MONITOR = []
 IGNORE_SPOTIFY_PLAYLISTS = False
 PLAYLISTS_LIMIT = 0
 RECENTLY_PLAYED_ARTISTS_LIMIT = 0
@@ -3828,6 +3844,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         playlists_count = sp_user_data["sp_user_public_playlists_count"]
         playlists = sp_user_data["sp_user_public_playlists_uris"]
 
+        if ADD_PLAYLISTS_TO_MONITOR:
+            playlists.extend(ADD_PLAYLISTS_TO_MONITOR)
+            playlists_count += len(ADD_PLAYLISTS_TO_MONITOR)
+            
     recently_played_artists = sp_user_data["sp_user_recently_played_artists"]
 
     print(f"Username:\t\t\t{username}")
@@ -4219,6 +4239,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         if DETECT_CHANGES_IN_PLAYLISTS:
             playlists_count = sp_user_data["sp_user_public_playlists_count"]
             playlists = sp_user_data["sp_user_public_playlists_uris"]
+
+            if ADD_PLAYLISTS_TO_MONITOR:
+                playlists.extend(ADD_PLAYLISTS_TO_MONITOR)
+                playlists_count += len(ADD_PLAYLISTS_TO_MONITOR)
 
         recently_played_artists = sp_user_data["sp_user_recently_played_artists"]
 
