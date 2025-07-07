@@ -2,6 +2,18 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 2.6 (07 Jul 2025)
+
+**Features and Improvements**:
+
+- **NEW:** Added support for manually specifying additional playlists to monitor via the `ADD_PLAYLISTS_TO_MONITOR` configuration option (thanks [@tomballgithub](https://github.com/tomballgithub))
+- **NEW:** Added new config option (`TRUNCATE_CHARS`) and flag (`--truncate`) to limit screen line length; set to 999 to auto-detect terminal width (thanks [@tomballgithub](https://github.com/tomballgithub))
+- **IMPROVE:** Updated secret cipher bytes used by web-player access token endpoint (`cookie` mode) to v9 & v10 (thanks [@Thereallo1026](https://github.com/Thereallo1026) for reverse engineering the current secrets)
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed missing asterisk on startup screen (thanks [@tomballgithub](https://github.com/tomballgithub))
+
 # Changes in 2.5.3 (02 Jul 2025)
 
 **Bug fixes**:
