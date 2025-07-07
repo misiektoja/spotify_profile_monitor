@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.5.3
+v2.6
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -18,7 +18,7 @@ python-dotenv (optional)
 spotipy (optional, needed when the token source is set to oauth_app)
 """
 
-VERSION = "2.5.3"
+VERSION = "2.6"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -137,19 +137,15 @@ DETECT_CHANGES_IN_PLAYLISTS = True
 # Can also be enabled via the -k flag
 GET_ALL_PLAYLISTS = False
 
-# The Spotify API sometimes doesn't provide specific public shared playlists for a user.
-# This allows you to add one or more playlists to be monitored
+# Some users don't list all their public playlists on their profile, but if you know a playlist's URI, you can still monitor it
 #
-# Replace {playlist_id} with the ID of the playlist to monitor, and replace {user_id} with the ID for the owner of the playlist
+# Example:
 #
 # ADD_PLAYLISTS_TO_MONITOR = [
-#   {'uri': 'spotify:playlist:{playlist_id}', 'owner_name': '{user_id}', 'owner_uri': 'spotify:user:{user_id}'},
-#   {'uri': 'spotify:playlist:{playlist_id}', 'owner_name': '{user_id}', 'owner_uri': 'spotify:user:{user_id}'}
+#     {'uri': 'spotify:playlist:{playlist_id1}', 'owner_name': '{user_id}', 'owner_uri': 'spotify:user:{user_id}'},
+#     {'uri': 'spotify:playlist:{playlist_id2}', 'owner_name': '{user_id}', 'owner_uri': 'spotify:user:{user_id}'}
 # ]
-#
-# example: [ {'uri': 'spotify:playlist:6pYPhRkJMSg1d7j8RHgJK1', 'owner_name': 'teocida', 'owner_uri': 'spotify:user:teocida'} ]
-# example: [ {'uri': 'spotify:playlist:0AyBQ5uEhJgdh2NFcMe6wb', 'owner_name': 'uwacwfv5hr23atg1v3dez1sxs', 'owner_uri': 'spotify:user:uwacwfv5hr23atg1v3dez1sxs'} ]
-#
+# Replace {playlist_id1} and {playlist_id2} with the playlists URI IDs you want to monitor and {user_id} with the owner's URI ID
 ADD_PLAYLISTS_TO_MONITOR = []
 
 # Ignore Spotify-owned playlists when monitoring?
@@ -240,6 +236,13 @@ HORIZONTAL_LINE = 113
 # Whether to clear the terminal screen after starting the tool
 CLEAR_SCREEN = True
 
+# Max characters per line when printing to screen to avoid line wrapping
+# Does not affect log file output
+# Set to 999 to auto-detect terminal width
+# Applies only when DISABLE_LOGGING is False
+# Can also be set via the --truncate flag
+TRUNCATE_CHARS = 0
+
 # Value used by signal handlers to increase or decrease profile check interval (SPOTIFY_CHECK_INTERVAL); in seconds
 SPOTIFY_CHECK_SIGNAL_VALUE = 300  # 5 minutes
 
@@ -250,11 +253,6 @@ TOKEN_MAX_RETRIES = 10
 # Interval between access token retry attempts; in seconds
 # Used only when the token source is set to 'cookie'
 TOKEN_RETRY_TIMEOUT = 0.5  # 0.5 second
-
-# Limit the number of characters on each line printed to the screen to eliminate line-wrapping
-# This does not impact what is written to the log file.
-# A value of 999 will autodetect the screen width and use that width for the truncation
-TRUNCATE_CHARS = 0
 
 # ---------------------------------------------------------------------
 
@@ -3868,7 +3866,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         if ADD_PLAYLISTS_TO_MONITOR:
             playlists.extend(ADD_PLAYLISTS_TO_MONITOR)
             playlists_count += len(ADD_PLAYLISTS_TO_MONITOR)
-            
+
     recently_played_artists = sp_user_data["sp_user_recently_played_artists"]
 
     print(f"Username:\t\t\t{username}")
@@ -5056,10 +5054,11 @@ def main():
         help="Disable logging to spotify_profile_monitor_<user_uri_id/file_suffix>.log"
     )
     opts.add_argument(
-        "-tr", "--truncate",
+        "--truncate",
         dest="truncate",
+        metavar="N",
         type=int,
-        help="Truncate screen output (not log) to this # of characters. '999' will autodetect and use the screen width"
+        help="Max characters per screen line (not log), use 999 to auto-detect terminal width, ignored if -d is set"
     )
 
     args = parser.parse_args()
@@ -5573,6 +5572,18 @@ def main():
         if not FILE_SUFFIX:
             FILE_SUFFIX = str(args.user_id)
 
+    if args.truncate:
+        if args.truncate != 999:
+            TRUNCATE_CHARS = args.truncate
+        else:
+            try:
+                terminal_size = shutil.get_terminal_size()
+                print(f"The detected terminal screen width is: {terminal_size.columns} characters\n")
+                TRUNCATE_CHARS = terminal_size.columns
+            except Exception as e:
+                print(f"Error: Cannot determine terminal screen width: {e}")
+                sys.exit(1)
+
     if args.disable_logging is True:
         DISABLE_LOGGING = True
 
@@ -5590,20 +5601,6 @@ def main():
     else:
         FINAL_LOG_PATH = None
 
-    if args.truncate:
-        if args.truncate != 999:
-            TRUNCATE_CHARS = args.truncate
-        else:
-            try:
-                terminal_size = shutil.get_terminal_size()
-                print(f"The detected terminal screen width is: {terminal_size.columns} characters")
-                print(f"")
-                TRUNCATE_CHARS = terminal_size.columns
-                
-            except Exception as e:
-                print(f"Cannot determine terminal screen width: {e}")
-                sys.exit(1)
-    
     if args.profile_notification is True:
         PROFILE_NOTIFICATION = True
 
@@ -5634,6 +5631,8 @@ def main():
     print(f"* Ignore listed playlists:\t{bool(PLAYLISTS_TO_SKIP_FILE)}" + (f" ({PLAYLISTS_TO_SKIP_FILE})" if PLAYLISTS_TO_SKIP_FILE else ""))
     print(f"* Display profile pics:\t\t{bool(imgcat_exe)}" + (f" (via {imgcat_exe})" if imgcat_exe else ""))
     print(f"* Output logging enabled:\t{not DISABLE_LOGGING}" + (f" ({FINAL_LOG_PATH})" if not DISABLE_LOGGING else ""))
+    if not DISABLE_LOGGING and TRUNCATE_CHARS > 0:
+        print(f"* Truncate terminal lines:\t{TRUNCATE_CHARS} chars")
     if TOKEN_SOURCE in ('oauth_user', 'oauth_app'):
         print(f"* Spotify token cache file:\t{({'oauth_app': SP_APP_TOKENS_FILE, 'oauth_user': SP_USER_TOKENS_FILE}.get(TOKEN_SOURCE) or 'None (memory only)')}")
     print(f"* Configuration file:\t\t{cfg_path}")
