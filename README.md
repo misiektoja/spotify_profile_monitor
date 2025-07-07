@@ -495,6 +495,19 @@ spotify_profile_monitor <spotify_user_uri_id> -k
 
 It is helpful in the case of playlists created by another user added to another user profile.
 
+Some users don't list all their public playlists on their profile, but if you know a playlist's URI, you can still monitor it. 
+
+To do so, add entries to the `ADD_PLAYLISTS_TO_MONITOR` configuration option. Example:
+
+```python
+ADD_PLAYLISTS_TO_MONITOR = [
+    {'uri': 'spotify:playlist:{playlist_id1}', 'owner_name': '{user_id}', 'owner_uri': 'spotify:user:{user_id}'},
+    {'uri': 'spotify:playlist:{playlist_id2}', 'owner_name': '{user_id}', 'owner_uri': 'spotify:user:{user_id}'}
+]
+```
+
+Replace `{playlist_id1}` and `{playlist_id2}` with the playlists URI IDs you want to monitor and `{user_id}` with the owner's URI ID (`spotify_user_uri_id`).
+
 If you want to completely disable detection of changes in user's public playlists (like added/removed tracks in playlists, playlists name and description changes, number of likes for playlists):
 - set `DETECT_CHANGES_IN_PLAYLISTS` to `False`
 - or use the `-q` flag
