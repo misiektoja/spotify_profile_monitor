@@ -6,3 +6,4 @@ pytz
 tzlocal
 python-dotenv
 spotipy
+wcwidth
