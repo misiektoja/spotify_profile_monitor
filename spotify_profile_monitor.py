@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.6
+v2.6.1
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -16,9 +16,10 @@ pytz
 tzlocal (optional)
 python-dotenv (optional)
 spotipy (optional, needed when the token source is set to oauth_app)
+wcwidth (optional, needed by TRUNCATE_CHARS feature)
 """
 
-VERSION = "2.6"
+VERSION = "2.6.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -634,7 +635,6 @@ from pathlib import Path
 import secrets
 from typing import Optional
 from email.utils import parsedate_to_datetime
-from wcwidth import wcwidth
 
 import urllib3
 if not VERIFY_SSL:
@@ -663,6 +663,11 @@ SESSION.mount("http://", adapter)
 
 # Truncates each line of a string to a specified number of characters including tab expansion and multi-line support
 def truncate_string_per_line(message, truncate_width, tabsize=8):
+    try:
+        from wcwidth import wcwidth
+    except ImportError:
+        return message
+
     lines = message.split('\n')
     truncated_lines = []
 
