@@ -1,6 +1,6 @@
 # spotify_profile_monitor
 
-OSINT tool for real-time monitoring of Spotify users' activities and profile changes including playlists.
+OSINT tool for real-time monitoring of **Spotify users' activities and profile changes including playlists**.
 
 ✨ If you want to track Spotify friends' music activity, check out another tool I developed: [spotify_monitor](https://github.com/misiektoja/spotify_monitor).
 
@@ -64,6 +64,8 @@ OSINT tool for real-time monitoring of Spotify users' activities and profile cha
    * [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix)
    * [Coloring Log Output with GRC](#coloring-log-output-with-grc)
 6. [Debugging Tools](#debugging-tools)
+   * [Access Token Retrieval via sp_dc Cookie and TOTP](#access-token-retrieval-via-sp_dc-cookie-and-totp)
+   * [Secret Key Extraction from Spotify Web Player Bundles](#secret-key-extraction-from-spotify-web-player-bundles)
 7. [Change Log](#change-log)
 8. [License](#license)
 
@@ -216,7 +218,7 @@ If your `sp_dc` cookie expires, the tool will notify you via the console and ema
 
 If you store the `SP_DC_COOKIE` in a dotenv file you can update its value and send a `SIGHUP` signal to reload the file with the new `sp_dc` cookie without restarting the tool. More info in [Storing Secrets](#storing-secrets) and [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix).
 
-`Note`: encrypted byte sequences used for TOTP secret generation tend to expire every now and then; you can either check the [issues](https://github.com/misiektoja/spotify_profile_monitor/issues) section of the project to see if there are any new secrets published or you can run the [spotify_monitor_secret_grabber.py](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) and extract it by yourself (see [Debugging Tools](#debugging-tools) for more info).
+> **NOTE:** encrypted byte sequences (`SECRET_CIPHER_DICT`) used for TOTP secret generation tend to expire every now and then; you can either check the [issues](https://github.com/misiektoja/spotify_monitor/issues) section of the related [spotify_monitor](https://github.com/misiektoja/spotify_monitor) project to see if there are any new secrets published or you can run the [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) and extract it by yourself (see [Secret Key Extraction from Spotify Web Player Bundles](#secret-key-extraction-from-spotify-web-player-bundles) for more info).
 
 <a id="spotify-desktop-client"></a>
 #### Spotify Desktop Client
@@ -791,26 +793,70 @@ grc tail -F -n 100 spotify_profile_monitor_<user_uri_id/file_suffix>.log
 <a id="debugging-tools"></a>
 ## Debugging Tools
 
-To help with troubleshooting and development, two debug utilities are available in the `debug` directory of related [spotify_monitor](https://github.com/misiektoja/spotify_monitor) project:
+To help with troubleshooting and development, two debug utilities are available in the [debug](https://github.com/misiektoja/spotify_monitor/tree/dev/debug) directory of the related [spotify_monitor](https://github.com/misiektoja/spotify_monitor) project.
 
-- [spotify_monitor_totp_test.py](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_totp_test.py): fetching of Spotify access token based on a Spotify Web Player `sp_dc` cookie value:
+<a id="access-token-retrieval-via-sp_dc-cookie-and-totp"></a>
+### Access Token Retrieval via sp_dc Cookie and TOTP
+
+The [spotify_monitor_totp_test](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_totp_test.py) tool retrieves a Spotify access token using a Web Player `sp_dc` cookie and TOTP parameters. 
+
+Download from [here](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_totp_test.py) or:
+
+```sh
+wget https://raw.githubusercontent.com/misiektoja/spotify_monitor/refs/heads/dev/debug/spotify_monitor_totp_test.py
+```
+
+Install requirements:
 
 ```sh
 pip install requests python-dateutil pyotp
+```
+
+Run:
+
+```sh
 python3 spotify_monitor_totp_test.py --sp-dc "your_sp_dc_cookie_value"
 ```
 
-- [spotify_monitor_secret_grabber.py](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py): automatic extractor for secret keys used for TOTP generation in Spotify Web Player JavaScript bundles:
+You should get a valid Spotify access token, example output:
+
+<p align="center">
+   <img src="https://raw.githubusercontent.com/misiektoja/spotify_monitor/refs/heads/main/assets/spotify_monitor_totp_test.png" alt="spotify_monitor_totp_test" width="100%"/>
+</p>
+
+> **NOTE:** encrypted byte sequences (`SECRET_CIPHER_DICT`) used for TOTP secret generation tend to expire every now and then; you can either check the [issues](https://github.com/misiektoja/spotify_profile_monitor/issues) section of the related [spotify_monitor](https://github.com/misiektoja/spotify_monitor) project to see if there are any new secrets published or you can run the [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) and extract it by yourself (see [here](#secret-key-extraction-from-spotify-web-player-bundles) for more info).
+
+<a id="secret-key-extraction-from-spotify-web-player-bundles"></a>
+### Secret Key Extraction from Spotify Web Player Bundles
+
+The [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) tool automatically extracts secret keys used for TOTP generation in Spotify Web Player JavaScript bundles. 
+
+Download from [here](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) or:
+
+```sh
+wget https://raw.githubusercontent.com/misiektoja/spotify_monitor/refs/heads/main/debug/spotify_monitor_secret_grabber.py
+```
+
+Install requirements:
 
 ```sh
 pip install playwright
 playwright install
+```
+
+Run:
+
+```sh
 python3 spotify_monitor_secret_grabber.py
 ```
+
+You should get output similar to below:
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/spotify_monitor/refs/heads/main/assets/spotify_monitor_secret_grabber.png" alt="spotify_monitor_secret_grabber" width="100%"/>
 </p>
+
+You can now update the encrypted byte sequences used for TOTP secret generation (for example `SECRET_CIPHER_DICT` in spotify_monitor and spotify_profile_monitor).
 
 <a id="change-log"></a>
 ## Change Log
