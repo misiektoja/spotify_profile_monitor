@@ -216,7 +216,7 @@ If your `sp_dc` cookie expires, the tool will notify you via the console and ema
 
 If you store the `SP_DC_COOKIE` in a dotenv file you can update its value and send a `SIGHUP` signal to reload the file with the new `sp_dc` cookie without restarting the tool. More info in [Storing Secrets](#storing-secrets) and [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix).
 
-`Note`: encrypted byte sequences used for TOTP secret generation tend to expire every now and then; you can either check the [issues](https://github.com/misiektoja/spotify_profile_monitor/issues) section of the project to see if there are any new secrets published or you can run the [spotify_monitor_secret_grabber.py](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) and extract it by yourself (see [Debugging Tools](https://github.com/misiektoja/spotify_profile_monitor#debugging-tools) for more info).
+`Note`: encrypted byte sequences used for TOTP secret generation tend to expire every now and then; you can either check the [issues](https://github.com/misiektoja/spotify_profile_monitor/issues) section of the project to see if there are any new secrets published or you can run the [spotify_monitor_secret_grabber.py](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) and extract it by yourself (see [Debugging Tools](#debugging-tools) for more info).
 
 <a id="spotify-desktop-client"></a>
 #### Spotify Desktop Client
