@@ -5165,16 +5165,6 @@ def main():
 
     args = parser.parse_args()
 
-    if args.export_for_spotify_monitor:
-        CLEAN_OUTPUT = True
-
-    if not CLEAN_OUTPUT:
-        stdout_bck = sys.stdout
-
-        clear_screen(CLEAR_SCREEN)
-
-        print(f"Spotify Profile Monitoring Tool v{VERSION}\n")
-
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(1)
@@ -5228,6 +5218,20 @@ def main():
             val = os.getenv(secret)
             if val is not None:
                 globals()[secret] = val
+
+    if args.export_for_spotify_monitor:
+        if not args.list_tracks_for_playlist and not args.list_liked_tracks:
+            print(f"* Error: The 'export for spotify monitor' feature is only supported with -l and -x command line options !")
+            sys.exit(2)
+        else:
+            CLEAN_OUTPUT = True
+
+    if not CLEAN_OUTPUT:
+        stdout_bck = sys.stdout
+
+        clear_screen(CLEAR_SCREEN)
+
+        print(f"Spotify Profile Monitoring Tool v{VERSION}\n")
 
     local_tz = None
     if LOCAL_TIMEZONE == "Auto":
