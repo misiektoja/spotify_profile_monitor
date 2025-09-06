@@ -2520,7 +2520,12 @@ def is_token_owner(access_token, user_uri_id) -> bool:
 
 # Returns detailed info about playlist with specified URI (with possibility to get its tracks as well)
 def spotify_get_playlist_info(access_token, playlist_uri, get_tracks):
-    playlist_id = playlist_uri.split(':', 2)[2]
+    parts = playlist_uri.split(':')
+    if len(parts) == 3:
+        playlist_id = parts[2]
+    else:
+        playlist_id = "invalid_playlist"
+        print(f"Invalid playlist format")
 
     if get_tracks:
         url1 = f"https://api.spotify.com/v1/playlists/{playlist_id}?fields=name,description,owner,followers,external_urls,tracks.total,collaborative,images"
@@ -2911,7 +2916,11 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
     user_id_name_mapping = {}
     user_track_counts = Counter()
 
-    playlist_uri = spotify_convert_url_to_uri(playlist_url)
+    pattern = re.compile(r'^[a-zA-Z0-9]{22}$') 
+    if (pattern.match(playlist_url)):
+        playlist_uri = f"::{playlist_url}"
+    else:
+        playlist_uri = spotify_convert_url_to_uri(playlist_url)
 
     sp_playlist_data = spotify_get_playlist_info(sp_accessToken, playlist_uri, True)
 
