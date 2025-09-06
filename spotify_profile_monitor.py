@@ -21,6 +21,30 @@ wcwidth (optional, needed by TRUNCATE_CHARS feature)
 
 VERSION = "2.7"
 
+# API 401 error means sp_dc cookie has expired. Lasts one year. 03/15/2025
+
+# spotify-friend-stalker: https://github.com/moritzlauper/spotify-friend-stalker (node.js)
+# spotify-buddylist API:  https://github.com/valeriangalliat/spotify-buddylist (node.js)
+# spotify-api:            https://developer.spotify.com/documentation/web-api (official API)
+# spotify-monitor:        https://github.com/misiektoja/spotify_monitor/
+# spotify-api-python:     https://github.com/thlucas1/SpotifyWebApiPython (reference only)
+
+# revision history
+# 2025/03/28: Finished updating with new features to export playlists into format to import directly into spotify_monitor
+# 2025/03/30: Updated to 2.0.1 from spotify_profile_monitor source
+# 2025/04/02: Spotify_list_saved_tracks and spotify_list_tracks_for_playlist have option to write to file directly
+# 2025/04/02: Spotify_list_saved_tracks and spotify_list_tracks_for_playlist will not overwrite file if there's an error fetching spotify data
+# 2025/06/12: Updated to latest source from github
+# 2025/06/14: Added feature to manually add additional playlists to monitor (not all public playlists show up automatically)
+# 2025/07/07: Added truncation feature to this script
+# 2025/07/07: Upgraded to latest source
+
+# bugs and to-dos:
+#*** PR load extra playlists
+
+# command line examples
+# *** see .conf file
+
 # ---------------------------
 # CONFIGURATION SECTION START
 # ---------------------------
