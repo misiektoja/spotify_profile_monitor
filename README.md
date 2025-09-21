@@ -333,7 +333,7 @@ You can use the same client ID and secret values as those used for the [Spotify 
 Example:
 
 ```sh
-spotify_profile_monitor --token-source oauth_user -r "your_spotify_user_client_id:your_spotify_user_client_secret" <spotify_user_uri_id>
+spotify_profile_monitor --token-source oauth_user -n "your_spotify_user_client_id:your_spotify_user_client_secret" <spotify_user_uri_id>
 ```
 
 The tool takes care of refreshing the access token so it should remain valid indefinitely.
