@@ -280,6 +280,8 @@ This method uses an official Spotify Web API (Client Credentials OAuth flow).
 - Create a new app
 
 - For **Redirect URL**, use: http://127.0.0.1:1234
+   - The URL must match exactly as shown, including not having a / at the end
+   - When copying the link via right-click, some browsers may add an extra / to the URL
 
 - Select **Web API** as the intended API
 
@@ -314,6 +316,8 @@ This method uses an official Spotify Web API (Authorization Code OAuth flow).
 - Create a new app
 
 - For **Redirect URL**, use: http://127.0.0.1:1234
+   - The URL must match exactly as shown, including not having a / at the end
+   - When copying the link via right-click, some browsers may add an extra / to the URL
 
 - Select **Web API** as the intended API
 
@@ -333,7 +337,7 @@ You can use the same client ID and secret values as those used for the [Spotify 
 Example:
 
 ```sh
-spotify_profile_monitor --token-source oauth_user -r "your_spotify_user_client_id:your_spotify_user_client_secret" <spotify_user_uri_id>
+spotify_profile_monitor --token-source oauth_user -n "your_spotify_user_client_id:your_spotify_user_client_secret" <spotify_user_uri_id>
 ```
 
 The tool takes care of refreshing the access token so it should remain valid indefinitely.
