@@ -2,6 +2,18 @@
 
 This is a high-level summary of the most important changes. 
 
+# Changes in 2.8 (12 Oct 2025)
+
+**Features and Improvements**:
+
+- **IMPROVE:** Added support for loading TOTP secrets from local files via file:// URLs
+- **IMPROVE:** Updated remote URL in SECRET_CIPHER_DICT_URL
+- **IMPROVE:** Moved CLEAN_OUTPUT assignment after loading configuration files. Checks that it is used only with -l or -x
+
+**Bug fixes**:
+
+- **BUGFIX:** Fixed -l errors if playlist provided is just the ID (fixes [#25](https://github.com/misiektoja/spotify_profile_monitor/issues/25))
+
 # Changes in 2.7 (14 Jul 2025)
 
 **Features and Improvements**:
