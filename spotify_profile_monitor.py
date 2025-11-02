@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.8
+v2.9
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -19,7 +19,7 @@ spotipy (optional, needed when the token source is set to oauth_app)
 wcwidth (optional, needed by TRUNCATE_CHARS feature)
 """
 
-VERSION = "2.8"
+VERSION = "2.9"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -3931,7 +3931,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
     out = f"Monitoring user {user_uri_id}"
     print(out)
-    print("-" * len(out))
+    # print("-" * len(out))
+    print("─" * HORIZONTAL_LINE)
 
     try:
         if TOKEN_SOURCE == "client":
@@ -3977,9 +3978,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
     if user_info:
         if TOKEN_SOURCE == "oauth_app":
-            print(f"Token belongs to:\t\t{user_info.get('client_id', '')} (via {TOKEN_SOURCE})\n")
+            print(f"Token belongs to:\t\t{user_info.get('client_id', '')} (via {TOKEN_SOURCE})")
         else:
-            print(f"Token belongs to:\t\t{user_info.get('display_name', '')} (via {TOKEN_SOURCE})\n\t\t\t\t[ {user_info.get('spotify_url')} ]\n")
+            print(f"Token belongs to:\t\t{user_info.get('display_name', '')} (via {TOKEN_SOURCE})\n\t\t\t\t[ {user_info.get('spotify_url')} ]")
+        print("─" * HORIZONTAL_LINE)
 
     username = sp_user_data["sp_username"]
     image_url = sp_user_data["sp_user_image_url"]
