@@ -27,6 +27,7 @@ OSINT tool for real-time monitoring of **Spotify users' activities and profile c
 - Clickable Spotify, Apple Music, YouTube Music and Genius Lyrics search URLs printed in the console & included in email notifications
 - Support for four different methods to get a Spotify access token (`sp_dc cookie`, `desktop client`, `OAuth app`, `OAuth user`)
 - Possibility to control the running copy of the script via signals
+- Functional, procedural Python (minimal OOP)
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/assets/spotify_profile_monitor.png" alt="spotify_profile_monitor_screenshot" width="100%"/>
