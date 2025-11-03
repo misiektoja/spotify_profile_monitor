@@ -247,6 +247,38 @@ TRUNCATE_CHARS = 0
 # Value used by signal handlers to increase or decrease profile check interval (SPOTIFY_CHECK_INTERVAL); in seconds
 SPOTIFY_CHECK_SIGNAL_VALUE = 300  # 5 minutes
 
+# Whether to show Apple Music URL in console and emails
+ENABLE_APPLE_MUSIC_URL = True
+
+# Whether to show YouTube Music URL in console and emails
+ENABLE_YOUTUBE_MUSIC_URL = True
+
+# Whether to show Amazon Music URL in console and emails
+ENABLE_AMAZON_MUSIC_URL = False
+
+# Whether to show Deezer URL in console and emails
+ENABLE_DEEZER_URL = False
+
+# Whether to show Tidal URL in console and emails
+# Note: Tidal requires users to be logged in to their account in the web browser to use the search functionality
+ENABLE_TIDAL_URL = False
+
+# Whether to show Genius lyrics URL in console and emails
+ENABLE_GENIUS_LYRICS_URL = True
+
+# Whether to show AZLyrics URL in console and emails
+ENABLE_AZLYRICS_URL = False
+
+# Whether to show Tekstowo.pl lyrics URL in console and emails
+ENABLE_TEKSTOWO_URL = False
+
+# Whether to show Musixmatch lyrics URL in console and emails
+# Note: Musixmatch requires users to be logged in to their account in the web browser to use the search functionality
+ENABLE_MUSIXMATCH_URL = False
+
+# Whether to show Lyrics.com lyrics URL in console and emails
+ENABLE_LYRICS_COM_URL = False
+
 # ---------------------------------------------------------------------
 
 # The section below is used when the token source is set to 'cookie'
@@ -542,6 +574,16 @@ DISABLE_LOGGING = False
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
 SPOTIFY_CHECK_SIGNAL_VALUE = 0
+ENABLE_APPLE_MUSIC_URL = False
+ENABLE_YOUTUBE_MUSIC_URL = False
+ENABLE_AMAZON_MUSIC_URL = False
+ENABLE_DEEZER_URL = False
+ENABLE_TIDAL_URL = False
+ENABLE_GENIUS_LYRICS_URL = False
+ENABLE_AZLYRICS_URL = False
+ENABLE_TEKSTOWO_URL = False
+ENABLE_MUSIXMATCH_URL = False
+ENABLE_LYRICS_COM_URL = False
 TOKEN_MAX_RETRIES = 0
 TOKEN_RETRY_TIMEOUT = 0.0
 SECRET_CIPHER_DICT = {}
@@ -1292,17 +1334,126 @@ def reload_secrets_signal_handler(sig, frame):
     print_cur_ts("Timestamp:\t\t\t")
 
 
-# Returns Apple & Genius search URLs for specified track
+# Returns Apple & lyrics search URLs for specified track
 def get_apple_genius_search_urls(artist, track):
-    genius_search_string = f"{artist} {track}"
-    youtube_music_search_string = quote_plus(f"{artist} {track}")
-    if re.search(re_search_str, genius_search_string, re.IGNORECASE):
-        genius_search_string = re.sub(re_replace_str, '', genius_search_string, flags=re.IGNORECASE)
-    apple_search_string = quote(f"{artist} {track}")
+    spotify_search_string = f"{artist} {track}"
+    youtube_music_search_string = quote_plus(spotify_search_string)
+    # Clean search string for lyrics services (remove remaster, extended, etc.)
+    lyrics_search_string = spotify_search_string
+    if re.search(re_search_str, lyrics_search_string, re.IGNORECASE):
+        lyrics_search_string = re.sub(re_replace_str, '', lyrics_search_string, flags=re.IGNORECASE)
+    apple_search_string = quote(spotify_search_string)
     apple_search_url = f"https://music.apple.com/pl/search?term={apple_search_string}"
-    genius_search_url = f"https://genius.com/search?q={quote_plus(genius_search_string)}"
+    genius_search_url = f"https://genius.com/search?q={quote_plus(lyrics_search_string)}"
+    azlyrics_search_url = f"https://www.azlyrics.com/search/?q={quote_plus(lyrics_search_string)}"
+    tekstowo_search_url = f"https://www.tekstowo.pl/szukaj,{quote_plus(lyrics_search_string)}.html"
+    musixmatch_search_url = f"https://www.musixmatch.com/search?query={quote_plus(lyrics_search_string)}"
+    lyrics_com_search_url = f"https://www.lyrics.com/serp.php?st={quote_plus(lyrics_search_string)}&qtype=1"
     youtube_music_search_url = f"https://music.youtube.com/search?q={youtube_music_search_string}"
-    return apple_search_url, genius_search_url, youtube_music_search_url
+    amazon_music_search_url = f"https://music.amazon.com/search/{quote_plus(spotify_search_string)}"
+    deezer_search_url = f"https://www.deezer.com/search/{quote_plus(spotify_search_string)}"
+    tidal_search_url = f"https://tidal.com/search?q={quote_plus(spotify_search_string)}"
+    return apple_search_url, genius_search_url, azlyrics_search_url, tekstowo_search_url, musixmatch_search_url, lyrics_com_search_url, youtube_music_search_url, amazon_music_search_url, deezer_search_url, tidal_search_url
+
+
+# Formats lyrics URLs for console output based on configuration
+def format_lyrics_urls_console(genius_url, azlyrics_url, tekstowo_url, musixmatch_url, lyrics_com_url):
+    lines = []
+    if ENABLE_GENIUS_LYRICS_URL:
+        lines.append(f"Genius lyrics URL: {genius_url}")
+    if ENABLE_AZLYRICS_URL:
+        lines.append(f"AZLyrics URL: {azlyrics_url}")
+    if ENABLE_TEKSTOWO_URL:
+        lines.append(f"Tekstowo.pl URL: {tekstowo_url}")
+    if ENABLE_MUSIXMATCH_URL:
+        lines.append(f"Musixmatch URL: {musixmatch_url}")
+    if ENABLE_LYRICS_COM_URL:
+        lines.append(f"Lyrics.com URL: {lyrics_com_url}")
+    return "\n".join(lines) if lines else ""
+
+
+# Formats lyrics URLs for plain text email body based on configuration
+def format_lyrics_urls_email_text(genius_url, azlyrics_url, tekstowo_url, musixmatch_url, lyrics_com_url):
+    lines = []
+    if ENABLE_GENIUS_LYRICS_URL:
+        lines.append(f"Genius lyrics URL: {genius_url}")
+    if ENABLE_AZLYRICS_URL:
+        lines.append(f"AZLyrics URL: {azlyrics_url}")
+    if ENABLE_TEKSTOWO_URL:
+        lines.append(f"Tekstowo.pl URL: {tekstowo_url}")
+    if ENABLE_MUSIXMATCH_URL:
+        lines.append(f"Musixmatch URL: {musixmatch_url}")
+    if ENABLE_LYRICS_COM_URL:
+        lines.append(f"Lyrics.com URL: {lyrics_com_url}")
+    return "\n".join(lines) if lines else ""
+
+
+# Formats lyrics URLs for HTML email body based on configuration
+def format_lyrics_urls_email_html(genius_url, azlyrics_url, tekstowo_url, musixmatch_url, lyrics_com_url, artist, track):
+    lines = []
+    escaped_artist = escape(artist)
+    escaped_track = escape(track)
+    if ENABLE_GENIUS_LYRICS_URL:
+        lines.append(f'Genius lyrics URL: <a href="{genius_url}">{escaped_artist} - {escaped_track}</a>')
+    if ENABLE_AZLYRICS_URL:
+        lines.append(f'AZLyrics URL: <a href="{azlyrics_url}">{escaped_artist} - {escaped_track}</a>')
+    if ENABLE_TEKSTOWO_URL:
+        lines.append(f'Tekstowo.pl URL: <a href="{tekstowo_url}">{escaped_artist} - {escaped_track}</a>')
+    if ENABLE_MUSIXMATCH_URL:
+        lines.append(f'Musixmatch URL: <a href="{musixmatch_url}">{escaped_artist} - {escaped_track}</a>')
+    if ENABLE_LYRICS_COM_URL:
+        lines.append(f'Lyrics.com URL: <a href="{lyrics_com_url}">{escaped_artist} - {escaped_track}</a>')
+    return "<br>".join(lines) if lines else ""
+
+
+# Formats music service URLs for console output based on configuration
+def format_music_urls_console(apple_music_url, youtube_music_url, amazon_music_url, deezer_url, tidal_url):
+    lines = []
+    if ENABLE_APPLE_MUSIC_URL:
+        lines.append(f"Apple Music URL: {apple_music_url}")
+    if ENABLE_YOUTUBE_MUSIC_URL:
+        lines.append(f"YouTube Music URL: {youtube_music_url}")
+    if ENABLE_AMAZON_MUSIC_URL:
+        lines.append(f"Amazon Music URL: {amazon_music_url}")
+    if ENABLE_DEEZER_URL:
+        lines.append(f"Deezer URL: {deezer_url}")
+    if ENABLE_TIDAL_URL:
+        lines.append(f"Tidal URL: {tidal_url}")
+    return "\n".join(lines) if lines else ""
+
+
+# Formats music service URLs for plain text email body based on configuration
+def format_music_urls_email_text(apple_music_url, youtube_music_url, amazon_music_url, deezer_url, tidal_url):
+    lines = []
+    if ENABLE_APPLE_MUSIC_URL:
+        lines.append(f"Apple Music URL: {apple_music_url}")
+    if ENABLE_YOUTUBE_MUSIC_URL:
+        lines.append(f"YouTube Music URL: {youtube_music_url}")
+    if ENABLE_AMAZON_MUSIC_URL:
+        lines.append(f"Amazon Music URL: {amazon_music_url}")
+    if ENABLE_DEEZER_URL:
+        lines.append(f"Deezer URL: {deezer_url}")
+    if ENABLE_TIDAL_URL:
+        lines.append(f"Tidal URL: {tidal_url}")
+    return "\n".join(lines) if lines else ""
+
+
+# Formats music service URLs for HTML email body based on configuration
+def format_music_urls_email_html(apple_music_url, youtube_music_url, amazon_music_url, deezer_url, tidal_url, artist, track):
+    lines = []
+    escaped_artist = escape(artist)
+    escaped_track = escape(track)
+    if ENABLE_APPLE_MUSIC_URL:
+        lines.append(f'Apple Music URL: <a href="{apple_music_url}">{escaped_artist} - {escaped_track}</a>')
+    if ENABLE_YOUTUBE_MUSIC_URL:
+        lines.append(f'YouTube Music URL: <a href="{youtube_music_url}">{escaped_artist} - {escaped_track}</a>')
+    if ENABLE_AMAZON_MUSIC_URL:
+        lines.append(f'Amazon Music URL: <a href="{amazon_music_url}">{escaped_artist} - {escaped_track}</a>')
+    if ENABLE_DEEZER_URL:
+        lines.append(f'Deezer URL: <a href="{deezer_url}">{escaped_artist} - {escaped_track}</a>')
+    if ENABLE_TIDAL_URL:
+        lines.append(f'Tidal URL: <a href="{tidal_url}">{escaped_artist} - {escaped_track}</a>')
+    return "<br>".join(lines) if lines else ""
 
 
 # Extracts Spotify ID from URI or URL and return cleaned name
@@ -4794,12 +4945,35 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                                             for f_dict in added_tracks:
                                                 if "artist" in f_dict and "track" in f_dict:
-                                                    apple_search_url, genius_search_url, youtube_music_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
+                                                    apple_search_url, genius_search_url, azlyrics_search_url, tekstowo_search_url, musixmatch_search_url, lyrics_com_search_url, youtube_music_search_url, amazon_music_search_url, deezer_search_url, tidal_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
                                                     tempuri = f'spotify:user:{f_dict["added_by_id"]}'
-                                                    added_track = f'- {f_dict["artist"]} - {f_dict["track"]} [ {get_date_from_ts(f_dict["added_at"])}, {f_dict["added_by"]} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict["uri"])} ]\n[ Apple Music URL: {apple_search_url} ]\n[ YouTube Music URL: {youtube_music_search_url} ]\n[ Genius URL: {genius_search_url} ]\n[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
-                                                    p_message_added_tracks += added_track
+                                                    music_urls_output = format_music_urls_console(apple_search_url, youtube_music_search_url, amazon_music_search_url, deezer_search_url, tidal_search_url)
+                                                    lyrics_urls_output = format_lyrics_urls_console(genius_search_url, azlyrics_search_url, tekstowo_search_url, musixmatch_search_url, lyrics_com_search_url)
+                                                    music_urls_text = format_music_urls_email_text(apple_search_url, youtube_music_search_url, amazon_music_search_url, deezer_search_url, tidal_search_url)
+                                                    lyrics_urls_text = format_lyrics_urls_email_text(genius_search_url, azlyrics_search_url, tekstowo_search_url, musixmatch_search_url, lyrics_com_search_url)
+                                                    added_track_console = f'- {f_dict["artist"]} - {f_dict["track"]} [ {get_date_from_ts(f_dict["added_at"])}, {f_dict["added_by"]} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict["uri"])} ]\n'
+                                                    if music_urls_output:
+                                                        for line in music_urls_output.split("\n"):
+                                                            if line:
+                                                                added_track_console += f"[ {line} ]\n"
+                                                    if lyrics_urls_output:
+                                                        for line in lyrics_urls_output.split("\n"):
+                                                            if line:
+                                                                added_track_console += f"[ {line} ]\n"
+                                                    added_track_console += f'[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
+                                                    added_track_email = f'- {f_dict["artist"]} - {f_dict["track"]} [ {get_date_from_ts(f_dict["added_at"])}, {f_dict["added_by"]} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict["uri"])} ]\n'
+                                                    if music_urls_text:
+                                                        for line in music_urls_text.split("\n"):
+                                                            if line:
+                                                                added_track_email += f"[ {line} ]\n"
+                                                    if lyrics_urls_text:
+                                                        for line in lyrics_urls_text.split("\n"):
+                                                            if line:
+                                                                added_track_email += f"[ {line} ]\n"
+                                                    added_track_email += f'[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
+                                                    p_message_added_tracks += added_track_email
                                                     added_at_dt = f_dict['added_at']
-                                                    print(added_track, end="")
+                                                    print(added_track_console, end="")
                                                     try:
                                                         if csv_file_name:
                                                             write_csv_entry(csv_file_name, convert_to_local_naive(added_at_dt), "Added Track", p_name, f_dict['added_by'], f_dict["artist"] + " - " + f_dict["track"])
@@ -4812,11 +4986,34 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                                             for f_dict in removed_tracks:
                                                 if "artist" in f_dict and "track" in f_dict:
-                                                    apple_search_url, genius_search_url, youtube_music_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
+                                                    apple_search_url, genius_search_url, azlyrics_search_url, tekstowo_search_url, musixmatch_search_url, lyrics_com_search_url, youtube_music_search_url, amazon_music_search_url, deezer_search_url, tidal_search_url = get_apple_genius_search_urls(f_dict["artist"], f_dict["track"])
                                                     tempuri = f'spotify:user:{f_dict["added_by_id"]}'
-                                                    removed_track = f'- {f_dict["artist"]} - {f_dict["track"]} [ {get_date_from_ts(f_dict["added_at"])}, {f_dict["added_by"]} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict["uri"])} ]\n[ Apple Music URL: {apple_search_url} ]\n[ YouTube Music URL: {youtube_music_search_url} ]\n[ Genius URL: {genius_search_url} ]\n[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
-                                                    p_message_removed_tracks += removed_track
-                                                    print(removed_track, end="")
+                                                    music_urls_output = format_music_urls_console(apple_search_url, youtube_music_search_url, amazon_music_search_url, deezer_search_url, tidal_search_url)
+                                                    lyrics_urls_output = format_lyrics_urls_console(genius_search_url, azlyrics_search_url, tekstowo_search_url, musixmatch_search_url, lyrics_com_search_url)
+                                                    music_urls_text = format_music_urls_email_text(apple_search_url, youtube_music_search_url, amazon_music_search_url, deezer_search_url, tidal_search_url)
+                                                    lyrics_urls_text = format_lyrics_urls_email_text(genius_search_url, azlyrics_search_url, tekstowo_search_url, musixmatch_search_url, lyrics_com_search_url)
+                                                    removed_track_console = f'- {f_dict["artist"]} - {f_dict["track"]} [ {get_date_from_ts(f_dict["added_at"])}, {f_dict["added_by"]} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict["uri"])} ]\n'
+                                                    if music_urls_output:
+                                                        for line in music_urls_output.split("\n"):
+                                                            if line:
+                                                                removed_track_console += f"[ {line} ]\n"
+                                                    if lyrics_urls_output:
+                                                        for line in lyrics_urls_output.split("\n"):
+                                                            if line:
+                                                                removed_track_console += f"[ {line} ]\n"
+                                                    removed_track_console += f'[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
+                                                    removed_track_email = f'- {f_dict["artist"]} - {f_dict["track"]} [ {get_date_from_ts(f_dict["added_at"])}, {f_dict["added_by"]} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict["uri"])} ]\n'
+                                                    if music_urls_text:
+                                                        for line in music_urls_text.split("\n"):
+                                                            if line:
+                                                                removed_track_email += f"[ {line} ]\n"
+                                                    if lyrics_urls_text:
+                                                        for line in lyrics_urls_text.split("\n"):
+                                                            if line:
+                                                                removed_track_email += f"[ {line} ]\n"
+                                                    removed_track_email += f'[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
+                                                    p_message_removed_tracks += removed_track_email
+                                                    print(removed_track_console, end="")
                                                     try:
                                                         if csv_file_name:
                                                             write_csv_entry(csv_file_name, now_local_naive(), "Removed Track", p_name, f_dict["artist"] + " - " + f_dict["track"], "")
