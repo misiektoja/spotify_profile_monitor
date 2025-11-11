@@ -9,25 +9,25 @@ OSINT tool for real-time monitoring of **Spotify users' activities and profile c
 <a id="features"></a>
 ## Features
 
-- Real-time tracking of Spotify user activities and profile changes:
-   - addition/removal of followings and followers
-   - addition/removal of playlists
-   - addition/removal of tracks in playlists (including collaborator info for newly added tracks)
-   - playlists name and description changes
-   - number of likes for playlists
-   - number of collaborators for playlists
-   - profile picture changes
-   - username changes
-- Email notifications for various events (as listed above)
-- Attaching changed profile pictures directly to email notifications
-- Displaying the profile picture right in your terminal (if you have `imgcat` installed)
-- Additional functionalities on top of the monitoring mode allowing to display detailed info about the user, list of followers & followings, recently played artists and possibility to search for users in Spotify catalog with specific names
-- Ability to display and export the list of tracks for a specific playlist (including Liked Songs for the user who owns the Spotify access token)
-- Saving all profile changes (including playlists) with timestamps to the CSV file
-- Clickable Spotify, Apple Music, YouTube Music, Amazon Music, Deezer, Tidal, Genius Lyrics, AZLyrics, Tekstowo.pl, Musixmatch and Lyrics.com search URLs printed in the console and included in email notifications (configurable per service)
-- Support for four different methods to get a Spotify access token (`sp_dc cookie`, `desktop client`, `OAuth app`, `OAuth user`)
-- Possibility to control the running copy of the script via signals
-- Functional, procedural Python (minimal OOP)
+- **Real-time tracking** of Spotify user activities and profile changes:
+   - addition/removal of **followings and followers**
+   - addition/removal of **playlists**
+   - addition/removal of **tracks in playlists** (including collaborator info for newly added tracks)
+   - **playlists name and description** changes
+   - **number of likes** for playlists
+   - **number of collaborators** for playlists
+   - **profile picture** changes
+   - **username** changes
+- **Email notifications** for various events (as listed above)
+- **Attaching changed profile pictures** directly to email notifications
+- **Displaying the profile picture** right in your terminal (if you have `imgcat` installed)
+- Additional functionalities on top of the monitoring mode allowing to display **detailed info about the user**, **list of followers & followings**, **recently played artists** and possibility to **search for users** in Spotify catalog with specific names
+- Ability to **display and export** the list of tracks for a specific playlist (including **Liked Songs** for the user who owns the Spotify access token)
+- **Saving all profile changes** (including playlists) with timestamps to the **CSV file**
+- **Clickable** **Spotify**, **Apple Music**, **YouTube Music**, **Amazon Music**, **Deezer**, **Tidal**, **Genius Lyrics**, **AZLyrics**, **Tekstowo.pl**, **Musixmatch** and **Lyrics.com** search URLs printed in the console and included in email notifications (configurable per service)
+- Support for **four different methods to get a Spotify access token** (`sp_dc cookie`, `desktop client`, `OAuth app`, `OAuth user`)
+- Possibility to **control the running copy** of the script via signals
+- **Functional, procedural Python** (minimal OOP)
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/assets/spotify_profile_monitor.png" alt="spotify_profile_monitor_screenshot" width="100%"/>
@@ -676,7 +676,7 @@ Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-sett
 Example email:
 
 <p align="center">
-   <img src="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/assets/spotify_profile_monitor_email_notifications.png" alt="spotify_profile_monitor_email_notifications" width="80%"/>
+   <img src="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/assets/spotify_profile_monitor_email_notifications.png" alt="spotify_profile_monitor_email_notifications" width="90%"/>
 </p>
 
 <a id="csv-export"></a>
