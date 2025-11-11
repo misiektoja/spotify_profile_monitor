@@ -24,7 +24,7 @@ OSINT tool for real-time monitoring of **Spotify users' activities and profile c
 - Additional functionalities on top of the monitoring mode allowing to display detailed info about the user, list of followers & followings, recently played artists and possibility to search for users in Spotify catalog with specific names
 - Ability to display and export the list of tracks for a specific playlist (including Liked Songs for the user who owns the Spotify access token)
 - Saving all profile changes (including playlists) with timestamps to the CSV file
-- Clickable Spotify, Apple Music, YouTube Music and Genius Lyrics search URLs printed in the console & included in email notifications
+- Clickable Spotify, Apple Music, YouTube Music, Amazon Music, Deezer, Tidal, Genius Lyrics, AZLyrics, Tekstowo.pl, Musixmatch and Lyrics.com search URLs printed in the console and included in email notifications (configurable per service)
 - Support for four different methods to get a Spotify access token (`sp_dc cookie`, `desktop client`, `OAuth app`, `OAuth user`)
 - Possibility to control the running copy of the script via signals
 - Functional, procedural Python (minimal OOP)
@@ -150,6 +150,8 @@ spotify_profile_monitor --generate-config > spotify_profile_monitor.conf
 ```
 
 Edit the `spotify_profile_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
+
+**New in v2.9:** The configuration file includes options to enable/disable music service URLs (Apple Music, YouTube Music, Amazon Music, Deezer, Tidal) and lyrics service URLs (Genius, AZLyrics, Tekstowo.pl, Musixmatch, Lyrics.com) in console and email outputs.
 
 <a id="spotify-access-token-source"></a>
 ### Spotify access token source
