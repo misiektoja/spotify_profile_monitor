@@ -1,6 +1,18 @@
 # spotify_profile_monitor release notes
 
-This is a high-level summary of the most important changes. 
+This is a high-level summary of the most important changes.
+
+# Changes in 3.0 (13 Dec 2025)
+
+**Features and Improvements**:
+
+- **NEW:** Implemented HTML formatting for email notifications for better readability
+- **IMPROVE:** Enhanced notifications for added/removed playlists with detailed information including songs count, duration, creation date and last update date in both console output and email notifications
+- **IMPROVE:** Added progress bar for playlist processing to provide better visual feedback
+
+**Bug fixes**:
+
+- **BUGFIX:** Improved handling of transient API issues in collaborator change notifications ([#17](https://github.com/misiektoja/spotify_profile_monitor/issues/17))
 
 # Changes in 2.9 (11 Nov 2025)
 
@@ -17,14 +29,14 @@ This is a high-level summary of the most important changes.
 
 - **IMPROVE:** Added support for loading TOTP secrets from local files via file:// URLs
 - **IMPROVE:** Updated remote URL in SECRET_CIPHER_DICT_URL
-- **IMPROVE:** Updated  [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) to dump secrets in different formats. Choose what you need with the `--secret`,` --secretbytes` and `--secretdict` CLI flags, or go all out with the `--all` mode to write all secret formats to files like `secrets.json`, `secretBytes.json` and `secretDict.json`
+- **IMPROVE:** Updated  [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) to dump secrets in different formats. Choose what you need with the `--secret`,` --secretbytes` and `--secretdict` CLI flags, or go all out with the `--all` mode to write all secret formats to files like `secrets.json`, `secretBytes.json` and `secretDict.json` (thanks [@tomballgithub](https://github.com/tomballgithub))
 - **IMPROVE:** Added multi-arch Docker image build and compose support for  [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) - more info at [🐳 Secret Key Extraction via Docker](https://github.com/misiektoja/spotify_monitor#-secret-key-extraction-via-docker-recommended-easiest-way)
 - **IMPROVE:** Moved CLEAN_OUTPUT assignment after loading configuration files. Checks that it is used only with -l or -x
 - **IMPROVE:** Added info to console output when TOTP secrets are fetched from a remote URL or local file
 
 **Bug fixes**:
 
-- **BUGFIX:** Fixed -l errors if playlist provided is just the ID (fixes [#25](https://github.com/misiektoja/spotify_profile_monitor/issues/25))
+- **BUGFIX:** Fixed -l errors if playlist provided is just the ID (thanks [@tomballgithub](https://github.com/tomballgithub), fixes [#25](https://github.com/misiektoja/spotify_profile_monitor/issues/25))
 
 # Changes in 2.7 (14 Jul 2025)
 
@@ -64,7 +76,7 @@ This is a high-level summary of the most important changes.
 
 **Bug fixes**:
 
-- **BUGFIX:** Fixed web-player access token retrieval via sp_dc cookie by updating secret cipher bytes (thanks [@WurdahMekanik](https://github.com/WurdahMekanik))
+- **BUGFIX:** Fixed web-player access token retrieval via sp_dc cookie by updating secret cipher bytes (thanks [@WurdahMekanik](https://github.com/WurdahMekanik) and [@matthewcamilizer](https://github.com/matthewcamilizer))
 - **BUGFIX:** Fixed missing email alerts for failed token requests when using sp_dc cookie method
 
 # Changes in 2.5.2 (18 Jun 2025)
@@ -246,7 +258,7 @@ Keep in mind: the tool displays the actual number of collaborators. That means i
 **Features and Improvements**:
 
 - **NEW:** Possibility to disable detection of changes in user's public playlists (new **-q** / **--do_not_monitor_playlists** parameter)
-- **NEW:** Possibility to disable email notifications for changed followers/followings (new **-g** / **--disable_followers_followings_notification** parameter) 
+- **NEW:** Possibility to disable email notifications for changed followers/followings (new **-g** / **--disable_followers_followings_notification** parameter)
 - **IMPROVE:** Recently played artists limit increased from 15 to 50 + info about the limit in the output
 - **IMPROVE:** Indentation + linting fixes
 
