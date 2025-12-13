@@ -3977,6 +3977,10 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
     list_of_removed_f_list = ""
     added_f_list_mbody = ""
     removed_f_list_mbody = ""
+    list_of_added_f_list_html = ""
+    list_of_removed_f_list_html = ""
+    added_f_list_mbody_html = ""
+    removed_f_list_mbody_html = ""
 
     if added_f_list or removed_f_list or ((f_str == "Followers" or f_str == "Followings") and TOKEN_SOURCE == "oauth_app"):
         print(f"* {f_str} number changed {f_str_by_or_from} user {username} from {f_old_count} to {f_count} ({f_diff_str})\n")
@@ -3984,6 +3988,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
     if added_f_list:
         print(f"{f_added_str}:\n")
         added_f_list_mbody = f"\n{f_added_str}:\n\n"
+        added_f_list_mbody_html = f"<br><b>{escape(f_added_str)}:</b><br><br>"
         for f_dict in added_f_list:
             if is_playlist:
                 if "uri" in f_dict:
@@ -3993,10 +3998,12 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                     if not cached or cached.get("status") != "ok":
                         print(f"- Skipping playlist {spotify_format_playlist_reference(uri)} due to cached error or missing data")
                         list_of_added_f_list += f"- Skipping playlist {spotify_format_playlist_reference(uri)} due to error\n"
+                        list_of_added_f_list_html += f"- Skipping playlist {escape(spotify_format_playlist_reference(uri))} due to error<br>"
                         continue
                     p_name = cached.get("name", "Unknown")
                     print(f"- {p_name} [ {spotify_convert_uri_to_url(uri)} ]")
                     list_of_added_f_list += f"- {p_name} [ {spotify_convert_uri_to_url(uri)} ]\n"
+                    list_of_added_f_list_html += f"- <a href=\"{spotify_convert_uri_to_url(uri)}\">{escape(p_name)}</a><br>"
 
                     try:
                         if csv_file_name:
@@ -4007,6 +4014,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                 if "name" in f_dict and "uri" in f_dict:
                     print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
                     list_of_added_f_list += f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n"
+                    list_of_added_f_list_html += f"- <a href=\"{spotify_convert_uri_to_url(f_dict['uri'])}\">{escape(f_dict['name'])}</a><br>"
                     try:
                         if csv_file_name:
                             write_csv_entry(csv_file_name, now_local_naive(), f_added_csv, username, "", f_dict["name"])
@@ -4016,6 +4024,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
     if removed_f_list:
         print(f"{f_removed_str}:\n")
         removed_f_list_mbody = f"\n{f_removed_str}:\n\n"
+        removed_f_list_mbody_html = f"<br><b>{escape(f_removed_str)}:</b><br><br>"
         for f_dict in removed_f_list:
             if is_playlist:
                 if "uri" in f_dict:
@@ -4034,6 +4043,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                         if "not found" in error_str.lower():
                             print(f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private")
                             list_of_removed_f_list += f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private\n"
+                            list_of_removed_f_list_html += f"- {escape(spotify_format_playlist_reference(uri))}: playlist has been removed or set to private<br>"
 
                         elif any(keyword in error_str.lower() for keyword in ["502", "server error", "bad gateway"]):
                             print(f"- Suspected temporary glitch for playlist {spotify_format_playlist_reference(uri)}" + (f": {error_str}" if error_str else ""))
@@ -4044,20 +4054,23 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                         else:
                             print(f"- Error while getting info for playlist {spotify_format_playlist_reference(uri)}, skipping for now" + (f": {error_str}" if error_str else ""))
                             list_of_removed_f_list += f"- Error while getting info for playlist {spotify_format_playlist_reference(uri)}\n"
+                            list_of_removed_f_list_html += f"- Error while getting info for playlist {escape(spotify_format_playlist_reference(uri))}<br>"
                             print_cur_ts("Timestamp:\t\t\t")
                             continue
-
-                    if is_playlist_private(sp_accessToken, uri):
-                        print(f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private")
-                        list_of_removed_f_list += f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private\n"
-                    else:
-                        print(f"- {spotify_format_playlist_reference(uri)}")
-                        list_of_removed_f_list += f"- {spotify_format_playlist_reference(uri)}\n"
 
                     if cached:
                         p_name = cached.get("name", "Unknown")
                     else:
                         p_name = "Unknown"
+
+                    if is_playlist_private(sp_accessToken, uri):
+                        print(f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private")
+                        list_of_removed_f_list += f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private\n"
+                        list_of_removed_f_list_html += f"- <a href=\"{spotify_convert_uri_to_url(uri)}\">{escape(p_name)}</a>: playlist has been removed or set to private<br>"
+                    else:
+                        print(f"- {spotify_format_playlist_reference(uri)}")
+                        list_of_removed_f_list += f"- {spotify_format_playlist_reference(uri)}\n"
+                        list_of_removed_f_list_html += f"- <a href=\"{spotify_convert_uri_to_url(uri)}\">{escape(p_name)}</a><br>"
                     try:
                         if csv_file_name:
                             write_csv_entry(csv_file_name, now_local_naive(), f_removed_csv, username, p_name, "")
@@ -4067,6 +4080,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                 if "name" in f_dict and "uri" in f_dict:
                     print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
                     list_of_removed_f_list += f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n"
+                    list_of_removed_f_list_html += f"- <a href=\"{spotify_convert_uri_to_url(f_dict['uri'])}\">{escape(f_dict['name'])}</a><br>"
                     try:
                         if csv_file_name:
                             write_csv_entry(csv_file_name, now_local_naive(), f_removed_csv, username, f_dict["name"], "")
@@ -4101,9 +4115,10 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
 
         m_subject = f"Spotify user {username} {str(f_str).lower()} number has changed! ({f_diff_str}, {f_old_count} -> {f_count})"
         m_body = f"{f_str} number changed {f_str_by_or_from} user {username} from {f_old_count} to {f_count} ({f_diff_str})\n{removed_f_list_mbody}{list_of_removed_f_list}{added_f_list_mbody}{list_of_added_f_list}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+        m_body_html = f"<html><head></head><body>{escape(f_str)} number changed {escape(f_str_by_or_from)} user <b>{escape(username)}</b> from <b>{f_old_count}</b> to <b>{f_count}</b> (<b>{escape(f_diff_str)}</b>)<br>{removed_f_list_mbody_html}{list_of_removed_f_list_html}{added_f_list_mbody_html}{list_of_added_f_list_html}<br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
 
         print(f"Sending email notification to {RECEIVER_EMAIL}")
-        send_email(m_subject, m_body, "", SMTP_SSL)
+        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
     return False
 
@@ -4645,8 +4660,9 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             if PROFILE_NOTIFICATION:
                 m_subject = f"Spotify user {username_old} has changed username to {username}"
                 m_body = f"Spotify user '{username_old}' has changed username to '{username}'\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                m_body_html = f"<html><head></head><body>Spotify user '<b>{escape(username_old)}</b>' has changed username to '<b>{escape(username)}</b>'<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
                 print(f"Sending email notification to {RECEIVER_EMAIL}")
-                send_email(m_subject, m_body, "", SMTP_SSL)
+                send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
             username_old = username
 
@@ -4782,8 +4798,9 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 if PROFILE_NOTIFICATION:
                     m_subject = f"Spotify user {username} has removed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
                     m_body = f"Spotify user {username} has removed profile picture added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    m_body_html = f"<html><head></head><body>Spotify user <b>{escape(username)}</b> has removed profile picture added on <b>{escape(get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True))}</b> (after <b>{escape(calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2))}</b>)<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, "", SMTP_SSL)
+                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
 
                 print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t")
@@ -4814,7 +4831,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     if PROFILE_NOTIFICATION:
                         m_subject = f"Spotify user {username} has set profile picture ! ({get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)})"
                         m_body = f"Spotify user {username} has set profile picture !\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        m_body_html = f"Spotify user <b>{username}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                        m_body_html = f"Spotify user <b>{username}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(SPOTIFY_CHECK_INTERVAL)}</b> ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
                         print(f"Sending email notification to {RECEIVER_EMAIL}")
 
                         send_email(m_subject, m_body, m_body_html, SMTP_SSL, profile_pic_file, "profile_pic")
@@ -4855,7 +4872,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                             m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
                             m_subject = f"Spotify user {username} has changed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
                             m_body = f"Spotify user {username} has changed profile picture !\n\nPrevious one added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                            m_body_html = f"Spotify user <b>{username}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
+                            m_body_html = f"Spotify user <b>{username}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(SPOTIFY_CHECK_INTERVAL)}</b> ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}"
                             print(f"Sending email notification to {RECEIVER_EMAIL}")
                             send_email(m_subject, m_body, m_body_html, SMTP_SSL, profile_pic_file, "profile_pic")
 
@@ -4936,9 +4953,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                                     m_subject = f"Spotify user {username} number of likes for playlist '{p_name}' has changed! ({p_likes_diff_str}, {p_likes_old} -> {p_likes})"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                    m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>': number of likes changed from <b>{p_likes_old}</b> to <b>{p_likes}</b> (<b>{escape(p_likes_diff_str)}</b>)<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
                                     if PROFILE_NOTIFICATION:
                                         print(f"Sending email notification to {RECEIVER_EMAIL}")
-                                        send_email(m_subject, m_body, "", SMTP_SSL)
+                                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
 
@@ -4977,13 +4995,17 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                                         p_message_added_collaborators = ""
                                         p_message_removed_collaborators = ""
+                                        p_message_added_collaborators_html = ""
+                                        p_message_removed_collaborators_html = ""
 
                                         if added_collaborators:
                                             p_message_added_collaborators = "Added collaborators:\n\n"
+                                            p_message_added_collaborators_html = "<br><b>Added collaborators:</b><br><br>"
 
                                             for collab_id, collab_name in added_collaborators.items():
                                                 added_collab = f'- {collab_name} [ {spotify_convert_uri_to_url(f"spotify:user:{collab_id}")} ]\n'
                                                 p_message_added_collaborators += added_collab
+                                                p_message_added_collaborators_html += f'- <a href="{spotify_convert_uri_to_url(f"spotify:user:{collab_id}")}">{escape(collab_name)}</a><br>'
                                                 try:
                                                     if csv_file_name:
                                                         write_csv_entry(csv_file_name, now_local_naive(), "Added Collaborator", p_name, "", collab_name)
@@ -4995,10 +5017,12 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                                         if removed_collaborators:
                                             p_message_removed_collaborators = "Removed collaborators:\n\n"
+                                            p_message_removed_collaborators_html = "<br><b>Removed collaborators:</b><br><br>"
 
                                             for collab_id, collab_name in removed_collaborators.items():
                                                 removed_collab = f'- {collab_name} [ {spotify_convert_uri_to_url(f"spotify:user:{collab_id}")} ]\n'
                                                 p_message_removed_collaborators += removed_collab
+                                                p_message_removed_collaborators_html += f'- <a href="{spotify_convert_uri_to_url(f"spotify:user:{collab_id}")}">{escape(collab_name)}</a><br>'
                                                 try:
                                                     if csv_file_name:
                                                         write_csv_entry(csv_file_name, now_local_naive(), "Removed Collaborator", p_name, collab_name, "")
@@ -5015,9 +5039,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                                     m_subject = f"Spotify user {username} number of collaborators for playlist '{p_name}' has changed! ({p_collaborators_diff_str}, {p_collaborators_old} -> {p_collaborators})"
                                     m_body = f"{p_message}\n{p_message_added_collaborators}{p_message_removed_collaborators}Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                    m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>': number of collaborators changed from <b>{p_collaborators_old}</b> to <b>{p_collaborators}</b> (<b>{escape(p_collaborators_diff_str)}</b>)<br>{p_message_added_collaborators_html}{p_message_removed_collaborators_html}<br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
                                     if PROFILE_NOTIFICATION:
                                         print(f"Sending email notification to {RECEIVER_EMAIL}")
-                                        send_email(m_subject, m_body, "", SMTP_SSL)
+                                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
 
@@ -5067,10 +5092,13 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                         added_tracks = diff_tracks(p_tracks_list, p_tracks_list_old)
                                         p_message_added_tracks = ""
                                         p_message_removed_tracks = ""
+                                        p_message_added_tracks_html = ""
+                                        p_message_removed_tracks_html = ""
 
                                         if added_tracks:
                                             print("Added tracks:\n")
                                             p_message_added_tracks = "Added tracks:\n\n"
+                                            p_message_added_tracks_html = "<br><b>Added tracks:</b><br><br>"
 
                                             for f_dict in added_tracks:
                                                 if "artist" in f_dict and "track" in f_dict:
@@ -5080,6 +5108,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                                     lyrics_urls_output = format_lyrics_urls_console(genius_search_url, azlyrics_search_url, tekstowo_search_url, musixmatch_search_url, lyrics_com_search_url)
                                                     music_urls_text = format_music_urls_email_text(apple_search_url, youtube_music_search_url, amazon_music_search_url, deezer_search_url, tidal_search_url)
                                                     lyrics_urls_text = format_lyrics_urls_email_text(genius_search_url, azlyrics_search_url, tekstowo_search_url, musixmatch_search_url, lyrics_com_search_url)
+                                                    music_urls_html = format_music_urls_email_html(apple_search_url, youtube_music_search_url, amazon_music_search_url, deezer_search_url, tidal_search_url, f_dict["artist"], f_dict["track"])
+                                                    lyrics_urls_html = format_lyrics_urls_email_html(genius_search_url, azlyrics_search_url, tekstowo_search_url, musixmatch_search_url, lyrics_com_search_url, f_dict["artist"], f_dict["track"])
                                                     added_track_console = f'- {f_dict["artist"]} - {f_dict["track"]} [ {get_date_from_ts(f_dict["added_at"])}, {f_dict["added_by"]} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict["uri"])} ]\n'
                                                     if music_urls_output:
                                                         for line in music_urls_output.split("\n"):
@@ -5100,7 +5130,18 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                                             if line:
                                                                 added_track_email += f"[ {line} ]\n"
                                                     added_track_email += f'[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
+                                                    added_track_html = f'- <b><a href="{spotify_convert_uri_to_url(f_dict["uri"])}">{escape(f_dict["artist"])} - {escape(f_dict["track"])}</a></b> [ {escape(get_date_from_ts(f_dict["added_at"]))}, <a href="{spotify_convert_uri_to_url(tempuri)}">{escape(f_dict["added_by"])}</a> ]<br>'
+                                                    if music_urls_html:
+                                                        for line in music_urls_html.split("<br>"):
+                                                            if line:
+                                                                added_track_html += f"{line}<br>"
+                                                    if lyrics_urls_html:
+                                                        for line in lyrics_urls_html.split("<br>"):
+                                                            if line:
+                                                                added_track_html += f"{line}<br>"
+                                                    added_track_html += '<br>'
                                                     p_message_added_tracks += added_track_email
+                                                    p_message_added_tracks_html += added_track_html
                                                     added_at_dt = f_dict['added_at']
                                                     print(added_track_console, end="")
                                                     try:
@@ -5112,6 +5153,11 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                         if removed_tracks:
                                             print("Removed tracks:\n")
                                             p_message_removed_tracks = "Removed tracks:\n\n"
+                                            # Add leading <br> only if there were no added tracks
+                                            if added_tracks:
+                                                p_message_removed_tracks_html = "<b>Removed tracks:</b><br><br>"
+                                            else:
+                                                p_message_removed_tracks_html = "<br><b>Removed tracks:</b><br><br>"
 
                                             for f_dict in removed_tracks:
                                                 if "artist" in f_dict and "track" in f_dict:
@@ -5121,6 +5167,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                                     lyrics_urls_output = format_lyrics_urls_console(genius_search_url, azlyrics_search_url, tekstowo_search_url, musixmatch_search_url, lyrics_com_search_url)
                                                     music_urls_text = format_music_urls_email_text(apple_search_url, youtube_music_search_url, amazon_music_search_url, deezer_search_url, tidal_search_url)
                                                     lyrics_urls_text = format_lyrics_urls_email_text(genius_search_url, azlyrics_search_url, tekstowo_search_url, musixmatch_search_url, lyrics_com_search_url)
+                                                    music_urls_html = format_music_urls_email_html(apple_search_url, youtube_music_search_url, amazon_music_search_url, deezer_search_url, tidal_search_url, f_dict["artist"], f_dict["track"])
+                                                    lyrics_urls_html = format_lyrics_urls_email_html(genius_search_url, azlyrics_search_url, tekstowo_search_url, musixmatch_search_url, lyrics_com_search_url, f_dict["artist"], f_dict["track"])
                                                     removed_track_console = f'- {f_dict["artist"]} - {f_dict["track"]} [ {get_date_from_ts(f_dict["added_at"])}, {f_dict["added_by"]} ]\n[ Spotify URL: {spotify_convert_uri_to_url(f_dict["uri"])} ]\n'
                                                     if music_urls_output:
                                                         for line in music_urls_output.split("\n"):
@@ -5141,7 +5189,18 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                                             if line:
                                                                 removed_track_email += f"[ {line} ]\n"
                                                     removed_track_email += f'[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
+                                                    removed_track_html = f'- <b><a href="{spotify_convert_uri_to_url(f_dict["uri"])}">{escape(f_dict["artist"])} - {escape(f_dict["track"])}</a></b> [ {escape(get_date_from_ts(f_dict["added_at"]))}, <a href="{spotify_convert_uri_to_url(tempuri)}">{escape(f_dict["added_by"])}</a> ]<br>'
+                                                    if music_urls_html:
+                                                        for line in music_urls_html.split("<br>"):
+                                                            if line:
+                                                                removed_track_html += f"{line}<br>"
+                                                    if lyrics_urls_html:
+                                                        for line in lyrics_urls_html.split("<br>"):
+                                                            if line:
+                                                                removed_track_html += f"{line}<br>"
+                                                    removed_track_html += '<br>'
                                                     p_message_removed_tracks += removed_track_email
+                                                    p_message_removed_tracks_html += removed_track_html
                                                     print(removed_track_console, end="")
                                                     try:
                                                         if csv_file_name:
@@ -5159,14 +5218,23 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                         if p_update and p_update_old:
                                             p_subject_after_str = f"; after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}"
                                         m_subject = f"Spotify user {username} number of tracks for playlist '{p_name}' has changed! ({p_tracks_diff_str}, {p_tracks_old} -> {p_tracks}{p_subject_after_str})"
+                                        m_body_html_p_message = f"Playlist '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>': number of tracks changed from <b>{p_tracks_old}</b> to <b>{p_tracks}</b> (<b>{escape(p_tracks_diff_str)}</b>)"
+                                        if p_after_str:
+                                            m_body_html_p_message += f" (after <b>{escape(calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2))}</b>; previous update: <b>{escape(get_short_date_from_ts(p_update_old, True))}</b>)"
+                                        m_body_html_p_message += "<br>"
                                     else:
                                         if p_update and p_update_old:
                                             p_subject_after_str = f" (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)})"
                                         m_subject = f"Spotify user {username} list of tracks ({p_tracks}) for playlist '{p_name}' has changed!{p_subject_after_str}"
+                                        m_body_html_p_message = f"Playlist '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>': list of tracks (<b>{p_tracks}</b>) have changed"
+                                        if p_after_str:
+                                            m_body_html_p_message += f" (after <b>{escape(calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2))}</b>; previous update: <b>{escape(get_short_date_from_ts(p_update_old, True))}</b>)"
+                                        m_body_html_p_message += "<br>"
                                     m_body = f"{p_message}\n{p_message_added_tracks}{p_message_removed_tracks}Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                    m_body_html = f"<html><head></head><body>{m_body_html_p_message}{p_message_added_tracks_html}{p_message_removed_tracks_html}Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
                                     if PROFILE_NOTIFICATION:
                                         print(f"Sending email notification to {RECEIVER_EMAIL}")
-                                        send_email(m_subject, m_body, "", SMTP_SSL)
+                                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
 
@@ -5181,9 +5249,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                         print(f"* Error: {e}")
                                     m_subject = f"Spotify user {username} playlist '{p_name_old}' name changed to '{p_name}'!"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                    m_body_html = f"<html><head></head><body>Playlist '<b>{escape(p_name_old)}</b>': name changed to new name '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>'<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
                                     if PROFILE_NOTIFICATION:
                                         print(f"Sending email notification to {RECEIVER_EMAIL}")
-                                        send_email(m_subject, m_body, "", SMTP_SSL)
+                                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
 
@@ -5198,9 +5267,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                         print(f"* Error: {e}")
                                     m_subject = f"Spotify user {username} playlist '{p_name}' description has changed !"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                    m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>' description changed from:<br><br>'<i>{escape(p_descr_old)}</i>'<br><br>to:<br><br>'<i>{escape(p_descr)}</i>'<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
                                     if PROFILE_NOTIFICATION:
                                         print(f"Sending email notification to {RECEIVER_EMAIL}")
-                                        send_email(m_subject, m_body, "", SMTP_SSL)
+                                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
 
