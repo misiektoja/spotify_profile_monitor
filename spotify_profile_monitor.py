@@ -3638,6 +3638,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     p_tracks_list = sp_playlist_data.get("sp_playlist_tracks", None)
                     added_at_ts_lowest = 0
                     added_at_ts_highest = 0
+                    duration_sum = 0
 
                     if p_tracks_list is not None:
                         for index, track in enumerate(p_tracks_list or []):
@@ -3653,6 +3654,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                 duration_ms = track_info["duration_ms"]
 
                                 track_duration = int(str(duration_ms)[0:-3])
+                                duration_sum += int(duration_ms) // 1000  # Convert to seconds
                                 track_uri = track_info.get("uri")
 
                                 added_by = track.get("added_by", {}) or {}
@@ -3699,6 +3701,17 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                 p_last_track_date = datetime.fromtimestamp(int(added_at_ts_highest), pytz.timezone(LOCAL_TIMEZONE)) if added_at_ts_highest > 0 else None
 
                 p_collaborators_count = len(user_id_name_mapping)
+
+                # Update cache with comprehensive playlist data
+                if p_uri in PLAYLIST_INFO_CACHE:
+                    PLAYLIST_INFO_CACHE[p_uri].update({
+                        "tracks_count": p_tracks,
+                        "duration_seconds": duration_sum,
+                        "creation_date_ts": added_at_ts_lowest if added_at_ts_lowest > 0 else None,
+                        "update_date_ts": added_at_ts_highest if added_at_ts_highest > 0 else None,
+                        "creation_date": p_creation_date,
+                        "update_date": p_last_track_date
+                    })
 
                 if list_of_tracks and effective_get_tracks:
                     list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "list_of_tracks": list_of_tracks, "collaborators_count": p_collaborators_count, "collaborators": user_id_name_mapping, "owner": p_owner, "owner_uri": p_owner_uri})
@@ -3953,6 +3966,112 @@ def spotify_get_followers_and_followings(sp_accessToken, user_uri_id):
                 print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
 
 
+# Helper function to get playlist details (songs count, duration, creation date, update date)
+def get_playlist_details_for_notification(sp_accessToken, playlist_uri):
+    try:
+        # Check cache first
+        if playlist_uri in PLAYLIST_INFO_CACHE:
+            cache_entry = PLAYLIST_INFO_CACHE[playlist_uri]
+            if cache_entry.get("status") == "ok":
+                tracks_count = cache_entry.get("tracks_count", 0)
+                duration_seconds = cache_entry.get("duration_seconds", 0)
+                creation_date_ts = cache_entry.get("creation_date_ts")
+                update_date_ts = cache_entry.get("update_date_ts")
+
+                # If we have cached data, use it
+                if tracks_count is not None and duration_seconds is not None:
+                    is_empty = tracks_count == 0
+
+                    creation_date_str = ""
+                    creation_date_since = ""
+                    if creation_date_ts and creation_date_ts > 0:
+                        creation_date_str = get_date_from_ts(creation_date_ts)
+                        creation_date_since = calculate_timespan(int(time.time()), creation_date_ts)
+
+                    update_date_str = ""
+                    update_date_since = ""
+                    if update_date_ts and update_date_ts > 0:
+                        update_date_str = get_date_from_ts(update_date_ts)
+                        update_date_since = calculate_timespan(int(time.time()), update_date_ts)
+
+                    return {
+                        "songs_count": tracks_count,
+                        "duration_seconds": duration_seconds,
+                        "creation_date": creation_date_str,
+                        "creation_date_since": creation_date_since,
+                        "update_date": update_date_str,
+                        "update_date_since": update_date_since,
+                        "is_empty": is_empty
+                    }
+
+        # Cache miss or incomplete data - fetch fresh
+        sp_playlist_data = spotify_get_playlist_info(sp_accessToken, playlist_uri, True)
+        p_tracks = sp_playlist_data.get("sp_playlist_tracks_count", 0)
+        p_tracks_list = sp_playlist_data.get("sp_playlist_tracks", [])
+
+        # Check if playlist is empty
+        is_empty = p_tracks == 0
+
+        # Calculate duration
+        duration_sum = 0
+        added_at_ts_lowest = 0
+        added_at_ts_highest = 0
+
+        if p_tracks_list:
+            for index, track in enumerate(p_tracks_list):
+                track_info = track.get("track")
+                if track_info:
+                    duration_ms = track_info.get("duration_ms", 0)
+                    if duration_ms:
+                        duration_sum += int(duration_ms) // 1000  # Convert to seconds
+
+                    added_at_str = track.get("added_at")
+                    if added_at_str:
+                        added_at_dt = convert_iso_str_to_datetime(added_at_str)
+                        if added_at_dt:
+                            added_at_ts = int(added_at_dt.timestamp())
+                            if index == 0:
+                                added_at_ts_lowest = added_at_ts
+                                added_at_ts_highest = added_at_ts
+                            if added_at_ts < added_at_ts_lowest:
+                                added_at_ts_lowest = added_at_ts
+                            if added_at_ts > added_at_ts_highest:
+                                added_at_ts_highest = added_at_ts
+
+        creation_date_str = ""
+        creation_date_since = ""
+        if added_at_ts_lowest > 0:
+            creation_date_str = get_date_from_ts(added_at_ts_lowest)
+            creation_date_since = calculate_timespan(int(time.time()), added_at_ts_lowest)
+
+        update_date_str = ""
+        update_date_since = ""
+        if added_at_ts_highest > 0:
+            update_date_str = get_date_from_ts(added_at_ts_highest)
+            update_date_since = calculate_timespan(int(time.time()), added_at_ts_highest)
+
+        return {
+            "songs_count": p_tracks,
+            "duration_seconds": duration_sum,
+            "creation_date": creation_date_str,
+            "creation_date_since": creation_date_since,
+            "update_date": update_date_str,
+            "update_date_since": update_date_since,
+            "is_empty": is_empty
+        }
+    except Exception as e:
+        return {
+            "songs_count": 0,
+            "duration_seconds": 0,
+            "creation_date": "",
+            "creation_date_since": "",
+            "update_date": "",
+            "update_date_since": "",
+            "is_empty": True,
+            "error": str(e)
+        }
+
+
 # Prints and saves changed list of followers/followings/playlists (with email notifications)
 def spotify_print_changed_followers_followings_playlists(username, f_list, f_list_old, f_count, f_old_count, f_str, f_str_by_or_from, f_added_str, f_added_csv, f_removed_str, f_removed_csv, f_file, csv_file_name, profile_notification, is_playlist, sp_accessToken=None):
     global GLITCH_CACHE
@@ -3989,7 +4108,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
         print(f"{f_added_str}:\n")
         added_f_list_mbody = f"\n{f_added_str}:\n\n"
         added_f_list_mbody_html = f"<br><b>{escape(f_added_str)}:</b><br><br>"
-        for f_dict in added_f_list:
+        for idx, f_dict in enumerate(added_f_list):
             if is_playlist:
                 if "uri" in f_dict:
 
@@ -4001,9 +4120,64 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                         list_of_added_f_list_html += f"- Skipping playlist {escape(spotify_format_playlist_reference(uri))} due to error<br>"
                         continue
                     p_name = cached.get("name", "Unknown")
-                    print(f"- {p_name} [ {spotify_convert_uri_to_url(uri)} ]")
-                    list_of_added_f_list += f"- {p_name} [ {spotify_convert_uri_to_url(uri)} ]\n"
-                    list_of_added_f_list_html += f"- <a href=\"{spotify_convert_uri_to_url(uri)}\">{escape(p_name)}</a><br>"
+                    p_url = spotify_convert_uri_to_url(uri)
+
+                    # Get playlist details
+                    playlist_details = None
+                    if sp_accessToken:
+                        try:
+                            playlist_details = get_playlist_details_for_notification(sp_accessToken, uri)
+                        except Exception as e:
+                            playlist_details = None
+
+                    # Format console output
+                    console_output = f"- {p_name} [ {p_url} ]"
+                    email_output = f"- {p_name} [ {p_url} ]"
+                    html_output = f"- <a href=\"{p_url}\">{escape(p_name)}</a>"
+
+                    if playlist_details and not playlist_details.get("error"):
+                        if playlist_details.get("is_empty"):
+                            console_output += f"\n  (Playlist is empty)"
+                            email_output += f"\n  (Playlist is empty)"
+                            html_output += f"<br>&nbsp;&nbsp;(Playlist is empty)"
+                        else:
+                            # Songs count
+                            console_output += f"\n  Songs: {playlist_details.get('songs_count', 0)}"
+                            email_output += f"\n  Songs: {playlist_details.get('songs_count', 0)}"
+                            html_output += f"<br>&nbsp;&nbsp;Songs: <b>{playlist_details.get('songs_count', 0)}</b>"
+
+                            # Duration
+                            duration_str = display_time(playlist_details.get('duration_seconds', 0))
+                            console_output += f"\n  Duration: {duration_str}"
+                            email_output += f"\n  Duration: {duration_str}"
+                            html_output += f"<br>&nbsp;&nbsp;Duration: <b>{escape(duration_str)}</b>"
+
+                            # Creation date
+                            if playlist_details.get('creation_date'):
+                                creation_info = f"{playlist_details.get('creation_date')} ({playlist_details.get('creation_date_since', '')} ago)"
+                                console_output += f"\n  Creation date: {creation_info}"
+                                email_output += f"\n  Creation date: {creation_info}"
+                                html_output += f"<br>&nbsp;&nbsp;Creation date: <b>{escape(playlist_details.get('creation_date'))}</b> ({escape(playlist_details.get('creation_date_since', ''))} ago)"
+
+                            # Last update date
+                            if playlist_details.get('update_date'):
+                                update_info = f"{playlist_details.get('update_date')} ({playlist_details.get('update_date_since', '')} ago)"
+                                console_output += f"\n  Last update: {update_info}"
+                                email_output += f"\n  Last update: {update_info}"
+                                html_output += f"<br>&nbsp;&nbsp;Last update: <b>{escape(playlist_details.get('update_date'))}</b> ({escape(playlist_details.get('update_date_since', ''))} ago)"
+
+                    print(console_output)
+                    list_of_added_f_list += email_output
+                    list_of_added_f_list_html += html_output
+
+                    # Add empty line between playlists if not the last one and there are multiple playlists
+                    if len(added_f_list) > 1 and idx < len(added_f_list) - 1:
+                        print()
+                        list_of_added_f_list += "\n\n"
+                        list_of_added_f_list_html += "<br><br>"
+                    else:
+                        list_of_added_f_list += "\n"
+                        list_of_added_f_list_html += "<br>"
 
                     try:
                         if csv_file_name:
@@ -4013,19 +4187,30 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
             else:
                 if "name" in f_dict and "uri" in f_dict:
                     print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
-                    list_of_added_f_list += f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n"
-                    list_of_added_f_list_html += f"- <a href=\"{spotify_convert_uri_to_url(f_dict['uri'])}\">{escape(f_dict['name'])}</a><br>"
+                    list_of_added_f_list += f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]"
+                    list_of_added_f_list_html += f"- <a href=\"{spotify_convert_uri_to_url(f_dict['uri'])}\">{escape(f_dict['name'])}</a>"
+
+                    # Add empty line between items if not the last one and there are multiple items
+                    if len(added_f_list) > 1 and idx < len(added_f_list) - 1:
+                        print()
+                        list_of_added_f_list += "\n\n"
+                        list_of_added_f_list_html += "<br><br>"
+                    else:
+                        list_of_added_f_list += "\n"
+                        list_of_added_f_list_html += "<br>"
+
                     try:
                         if csv_file_name:
                             write_csv_entry(csv_file_name, now_local_naive(), f_added_csv, username, "", f_dict["name"])
                     except Exception as e:
                         print(f"* Error: {e}")
-        print()
+        if added_f_list:
+            print()
     if removed_f_list:
         print(f"{f_removed_str}:\n")
         removed_f_list_mbody = f"\n{f_removed_str}:\n\n"
         removed_f_list_mbody_html = f"<br><b>{escape(f_removed_str)}:</b><br><br>"
-        for f_dict in removed_f_list:
+        for idx, f_dict in enumerate(removed_f_list):
             if is_playlist:
                 if "uri" in f_dict:
 
@@ -4063,14 +4248,117 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                     else:
                         p_name = "Unknown"
 
-                    if is_playlist_private(sp_accessToken, uri):
-                        print(f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private")
-                        list_of_removed_f_list += f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private\n"
-                        list_of_removed_f_list_html += f"- <a href=\"{spotify_convert_uri_to_url(uri)}\">{escape(p_name)}</a>: playlist has been removed or set to private<br>"
+                    p_url = spotify_convert_uri_to_url(uri)
+
+                    # Check if playlist is private first
+                    is_private = is_playlist_private(sp_accessToken, uri) if sp_accessToken else False
+
+                    # Try to get playlist details if still accessible
+                    playlist_details = None
+                    if sp_accessToken and not is_private:
+                        try:
+                            playlist_details = get_playlist_details_for_notification(sp_accessToken, uri)
+                        except Exception:
+                            playlist_details = None
+
+                    if is_private:
+                        console_output = f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private"
+                        email_output = f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private"
+                        html_output = f"- <a href=\"{p_url}\">{escape(p_name)}</a>: playlist has been removed or set to private"
+
+                        # If we have cached details, show them
+                        if playlist_details and not playlist_details.get("error"):
+                            if playlist_details.get("is_empty"):
+                                console_output += f"\n  (Playlist was empty)"
+                                email_output += f"\n  (Playlist was empty)"
+                                html_output += f"<br>&nbsp;&nbsp;(Playlist was empty)"
+                            else:
+                                # Songs count
+                                console_output += f"\n  Songs: {playlist_details.get('songs_count', 0)}"
+                                email_output += f"\n  Songs: {playlist_details.get('songs_count', 0)}"
+                                html_output += f"<br>&nbsp;&nbsp;Songs: <b>{playlist_details.get('songs_count', 0)}</b>"
+
+                                # Duration
+                                duration_str = display_time(playlist_details.get('duration_seconds', 0))
+                                console_output += f"\n  Duration: {duration_str}"
+                                email_output += f"\n  Duration: {duration_str}"
+                                html_output += f"<br>&nbsp;&nbsp;Duration: <b>{escape(duration_str)}</b>"
+
+                                # Creation date
+                                if playlist_details.get('creation_date'):
+                                    creation_info = f"{playlist_details.get('creation_date')} ({playlist_details.get('creation_date_since', '')} ago)"
+                                    console_output += f"\n  Creation date: {creation_info}"
+                                    email_output += f"\n  Creation date: {creation_info}"
+                                    html_output += f"<br>&nbsp;&nbsp;Creation date: <b>{escape(playlist_details.get('creation_date'))}</b> ({escape(playlist_details.get('creation_date_since', ''))} ago)"
+
+                                # Last update date
+                                if playlist_details.get('update_date'):
+                                    update_info = f"{playlist_details.get('update_date')} ({playlist_details.get('update_date_since', '')} ago)"
+                                    console_output += f"\n  Last update: {update_info}"
+                                    email_output += f"\n  Last update: {update_info}"
+                                    html_output += f"<br>&nbsp;&nbsp;Last update: <b>{escape(playlist_details.get('update_date'))}</b> ({escape(playlist_details.get('update_date_since', ''))} ago)"
+
+                        print(console_output)
+                        list_of_removed_f_list += email_output
+                        list_of_removed_f_list_html += html_output
+
+                        # Add empty line between playlists if not the last one and there are multiple playlists
+                        if len(removed_f_list) > 1 and idx < len(removed_f_list) - 1:
+                            print()
+                            list_of_removed_f_list += "\n\n"
+                            list_of_removed_f_list_html += "<br><br>"
+                        else:
+                            list_of_removed_f_list += "\n"
+                            list_of_removed_f_list_html += "<br>"
                     else:
-                        print(f"- {spotify_format_playlist_reference(uri)}")
-                        list_of_removed_f_list += f"- {spotify_format_playlist_reference(uri)}\n"
-                        list_of_removed_f_list_html += f"- <a href=\"{spotify_convert_uri_to_url(uri)}\">{escape(p_name)}</a><br>"
+                        console_output = f"- {spotify_format_playlist_reference(uri)}"
+                        email_output = f"- {spotify_format_playlist_reference(uri)}"
+                        html_output = f"- <a href=\"{p_url}\">{escape(p_name)}</a>"
+
+                        # Get playlist details if available
+                        if playlist_details and not playlist_details.get("error"):
+                            if playlist_details.get("is_empty"):
+                                console_output += f"\n  (Playlist is empty)"
+                                email_output += f"\n  (Playlist is empty)"
+                                html_output += f"<br>&nbsp;&nbsp;(Playlist is empty)"
+                            else:
+                                # Songs count
+                                console_output += f"\n  Songs: {playlist_details.get('songs_count', 0)}"
+                                email_output += f"\n  Songs: {playlist_details.get('songs_count', 0)}"
+                                html_output += f"<br>&nbsp;&nbsp;Songs: <b>{playlist_details.get('songs_count', 0)}</b>"
+
+                                # Duration
+                                duration_str = display_time(playlist_details.get('duration_seconds', 0))
+                                console_output += f"\n  Duration: {duration_str}"
+                                email_output += f"\n  Duration: {duration_str}"
+                                html_output += f"<br>&nbsp;&nbsp;Duration: <b>{escape(duration_str)}</b>"
+
+                                # Creation date
+                                if playlist_details.get('creation_date'):
+                                    creation_info = f"{playlist_details.get('creation_date')} ({playlist_details.get('creation_date_since', '')} ago)"
+                                    console_output += f"\n  Creation date: {creation_info}"
+                                    email_output += f"\n  Creation date: {creation_info}"
+                                    html_output += f"<br>&nbsp;&nbsp;Creation date: <b>{escape(playlist_details.get('creation_date'))}</b> ({escape(playlist_details.get('creation_date_since', ''))} ago)"
+
+                                # Last update date
+                                if playlist_details.get('update_date'):
+                                    update_info = f"{playlist_details.get('update_date')} ({playlist_details.get('update_date_since', '')} ago)"
+                                    console_output += f"\n  Last update: {update_info}"
+                                    email_output += f"\n  Last update: {update_info}"
+                                    html_output += f"<br>&nbsp;&nbsp;Last update: <b>{escape(playlist_details.get('update_date'))}</b> ({escape(playlist_details.get('update_date_since', ''))} ago)"
+
+                        print(console_output)
+                        list_of_removed_f_list += email_output
+                        list_of_removed_f_list_html += html_output
+
+                        # Add empty line between playlists if not the last one and there are multiple playlists
+                        if len(removed_f_list) > 1 and idx < len(removed_f_list) - 1:
+                            print()
+                            list_of_removed_f_list += "\n\n"
+                            list_of_removed_f_list_html += "<br><br>"
+                        else:
+                            list_of_removed_f_list += "\n"
+                            list_of_removed_f_list_html += "<br>"
                     try:
                         if csv_file_name:
                             write_csv_entry(csv_file_name, now_local_naive(), f_removed_csv, username, p_name, "")
@@ -4079,14 +4367,25 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
             else:
                 if "name" in f_dict and "uri" in f_dict:
                     print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
-                    list_of_removed_f_list += f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]\n"
-                    list_of_removed_f_list_html += f"- <a href=\"{spotify_convert_uri_to_url(f_dict['uri'])}\">{escape(f_dict['name'])}</a><br>"
+                    list_of_removed_f_list += f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]"
+                    list_of_removed_f_list_html += f"- <a href=\"{spotify_convert_uri_to_url(f_dict['uri'])}\">{escape(f_dict['name'])}</a>"
+
+                    # Add empty line between items if not the last one and there are multiple items
+                    if len(removed_f_list) > 1 and idx < len(removed_f_list) - 1:
+                        print()
+                        list_of_removed_f_list += "\n\n"
+                        list_of_removed_f_list_html += "<br><br>"
+                    else:
+                        list_of_removed_f_list += "\n"
+                        list_of_removed_f_list_html += "<br>"
+
                     try:
                         if csv_file_name:
                             write_csv_entry(csv_file_name, now_local_naive(), f_removed_csv, username, f_dict["name"], "")
                     except Exception as e:
                         print(f"* Error: {e}")
-        print()
+        if removed_f_list:
+            print()
 
     if is_playlist and f_diff != 0 and not list_of_added_f_list.strip() and not list_of_removed_f_list.strip():
         print("Added", list_of_added_f_list.strip())
