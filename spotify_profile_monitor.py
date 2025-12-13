@@ -15,7 +15,7 @@ pyotp (optional, needed when the token source is set to cookie)
 pytz
 tzlocal (optional)
 python-dotenv (optional)
-spotipy (optional, needed when the token source is set to oauth_app)
+spotipy (optional, needed when the token source is set to oauth_app or oauth_user)
 wcwidth (optional, needed by TRUNCATE_CHARS feature)
 """
 
