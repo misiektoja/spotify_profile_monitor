@@ -210,7 +210,7 @@ regexp=.*Getting details of last played match for (\w*) (\.\.\..*)$
 colours=unchanged, blue underline, unchanged
 -
 regexp=.* playing '(.*)'
-colours=unchanged, magenta
+colours=unchanged, yellow bold
 -
 regexp=.* changed game from '(.*)'( to )'(.*)'
 colours=unchanged, magenta, unchanged, magenta
@@ -263,12 +263,20 @@ colours=unchanged, red, red
 regexp=(?i)\* Signal.*received
 colours=yellow
 -
+regexp=(?i)^Status:\s+(offline|inactive|invisible)\s*$
+colours=unchanged, red
+-
+regexp=(?i)^Status:\s+(away)\s*$
+colours=unchanged, yellow
+-
+regexp=(?i)^Status:\s+(snooze)\s*$
+colours=unchanged, magenta
+-
+regexp=(?i)^Status:\s+(online|available|active)\s*$
+colours=unchanged, green
+-
 regexp=(?i)( online| appeared | available)|\bYes\b|\bTrue\b
 colours=green
-count=more
--
-regexp=(?i)( offline| away| snooze)|\bNo\b|\bFalse\b
-colours=red
 count=more
 -
 regexp=(?i)( away)
@@ -278,12 +286,10 @@ count=more
 regexp=(?i)( snooze)
 colours=magenta
 count=more
-#-
-#regexp=(?i)^Status:\s+(offline|away|snooze)$
-#colours=unchanged, red
-#-
-#regexp=(?i)^Status:\s+(online|available)$
-#colours=unchanged, green
+-
+regexp=(?i)( offline)|\bNo\b|\bFalse\b
+colours=red
+count=more
 -
 regexp=( ACTIVE)
 colours=blink green
@@ -391,4 +397,3 @@ colours=unchanged, green, unchanged
 -
 regexp=^\* Playlist URL: (.*)
 colours=unchanged, blue
-
