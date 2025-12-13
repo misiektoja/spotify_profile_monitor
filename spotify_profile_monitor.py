@@ -3442,7 +3442,7 @@ def spotify_format_playlist_reference(uri):
 
 
 # Displays a progress bar with percentage and current playlist name
-def _display_progress(current, total, playlist_name: str = "", bar_length: int = 40) -> None:
+def _display_progress(current, total, playlist_name: str = "", bar_length: int = 40, is_final: bool = False) -> None:
     if total == 0:
         return
 
@@ -3531,10 +3531,18 @@ def _display_progress(current, total, playlist_name: str = "", bar_length: int =
 
     progress_str = " ".join(parts)
 
-    # Use ANSI escape code to clear to end of line, then write the progress
-    # \r moves to start of line, \033[K clears from cursor to end of line
-    sys.stdout.write("\r\033[K" + progress_str)
-    sys.stdout.flush()
+    terminal_out = stdout_bck if stdout_bck is not None else sys.stdout
+
+    if is_final:
+        terminal_out.write("\r\033[K" + progress_str)
+        terminal_out.flush()
+
+        if stdout_bck is not None and isinstance(sys.stdout, Logger):
+            sys.stdout.logfile.write(progress_str)
+            sys.stdout.logfile.flush()
+    else:
+        terminal_out.write("\r\033[K" + progress_str)
+        terminal_out.flush()
 
 
 # Processes items from all the provided playlists and returns a list of dictionaries
@@ -3572,7 +3580,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                         print_cur_ts("Timestamp:\t\t\t")
                         error_while_processing = True
                         if show_progress:
-                            _display_progress(idx, total_playlists, current_playlist_name)
+                            _display_progress(idx, total_playlists, current_playlist_name, is_final=(idx == total_playlists))
                         continue
 
                     p_uri_id = spotify_extract_id_or_name(p_uri)
@@ -3581,7 +3589,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                         print_cur_ts("Timestamp:\t\t\t")
                         error_while_processing = True
                         if show_progress:
-                            _display_progress(idx, total_playlists, current_playlist_name)
+                            _display_progress(idx, total_playlists, current_playlist_name, is_final=(idx == total_playlists))
                         continue
 
                     p_owner_name = spotify_extract_id_or_name(p_owner)
@@ -3614,7 +3622,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                         print_cur_ts("Timestamp:\t\t\t")
                         error_while_processing = True
                         if show_progress:
-                            _display_progress(idx, total_playlists, current_playlist_name)
+                            _display_progress(idx, total_playlists, current_playlist_name, is_final=(idx == total_playlists))
                         continue
 
                     p_name = sp_playlist_data.get("sp_playlist_name", "")
@@ -3684,7 +3692,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     print_cur_ts("Timestamp:\t\t\t")
                     error_while_processing = True
                     if show_progress:
-                        _display_progress(idx, total_playlists, current_playlist_name)
+                        _display_progress(idx, total_playlists, current_playlist_name, is_final=(idx == total_playlists))
                     continue
 
                 p_creation_date = datetime.fromtimestamp(int(added_at_ts_lowest), pytz.timezone(LOCAL_TIMEZONE)) if added_at_ts_lowest > 0 else None
@@ -3699,11 +3707,17 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
 
                 # Final refresh after successful processing
                 if show_progress:
-                    _display_progress(idx, total_playlists, p_name)
+                    _display_progress(idx, total_playlists, p_name, is_final=(idx == total_playlists))
                     # If this is the last playlist, immediately add a newline after the progress bar
                     if idx == total_playlists:
-                        sys.stdout.write("\n")
-                        sys.stdout.flush()
+                        # Write newline to terminal
+                        terminal_out = stdout_bck if stdout_bck is not None else sys.stdout
+                        terminal_out.write("\n")
+                        terminal_out.flush()
+                        # Also write to log file if logging is enabled
+                        if stdout_bck is not None and isinstance(sys.stdout, Logger):
+                            sys.stdout.logfile.write("\n")
+                            sys.stdout.logfile.flush()
 
     return list_of_playlists, error_while_processing
 
