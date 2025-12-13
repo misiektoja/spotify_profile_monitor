@@ -170,17 +170,17 @@ Edit the `spotify_profile_monitor.conf` file and change any desired configuratio
 
 The tool supports four methods for obtaining a Spotify access token.
 
-It can be configured via the `TOKEN_SOURCE` configuration option or the `--token-source` flag. 
+It can be configured via the `TOKEN_SOURCE` configuration option or the `--token-source` flag.
 
-**Recommended: `cookie`** 
+**Recommended: `cookie`**
 
 Uses the `sp_dc` cookie to retrieve a token from the Spotify web endpoint. This method is easy to set up and supports all features except fetching the list of liked tracks for the account that owns the access token (due to recent Spotify token's scope restrictions).
 
-**Alternative: `client`** 
+**Alternative: `client`**
 
 Uses captured credentials from the Spotify desktop client and a Protobuf-based login flow. It's more complex to set up, but supports all features. This method is intended for advanced users who want a long-lasting token with the broadest possible access.
 
-**Safe fallback: `oauth_app`** 
+**Safe fallback: `oauth_app`**
 
 Relies on the official Spotify Web API (Client Credentials OAuth flow). This method is easy to set up and safe to use, but has several limitations. The following features are **not** supported:
 - viewing the list of followers/followings
@@ -194,7 +194,7 @@ Relies on the official Spotify Web API (Client Credentials OAuth flow). This met
 
 Dedicated to tracking the authenticated user's own account via the official Spotify Web API (Authorization Code OAuth flow). I personally use this mode to monitor changes to my own account - such as new or lost followers/followings, likes on my playlists or when a collaborator adds a new song. You can also use this mode to track other users.
 
-This method is easy to set up and safe to use, but has several limitations. 
+This method is easy to set up and safe to use, but has several limitations.
 
 The following features are **not** supported when monitoring **your own account**:
 - viewing the list of followers
@@ -280,7 +280,7 @@ The same applies to `--token-source client` flag - you can persist it via `TOKEN
 
 The tool will automatically refresh both the access token and client token using the intercepted refresh token.
 
-If your refresh token expires, the tool will notify you via the console and email. In that case, you'll need to re-export the login request body. 
+If your refresh token expires, the tool will notify you via the console and email. In that case, you'll need to re-export the login request body.
 
 If you re-export the login request body to the same file name, you can send a `SIGHUP` signal to reload the file with the new refresh token without restarting the tool. More info in [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix).
 
@@ -380,7 +380,7 @@ Alternatively you can use the built-in functionality to search for usernames (`-
 spotify_profile_monitor -s "user name"
 ```
 
-It will list all users with such names with their user URI ID. 
+It will list all users with such names with their user URI ID.
 
 Before using this feature make sure you followed the instructions [here](#spotify-sha256-optional).
 
@@ -395,7 +395,7 @@ This step is optional and only required if you want to use the feature that sear
 
 - Look for requests with the `searchUsers` or `searchDesktop` operation name
 
-- Display the details of one of these requests and copy the **sha256Hash** parameter value (string marked as `XXXXXXXXXX` below) 
+- Display the details of one of these requests and copy the **sha256Hash** parameter value (string marked as `XXXXXXXXXX` below)
 
 Example request:
 `https://api-partner.spotify.com/pathfinder/v1/query?operationName=searchUsers&variables={"searchTerm":"spotify_user_uri_id","offset":0,"limit":5,"numberOfTopResults":5,"includeAudiobooks":false}&extensions={"persistedQuery":{"version":1,"sha256Hash":"XXXXXXXXXX"}}`
@@ -425,7 +425,7 @@ python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
 <a id="smtp-settings"></a>
 ### SMTP Settings
 
-If you want to use email notifications functionality, configure SMTP settings in the `spotify_profile_monitor.conf` file. 
+If you want to use email notifications functionality, configure SMTP settings in the `spotify_profile_monitor.conf` file.
 
 Verify your SMTP settings by using `--send-test-email` flag (the tool will try to send a test email notification):
 
@@ -466,7 +466,7 @@ SP_SHA256="your_spotify_client_sha256"
 SMTP_PASSWORD="your_smtp_password"
 ```
 
-By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it. 
+By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it.
 
 You can specify a custom file with `DOTENV_FILE` or `--env-file` flag:
 
@@ -501,9 +501,9 @@ spotify_profile_monitor <spotify_user_uri_id> -u "your_sp_dc_cookie_value"
 ```
 
 By default, the tool looks for a configuration file named `spotify_profile_monitor.conf` in:
- - current directory 
+ - current directory
  - home directory (`~`)
- - script directory 
+ - script directory
 
  If you generated a configuration file as described in [Configuration](#configuration), but saved it under a different name or in a different directory, you can specify its location using the `--config-file` flag:
 
@@ -522,7 +522,7 @@ spotify_profile_monitor <spotify_user_uri_id> -k
 
 It is helpful in the case of playlists created by another user added to another user profile.
 
-Some users don't list all their public playlists on their profile, but if you know a playlist's URI, you can still monitor it. 
+Some users don't list all their public playlists on their profile, but if you know a playlist's URI, you can still monitor it.
 
 To do so, add entries to the `ADD_PLAYLISTS_TO_MONITOR` configuration option. Example:
 
@@ -556,7 +556,7 @@ You can monitor multiple Spotify users by running multiple copies of the script.
 The tool automatically saves its output to `spotify_profile_monitor_<user_uri_id/file_suffix>.log` file. The log file name can be changed via `SP_LOGFILE` configuration option and its suffix via `FILE_SUFFIX` / `-y` flag. Logging can be disabled completely via `DISABLE_LOGGING` / `-d` flag.
 
 The tool also saves the list of followings, followers and playlists to these files:
-- `spotify_profile_<user_uri_id/file_suffix>_followings.json` 
+- `spotify_profile_<user_uri_id/file_suffix>_followings.json`
 - `spotify_profile_<user_uri_id/file_suffix>_followers.json`
 - `spotify_profile_<user_uri_id/file_suffix>_playlists.json`
 
@@ -718,7 +718,7 @@ If a change is detected, the old picture is moved to `spotify_profile_<user_uri_
 
 If you have `imgcat` installed, you can enable inline display of profile pictures and playlist artwork directly in your terminal.
 
-To do this, set the path to your `imgcat` binary in the `IMGCAT_PATH` configuration option. 
+To do this, set the path to your `imgcat` binary in the `IMGCAT_PATH` configuration option.
 
 If you specify only the binary name, it will be auto-searched in your PATH.
 
@@ -818,7 +818,7 @@ To help with troubleshooting and development, two debug utilities are available 
 <a id="access-token-retrieval-via-sp_dc-cookie-and-totp"></a>
 ### Access Token Retrieval via sp_dc Cookie and TOTP
 
-The [spotify_monitor_totp_test](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_totp_test.py) tool retrieves a Spotify access token using a Web Player `sp_dc` cookie and TOTP parameters. 
+The [spotify_monitor_totp_test](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_totp_test.py) tool retrieves a Spotify access token using a Web Player `sp_dc` cookie and TOTP parameters.
 
 Download from [here](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_totp_test.py) or:
 
@@ -849,7 +849,7 @@ You should get a valid Spotify access token, example output:
 <a id="secret-key-extraction-from-spotify-web-player-bundles"></a>
 ### Secret Key Extraction from Spotify Web Player Bundles
 
-The [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) tool automatically extracts secret keys used for TOTP generation in Spotify Web Player JavaScript bundles. 
+The [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) tool automatically extracts secret keys used for TOTP generation in Spotify Web Player JavaScript bundles.
 
 > 💡 **Quick tip:** The easiest and recommended way to run this tool is via Docker. Jump directly to the [Docker usage section below](#-secret-key-extraction-via-docker-recommended-easiest-way).
 
@@ -969,7 +969,7 @@ See [RELEASE_NOTES.md](https://github.com/misiektoja/spotify_profile_monitor/blo
 <a id="maintainers"></a>
 ## Maintainers
 
-[![Maintainer: misiektoja](https://img.shields.io/badge/maintainer-misiektoja-blue)](https://github.com/misiektoja)  
+[![Maintainer: misiektoja](https://img.shields.io/badge/maintainer-misiektoja-blue)](https://github.com/misiektoja)
 [![Maintainer: tomballgithub](https://img.shields.io/badge/maintainer-tomballgithub-blue)](https://github.com/tomballgithub)
 
 <a id="license"></a>
