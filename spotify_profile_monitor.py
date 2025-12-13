@@ -5347,6 +5347,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                                 # Number of tracks changed
                                 if p_tracks != p_tracks_old or p_update != p_update_old:
+                                    p_after_str = ""
                                     try:
 
                                         p_tracks_diff = p_tracks - p_tracks_old
@@ -5364,7 +5365,6 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                             if p_update < p_update_old or p_update == p_update_old:
                                                 p_update = now_local()
 
-                                        p_after_str = ""
                                         if p_tracks_diff != 0:
                                             if p_update and p_update_old:
                                                 p_after_str = f" (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}; previous update: {get_short_date_from_ts(p_update_old, True)})"
