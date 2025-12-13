@@ -170,6 +170,12 @@ PLAYLISTS_DISAPPEARED_COUNTER = 3
 # To avoid false alarms, we delay notifications until this happens FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER times in a row
 FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER = 3
 
+# Occasionally, the Spotify API glitches and returns inconsistent collaborator data for playlists
+# (e.g. missing or transient `added_by` fields on tracks can cause collaborator sets to flicker)
+# To avoid false alarms, we delay collaborator change notifications until the same change is seen
+# COLLABORATORS_CHANGE_COUNTER times in a row
+COLLABORATORS_CHANGE_COUNTER = 2
+
 # Optional: specify user agent manually
 #
 # When the token source is 'cookie' - set it to web browser user agent, some examples:
@@ -558,6 +564,7 @@ RECENTLY_PLAYED_ARTISTS_LIMIT = 0
 RECENTLY_PLAYED_ARTISTS_LIMIT_INFO = 0
 PLAYLISTS_DISAPPEARED_COUNTER = 0
 FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER = 0
+COLLABORATORS_CHANGE_COUNTER = 0
 USER_AGENT = ""
 LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
@@ -634,6 +641,10 @@ PLAYLIST_INFO_CACHE_TTL = (SPOTIFY_CHECK_INTERVAL * 2 if SPOTIFY_CHECK_INTERVAL 
 
 # Tracks temporarily glitched playlists to suppress false alerts
 GLITCH_CACHE = {}
+
+# Tracks transient collaborator glitches to suppress false alerts
+COLLABORATORS_BASELINE_CACHE = {}
+COLLABORATORS_PENDING_CACHE = {}
 
 LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / SPOTIFY_CHECK_INTERVAL
 
@@ -3095,6 +3106,7 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
 
     user_id_name_mapping = {}
     user_track_counts = Counter()
+    unknown_added_by_tracks = 0
 
     pattern = re.compile(r'^[a-zA-Z0-9]{22}$')
     if (pattern.match(playlist_url)):
@@ -3107,6 +3119,8 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
     p_name = sp_playlist_data.get("sp_playlist_name", "")
     p_descr = html.unescape(sp_playlist_data.get("sp_playlist_description", ""))
     p_owner = sp_playlist_data.get("sp_playlist_owner", "")
+    p_owner_uri = sp_playlist_data.get("sp_playlist_owner_uri", "")
+    p_owner_id = spotify_extract_id_or_name(p_owner_uri) if p_owner_uri else ""
 
     p_image_url = sp_playlist_data.get("sp_playlist_image_url", "")
 
@@ -3136,17 +3150,31 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
             added_at_dt = convert_iso_str_to_datetime(track.get("added_at"))
 
             added_by = track.get("added_by", {}) or {}
-            added_by_id = added_by.get("id", "") or "Spotify"
+            added_by_id = (added_by.get("id") or "").strip()
+
+            # Some tracks may have missing `added_by` due to Spotify API quirks
+            # For Spotify-owned playlists, treating it as "Spotify" gives better UX, for non-Spotify-owned playlists,
+            # treat as unknown and exclude from collaborator list/count to avoid false positives
+            if not added_by_id:
+                if p_owner_id.lower() == "spotify":
+                    added_by_id = "spotify"
+                else:
+                    unknown_added_by_tracks += 1
+                    added_by_id = "unknown"
 
             added_by_name = user_id_name_mapping.get(added_by_id)
             if not added_by_name:
-                if added_by_id == "Spotify":
+                if added_by_id == "spotify":
                     added_by_name = "Spotify"
+                elif added_by_id == "unknown":
+                    added_by_name = "Unknown"
                 else:
                     sp_user_data = spotify_get_user_info(sp_accessToken, added_by_id, False, 0)
                     added_by_name = sp_user_data.get("sp_username", added_by_id)
 
-                user_id_name_mapping[added_by_id] = added_by_name
+                # Exclude unknown from collaborator mapping to keep collaborator counts stable.
+                if added_by_id != "unknown":
+                    user_id_name_mapping[added_by_id] = added_by_name
 
             if not added_by_name:
                 added_by_name = added_by_id
@@ -3223,6 +3251,9 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
                 percent = (count / total_tracks * 100) if total_tracks else 0
                 url = spotify_convert_uri_to_url(f"spotify:user:{collab_id}")
                 print(f"- {collab_name} [songs: {count}, {percent:.1f}%] [URL: {url}]")
+
+        # if unknown_added_by_tracks > 0:
+        #     print(f"\nNote: {unknown_added_by_tracks} track(s) had missing added_by info from Spotify API - excluded from collaborator list/count")
 
 
 # Returns detailed information about tracks liked by the user owning the access token
@@ -3567,6 +3598,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
 
         for idx, playlist in enumerate(playlists, 1):
             user_id_name_mapping = {}
+            unknown_added_by_tracks = 0
             p_uri = ""
             if "uri" in playlist:
                 list_of_tracks = []
@@ -3634,6 +3666,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     p_url = spotify_convert_uri_to_url(p_uri)
                     p_owner = sp_playlist_data.get("sp_playlist_owner", "")
                     p_owner_uri = sp_playlist_data.get("sp_playlist_owner_uri", "")
+                    p_owner_id = spotify_extract_id_or_name(p_owner_uri) if p_owner_uri else ""
 
                     p_tracks_list = sp_playlist_data.get("sp_playlist_tracks", None)
                     added_at_ts_lowest = 0
@@ -3658,17 +3691,31 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                 track_uri = track_info.get("uri")
 
                                 added_by = track.get("added_by", {}) or {}
-                                added_by_id = added_by.get("id", "") or "Spotify"
+                                added_by_id = (added_by.get("id") or "").strip()
+
+                                # Some tracks may have missing `added_by` due to Spotify API quirks
+                                # For Spotify-owned playlists, treating it as "Spotify" gives better UX, for non-Spotify-owned playlists,
+                                # treat as unknown and exclude from collaborator list/count to avoid false positives
+                                if not added_by_id:
+                                    if p_owner_id.lower() == "spotify":
+                                        added_by_id = "spotify"
+                                    else:
+                                        unknown_added_by_tracks += 1
+                                        added_by_id = "unknown"
 
                                 added_by_name = user_id_name_mapping.get(added_by_id)
                                 if not added_by_name:
-                                    if added_by_id == "Spotify":
+                                    if added_by_id == "spotify":
                                         added_by_name = "Spotify"
+                                    elif added_by_id == "unknown":
+                                        added_by_name = "Unknown"
                                     else:
                                         sp_user_data = spotify_get_user_info(sp_accessToken, added_by_id, False, 0)
                                         added_by_name = sp_user_data.get("sp_username", added_by_id)
 
-                                    user_id_name_mapping[added_by_id] = added_by_name
+                                    # Exclude unknown from collaborator mapping to keep collaborator counts stable
+                                    if added_by_id != "unknown":
+                                        user_id_name_mapping[added_by_id] = added_by_name
 
                                 if not added_by_name:
                                     added_by_name = added_by_id
@@ -3714,9 +3761,9 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     })
 
                 if list_of_tracks and effective_get_tracks:
-                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "list_of_tracks": list_of_tracks, "collaborators_count": p_collaborators_count, "collaborators": user_id_name_mapping, "owner": p_owner, "owner_uri": p_owner_uri})
+                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "list_of_tracks": list_of_tracks, "collaborators_count": p_collaborators_count, "collaborators": user_id_name_mapping, "owner": p_owner, "owner_uri": p_owner_uri, "unknown_added_by_tracks": unknown_added_by_tracks})
                 else:
-                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "collaborators_count": p_collaborators_count, "collaborators": {}, "owner": p_owner, "owner_uri": p_owner_uri})
+                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "collaborators_count": p_collaborators_count, "collaborators": {}, "owner": p_owner, "owner_uri": p_owner_uri, "unknown_added_by_tracks": unknown_added_by_tracks})
 
                 # Final refresh after successful processing
                 if show_progress:
@@ -5260,7 +5307,64 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                     print_cur_ts("Timestamp:\t\t\t")
 
                                 # Number of collaborators changed
-                                if p_collaborators != p_collaborators_old:
+
+                                # Suppress transient collaborator glitches by confirming changes across multiple checks,
+                                # and keep a stable baseline per playlist to avoid baseline poisoning
+                                global COLLABORATORS_BASELINE_CACHE
+                                global COLLABORATORS_PENDING_CACHE
+
+                                stable_entry = COLLABORATORS_BASELINE_CACHE.get(p_uri)
+                                if stable_entry is None:
+                                    # Initialize baseline from previously persisted playlist snapshot (if available)
+                                    stable_ids = set((p_collaborators_list_old or {}).keys()) if isinstance(p_collaborators_list_old, dict) else set()
+                                    stable_map = (p_collaborators_list_old or {}) if isinstance(p_collaborators_list_old, dict) else {}
+                                    COLLABORATORS_BASELINE_CACHE[p_uri] = {"ids": stable_ids, "map": stable_map}
+                                    stable_entry = COLLABORATORS_BASELINE_CACHE[p_uri]
+
+                                stable_ids = set(stable_entry.get("ids") or set())
+                                stable_map = stable_entry.get("map") or {}
+                                current_ids = set((p_collaborators_list or {}).keys()) if isinstance(p_collaborators_list, dict) else set()
+                                suppress_collab_notification = False
+
+                                if current_ids != stable_ids:
+                                    pending = COLLABORATORS_PENDING_CACHE.get(p_uri)
+                                    if pending and pending.get("new_ids") == current_ids:
+                                        pending["streak"] = int(pending.get("streak", 0)) + 1
+                                    else:
+                                        pending = {
+                                            "new_ids": current_ids,
+                                            "new_map": (p_collaborators_list or {}) if isinstance(p_collaborators_list, dict) else {},
+                                            "streak": 1,
+                                            "first_seen_ts": time.time()
+                                        }
+                                        COLLABORATORS_PENDING_CACHE[p_uri] = pending
+
+                                    if int(pending.get("streak", 0)) < int(COLLABORATORS_CHANGE_COUNTER):
+                                        print(f"* Spotify API: suspected transient collaborator change for playlist '{p_name}' ({len(stable_ids)} -> {len(current_ids)}), streak {pending.get('streak')}/{COLLABORATORS_CHANGE_COUNTER}; will confirm next check")
+                                        print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                                        print_cur_ts("Timestamp:\t\t\t")
+                                        suppress_collab_notification = True
+                                    else:
+                                        p_collaborators_old = len(stable_ids)
+                                        p_collaborators_list_old = stable_map
+                                        p_collaborators = len(current_ids)
+                                        p_collaborators_list = (p_collaborators_list or {}) if isinstance(p_collaborators_list, dict) else {}
+
+                                        # Update stable baseline and clear pending
+                                        COLLABORATORS_BASELINE_CACHE[p_uri] = {"ids": current_ids, "map": p_collaborators_list}
+                                        try:
+                                            del COLLABORATORS_PENDING_CACHE[p_uri]
+                                        except Exception:
+                                            pass
+                                else:
+                                    # No change vs stable baseline; clear any pending candidate
+                                    if p_uri in COLLABORATORS_PENDING_CACHE:
+                                        try:
+                                            del COLLABORATORS_PENDING_CACHE[p_uri]
+                                        except Exception:
+                                            pass
+
+                                if not suppress_collab_notification and p_collaborators != p_collaborators_old:
                                     try:
 
                                         p_collaborators_diff = p_collaborators - p_collaborators_old
