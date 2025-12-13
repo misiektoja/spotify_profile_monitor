@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v2.9
+v3.0
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -19,7 +19,7 @@ spotipy (optional, needed when the token source is set to oauth_app)
 wcwidth (optional, needed by TRUNCATE_CHARS feature)
 """
 
-VERSION = "2.9"
+VERSION = "3.0"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -112,7 +112,7 @@ IMGCAT_PATH = "imgcat"
 # - Launch the Spotify desktop client and search for some user
 # - Look for requests with the 'searchUsers' or 'searchDesktop' operation name
 # - Display the details of one of these requests and copy the 'sha256Hash' parameter value
-#   (string marked as `XXXXXXXXXX` below) 
+#   (string marked as `XXXXXXXXXX` below)
 #
 # Example request:
 # https://api-partner.spotify.com/pathfinder/v1/query?operationName=searchUsers&variables={"searchTerm":"user_uri_id","offset":0,"limit":5,"numberOfTopResults":5,"includeAudiobooks":false}&extensions={"persistedQuery":{"version":1,"sha256Hash":"XXXXXXXXXX"}}
@@ -1068,7 +1068,7 @@ def convert_iso_str_to_datetime(dt_str):
 
 # Returns the current date/time in human readable format; eg. Sun 21 Apr 2024, 15:08:45
 def get_cur_ts(ts_str=""):
-    return (f'{ts_str}{calendar.day_abbr[(now_local_naive()).weekday()]}, {now_local_naive().strftime("%d %b %Y, %H:%M:%S")}')
+    return (f'{ts_str}{calendar.day_abbr[(now_local_naive()).weekday()]} {now_local_naive().strftime("%d %b %Y, %H:%M:%S")}')
 
 
 # Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
@@ -3096,7 +3096,7 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
     user_id_name_mapping = {}
     user_track_counts = Counter()
 
-    pattern = re.compile(r'^[a-zA-Z0-9]{22}$') 
+    pattern = re.compile(r'^[a-zA-Z0-9]{22}$')
     if (pattern.match(playlist_url)):
         playlist_uri = f"::{playlist_url}"
     else:
@@ -3441,8 +3441,104 @@ def spotify_format_playlist_reference(uri):
         return f"[ {playlist_url} ]"
 
 
+# Displays a progress bar with percentage and current playlist name
+def _display_progress(current, total, playlist_name: str = "", bar_length: int = 40) -> None:
+    if total == 0:
+        return
+
+    # Defensive fallback for environments without a real TTY
+    try:
+        term_width = shutil.get_terminal_size(fallback=(80, 20)).columns
+    except Exception:
+        term_width = 80
+
+    term_width = max(40, term_width)
+
+    percent = float(current) / total
+    percent_str = f"{percent * 100:.1f}%"
+    counter_str = f"({current}/{total})"
+
+    display_name = playlist_name or ""
+    prefix = "Playlists"
+
+    def compute_base_length(include_prefix: bool) -> int:
+        base = ""
+        if include_prefix:
+            base += prefix + " "
+        base += "[]"  # placeholder for bar brackets
+        base += f" {percent_str} {counter_str}"
+        return len(base) + 1  # +1 for margin
+
+    show_prefix = True
+    base_len = compute_base_length(True)
+    available_for_bar_and_name = term_width - base_len
+
+    if available_for_bar_and_name < 10:
+        show_prefix = False
+        base_len = compute_base_length(False)
+        available_for_bar_and_name = term_width - base_len
+
+    min_name_space = 23 if display_name else 0  # 20 for name + 3 for "- "
+    min_bar_len = 3
+    max_reasonable_bar = 20  # Don't make bar too long
+
+    # Calculate bar length: reserve space for name first, then use remaining for bar
+    if available_for_bar_and_name >= (min_bar_len + min_name_space):
+        max_bar_space = available_for_bar_and_name - min_name_space
+        bar_len = max(min_bar_len, min(max_reasonable_bar, min(bar_length, max_bar_space)))
+    else:
+        if available_for_bar_and_name >= 10:
+            if display_name:
+                bar_len = max(min_bar_len, min(max_reasonable_bar, (available_for_bar_and_name * 3) // 10))  # 30% to bar
+            else:
+                bar_len = max(min_bar_len, available_for_bar_and_name // 2)
+        else:
+            # Very tight - prioritize name, shrink bar to minimum
+            bar_len = min_bar_len
+
+    def build_bar(length: int) -> str:
+        filled_length = int(length * percent)
+        return "█" * filled_length + "░" * (length - filled_length)
+
+    bar = build_bar(bar_len)
+
+    parts = []
+    if show_prefix:
+        parts.append(prefix)
+    parts.append(f"[{bar}]")
+    parts.append(percent_str)
+    parts.append(counter_str)
+
+    base_str = " ".join(parts) + " "
+    available_for_name = term_width - len(base_str) - 3  # -3 for "- " prefix
+
+    if display_name and available_for_name > 0:
+        raw_name = display_name
+        trimmed_name = ""
+
+        if len(raw_name) <= available_for_name:
+            # Full name fits
+            trimmed_name = raw_name
+        elif available_for_name >= 7:
+            # Can show truncated name with ellipsis (need at least 7 chars: "abc...")
+            trimmed_name = raw_name[:available_for_name - 3] + "..."
+        else:
+            # Very tight - show as many chars as possible (no ellipsis)
+            trimmed_name = raw_name[:max(1, available_for_name)]
+
+        if trimmed_name:
+            parts.append(f"- {trimmed_name}")
+
+    progress_str = " ".join(parts)
+
+    # Use ANSI escape code to clear to end of line, then write the progress
+    # \r moves to start of line, \033[K clears from cursor to end of line
+    sys.stdout.write("\r\033[K" + progress_str)
+    sys.stdout.flush()
+
+
 # Processes items from all the provided playlists and returns a list of dictionaries
-def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, playlists_to_skip=None):
+def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, playlists_to_skip=None, show_progress=True):
     global PLAYLIST_INFO_CACHE
     list_of_playlists = []
     error_while_processing = False
@@ -3452,7 +3548,16 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
         playlists_to_skip = []
 
     if playlists:
-        for playlist in playlists:
+        playlists = list(playlists)
+        total_playlists = len(playlists)
+
+        if show_progress:
+            print()
+
+        # Track current playlist name to keep it visible
+        current_playlist_name = ""
+
+        for idx, playlist in enumerate(playlists, 1):
             user_id_name_mapping = {}
             p_uri = ""
             if "uri" in playlist:
@@ -3463,16 +3568,20 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
 
                     p_uri = playlist.get("uri", "")
                     if not p_uri:
-                        print(f"* Playlist with missing URI returned by API, skipping for now")
+                        print(f"\n* Playlist with missing URI returned by API, skipping for now")
                         print_cur_ts("Timestamp:\t\t\t")
                         error_while_processing = True
+                        if show_progress:
+                            _display_progress(idx, total_playlists, current_playlist_name)
                         continue
 
                     p_uri_id = spotify_extract_id_or_name(p_uri)
                     if not p_uri_id:
-                        print(f"* Playlist with invalid URI ({p_uri}) returned by API, skipping for now")
+                        print(f"\n* Playlist with invalid URI ({p_uri}) returned by API, skipping for now")
                         print_cur_ts("Timestamp:\t\t\t")
                         error_while_processing = True
+                        if show_progress:
+                            _display_progress(idx, total_playlists, current_playlist_name)
                         continue
 
                     p_owner_name = spotify_extract_id_or_name(p_owner)
@@ -3501,12 +3610,15 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                         })
                         PLAYLIST_INFO_CACHE[p_uri] = existing
 
-                        print(f"* Error while processing playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f": {e}" if e else ""))
+                        print(f"\n* Error while processing playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f": {e}" if e else ""))
                         print_cur_ts("Timestamp:\t\t\t")
                         error_while_processing = True
+                        if show_progress:
+                            _display_progress(idx, total_playlists, current_playlist_name)
                         continue
 
                     p_name = sp_playlist_data.get("sp_playlist_name", "")
+                    current_playlist_name = p_name  # Update tracked name
                     p_descr = html.unescape(sp_playlist_data.get("sp_playlist_description", ""))
                     p_likes = sp_playlist_data.get("sp_playlist_followers_count", 0)
                     p_tracks = sp_playlist_data.get("sp_playlist_tracks_count", 0)
@@ -3568,9 +3680,11 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                 list_of_tracks.append({"artist": p_artist, "track": p_track, "duration": track_duration, "added_at": added_at_dt, "uri": track_uri, "added_by": added_by_name, "added_by_id": added_by_id})
 
                 except Exception as e:
-                    print(f"* Unexpected error while building playlist data for: {spotify_format_playlist_reference(p_uri)}: {e}")
+                    print(f"\n* Unexpected error while building playlist data for: {spotify_format_playlist_reference(p_uri)}: {e}")
                     print_cur_ts("Timestamp:\t\t\t")
                     error_while_processing = True
+                    if show_progress:
+                        _display_progress(idx, total_playlists, current_playlist_name)
                     continue
 
                 p_creation_date = datetime.fromtimestamp(int(added_at_ts_lowest), pytz.timezone(LOCAL_TIMEZONE)) if added_at_ts_lowest > 0 else None
@@ -3582,6 +3696,14 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "list_of_tracks": list_of_tracks, "collaborators_count": p_collaborators_count, "collaborators": user_id_name_mapping, "owner": p_owner, "owner_uri": p_owner_uri})
                 else:
                     list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "collaborators_count": p_collaborators_count, "collaborators": {}, "owner": p_owner, "owner_uri": p_owner_uri})
+
+                # Final refresh after successful processing
+                if show_progress:
+                    _display_progress(idx, total_playlists, p_name)
+                    # If this is the last playlist, immediately add a newline after the progress bar
+                    if idx == total_playlists:
+                        sys.stdout.write("\n")
+                        sys.stdout.flush()
 
     return list_of_playlists, error_while_processing
 
@@ -3599,6 +3721,7 @@ def spotify_print_public_playlists(list_of_playlists, playlists_to_skip=None):
         playlists_to_skip = []
 
     if list_of_playlists:
+        print()
         for playlist in list_of_playlists:
             if "uri" in playlist:
                 p_uri = playlist.get("uri", "")
@@ -3723,10 +3846,6 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
             print(f"\nPublic playlists:\t{playlists_count}")
 
         if playlists:
-            if TOKEN_SOURCE == "oauth_user" and is_user_owner:
-                print("\nGetting list of all playlists (be patient, it might take a while) ...\n")
-            else:
-                print("\nGetting list of public playlists (be patient, it might take a while) ...\n")
             list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True)
             spotify_print_public_playlists(list_of_playlists)
 
@@ -4190,10 +4309,6 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             print(f"Public playlists:\t\t{playlists_count}")
 
         if playlists:
-            if TOKEN_SOURCE == "oauth_user" and is_user_owner:
-                print("\n* Getting list of all playlists (be patient, it might take a while) ...\n")
-            else:
-                print("\n* Getting list of public playlists (be patient, it might take a while) ...\n")
             list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True, playlists_to_skip)
             spotify_print_public_playlists(list_of_playlists, playlists_to_skip)
 
@@ -4747,7 +4862,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
         if DETECT_CHANGES_IN_PLAYLISTS:
             if playlists:
-                list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True, playlists_to_skip)
+                list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True, playlists_to_skip, show_progress=False)
 
             for playlist in list_of_playlists:
                 if "uri" in playlist:
