@@ -2,6 +2,22 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.1 (27 Dec 2025)
+
+**Features and Improvements**:
+
+- **NEW:** Implemented **hybrid authentication approach** when using `cookie`/`client` methods by using secondary client credentials OAuth flow (**oauth_app**) for playlist/user API calls to address restrictions introduced by Spotify on 22 Dec 2025
+
+**Bug fixes**:
+
+- **BUGFIX:** Removed old **TOTP versions** from `SECRET_CIPHER_DICT`
+- **BUGFIX:** Updated **TOTP version handling** in `refresh_access_token_from_sp_dc` function to dynamically use the latest version and remove old TOTP versions from SECRET_CIPHER_DICT
+
+**Breaking changes**:
+
+- **BREAKING:** Removed **token owner display** at startup due to `/v1/me` endpoint limitations introduced by Spotify on **22 Dec 2025**
+- **BREAKING:** **OAuth app credentials** are now required for playlist/user information retrieval when using either `cookie` or `client` **token source methods**
+
 # Changes in 3.0 (13 Dec 2025)
 
 **Features and Improvements**:
