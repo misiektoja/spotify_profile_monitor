@@ -325,8 +325,7 @@ TOKEN_RETRY_TIMEOUT = 0.5  # 0.5 second
 # Newest secrets are downloaded automatically from SECRET_CIPHER_DICT_URL (see below)
 # Can also be fetched via spotify_monitor_secret_grabber.py utility - see debug dir
 SECRET_CIPHER_DICT = {
-    "6": [21, 24, 85, 46, 48, 35, 33, 8, 11, 63, 76, 12, 55, 77, 14, 7, 54],
-    "5": [12, 56, 76, 33, 88, 44, 88, 33, 78, 78, 11, 66, 22, 22, 55, 69, 54],
+#    "61": [44, 55, 47, 42, 70, 40, 34, 114, 76, 74, 50, 111, 120, 97, 75, 76, 94, 102, 43, 69, 49, 120, 118, 80, 64, 78],
 }
 
 # Remote or local URL used to fetch updated secrets needed for TOTP generation
@@ -1732,15 +1731,17 @@ def refresh_access_token_from_sp_dc(sp_dc: str) -> dict:
     client_time = int(time_ns() / 1000 / 1000)
     otp_value = totp_obj.at(server_time)
 
+    totp_ver = TOTP_VER or max(map(int, SECRET_CIPHER_DICT))
+
     params = {
         "reason": "transport",
         "productType": "web-player",
         "totp": otp_value,
         "totpServer": otp_value,
-        "totpVer": TOTP_VER,
+        "totpVer": totp_ver,
     }
 
-    if TOTP_VER < 10:
+    if totp_ver < 10:
         params.update({
             "sTime": server_time,
             "cTime": client_time,
