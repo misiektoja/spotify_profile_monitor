@@ -5301,6 +5301,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                 else:
                                     # No change vs stable baseline; clear any pending candidate
                                     if p_uri in COLLABORATORS_PENDING_CACHE:
+                                        # If we had a pending change and we're back to stable baseline, this was a transient glitch that resolved - suppress notification
+                                        suppress_collab_notification = True
                                         try:
                                             del COLLABORATORS_PENDING_CACHE[p_uri]
                                         except Exception:
