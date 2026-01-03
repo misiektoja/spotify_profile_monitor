@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.1
+v3.1.1
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -19,7 +19,7 @@ spotipy
 wcwidth (optional, needed by TRUNCATE_CHARS feature)
 """
 
-VERSION = "3.1"
+VERSION = "3.1.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
