@@ -1,6 +1,6 @@
 # spotify_profile_monitor
 
-OSINT tool for real-time monitoring of **Spotify users' activities and profile changes including playlists**.
+Powerful Spotify OSINT tool for real-time tracking of profile changes, playlist updates, follower growth, collaborators and more — delivered straight to your terminal or inbox.
 
 ✨ If you want to track Spotify friends' music activity, check out another tool I developed: [spotify_monitor](https://github.com/misiektoja/spotify_monitor).
 
