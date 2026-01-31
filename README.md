@@ -156,9 +156,14 @@ Most settings can be configured via command-line arguments.
 If you want to have it stored persistently, generate a default config template and save it to a file named `spotify_profile_monitor.conf`:
 
 ```sh
+# On macOS, Linux or Windows Command Prompt (cmd.exe)
 spotify_profile_monitor --generate-config > spotify_profile_monitor.conf
 
+# On Windows PowerShell (recommended to avoid encoding issues)
+spotify_profile_monitor --generate-config spotify_profile_monitor.conf
 ```
+
+> **IMPORTANT**: On **Windows PowerShell**, using redirection (`>`) can cause the file to be encoded in UTF-16, which will lead to "null bytes" errors when running the tool. It is highly recommended to provide the filename directly as an argument to `--generate-config` to ensure UTF-8 encoding.
 
 Edit the `spotify_profile_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 
