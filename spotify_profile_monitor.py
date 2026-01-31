@@ -5303,6 +5303,11 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                     if p_uri in COLLABORATORS_PENDING_CACHE:
                                         # If we had a pending change and we're back to stable baseline, this was a transient glitch that resolved - suppress notification
                                         suppress_collab_notification = True
+                                        # Update the old values to match current stable baseline so the notification condition check fails
+                                        p_collaborators_old = len(stable_ids)
+                                        p_collaborators_list_old = stable_map
+                                        p_collaborators = len(current_ids)
+                                        p_collaborators_list = (p_collaborators_list or {}) if isinstance(p_collaborators_list, dict) else {}
                                         try:
                                             del COLLABORATORS_PENDING_CACHE[p_uri]
                                         except Exception:
