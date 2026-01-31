@@ -2,6 +2,19 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.2 (TBD)
+
+**Features and Improvements**:
+
+- **NEW:** Implemented playlist change retry mechanism to address occasional Spotify API glitches returning incomplete/empty playlists list; see `PLAYLISTS_CHANGE_COUNTER` config option (closes [#31](https://github.com/misiektoja/spotify_profile_monitor/issues/31))
+- **IMPROVE:** Enhanced `--generate-config` to support writing directly to a file (e.g. `spotify_profile_monitor --generate-config spotify_profile_monitor.conf`). This avoids UTF-16 encoding issues on **Windows PowerShell**
+- **IMPROVE:** Expanded tabs to spaces in output log files to ensure **consistent alignment across different viewers**
+
+**Bug fixes**:
+
+- **BUGFIX:** Updated old collaborator state when reverting to baseline to ensure notification suppression (fixes [#32](https://github.com/misiektoja/spotify_profile_monitor/issues/32))
+- **BUGFIX:** Suppressed collaborator notification for transient glitches when reverting to stable baseline (fixes [#30](https://github.com/misiektoja/spotify_profile_monitor/issues/30))
+
 # Changes in 3.1 (27 Dec 2025)
 
 **Features and Improvements**:
