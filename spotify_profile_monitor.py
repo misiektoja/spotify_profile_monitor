@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.1.1
+v3.2
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -19,7 +19,7 @@ spotipy
 wcwidth (optional, needed by TRUNCATE_CHARS feature)
 """
 
-VERSION = "3.1.1"
+VERSION = "3.2"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -191,6 +191,12 @@ RECENTLY_PLAYED_ARTISTS_LIMIT_INFO = 15
 # Occasionally, the Spotify API glitches and returns an empty list of user playlists
 # To avoid false alarms, we delay notifications until this happens PLAYLISTS_DISAPPEARED_COUNTER times in a row
 PLAYLISTS_DISAPPEARED_COUNTER = 3
+
+# Occasionally, the Spotify API glitches and returns incomplete/empty playlists list
+# (e.g. network issues, API transient failures or playlists temporarily not visible)
+# To avoid false alarms, we delay playlist change notifications until the same change is seen
+# PLAYLISTS_CHANGE_COUNTER times in a row (set to 0 to disable this protection)
+PLAYLISTS_CHANGE_COUNTER = 2
 
 # Occasionally, the Spotify API glitches and returns an empty list of user followers / followings
 # To avoid false alarms, we delay notifications until this happens FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER times in a row
@@ -564,6 +570,7 @@ RECENTLY_PLAYED_ARTISTS_LIMIT_INFO = 0
 PLAYLISTS_DISAPPEARED_COUNTER = 0
 FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER = 0
 COLLABORATORS_CHANGE_COUNTER = 0
+PLAYLISTS_CHANGE_COUNTER = 0
 USER_AGENT = ""
 LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
@@ -647,6 +654,10 @@ GLITCH_CACHE = {}
 # Tracks transient collaborator glitches to suppress false alerts
 COLLABORATORS_BASELINE_CACHE = {}
 COLLABORATORS_PENDING_CACHE = {}
+
+# Tracks transient playlists glitches to suppress false alerts
+PLAYLISTS_BASELINE_CACHE = {}
+PLAYLISTS_PENDING_CACHE = {}
 
 LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / SPOTIFY_CHECK_INTERVAL
 
@@ -5629,7 +5640,81 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             if not error_while_processing:
                 list_of_playlists_old = list_of_playlists
 
-            if playlists_count != playlists_old_count:
+            # Suppress transient playlist glitches by confirming changes across multiple checks  and keep a stable
+            # baseline to avoid baseline poisoning
+            global PLAYLISTS_BASELINE_CACHE
+            global PLAYLISTS_PENDING_CACHE
+
+            user_playlists_key = f"user:{user_uri_id}"
+            stable_entry = PLAYLISTS_BASELINE_CACHE.get(user_playlists_key)
+            if stable_entry is None:
+                # Initialize baseline from previously persisted playlist snapshot (if available)
+                stable_uris = set(playlists_old or [])
+                stable_count = playlists_old_count
+                PLAYLISTS_BASELINE_CACHE[user_playlists_key] = {"uris": stable_uris, "count": stable_count}
+                stable_entry = PLAYLISTS_BASELINE_CACHE[user_playlists_key]
+
+            stable_uris = set(stable_entry.get("uris") or set())
+            stable_count = stable_entry.get("count", 0)
+            current_uris = set(playlists or [])
+            suppress_playlists_notification = False
+
+            if current_uris != stable_uris:
+                # Playlists have changed vs stable baseline
+                # Skip PLAYLISTS_CHANGE_COUNTER protection when dropping to 0 - let PLAYLISTS_DISAPPEARED_COUNTER handle that case
+                dropping_to_zero = len(current_uris) == 0
+
+                if not dropping_to_zero:
+                    pending = PLAYLISTS_PENDING_CACHE.get(user_playlists_key)
+                    if pending and pending.get("new_uris") == current_uris:
+                        pending["streak"] = int(pending.get("streak", 0)) + 1
+                    else:
+                        pending = {
+                            "new_uris": current_uris,
+                            "new_count": len(current_uris),
+                            "streak": 1,
+                            "first_seen_ts": time.time()
+                        }
+                        PLAYLISTS_PENDING_CACHE[user_playlists_key] = pending
+
+                    if PLAYLISTS_CHANGE_COUNTER and int(pending.get("streak", 0)) < int(PLAYLISTS_CHANGE_COUNTER):
+                        print(f"* Spotify API: suspected transient playlist change for user '{username}' ({stable_count} -> {len(current_uris)}), streak {pending.get('streak')}/{PLAYLISTS_CHANGE_COUNTER}; will confirm next check")
+                        print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                        print_cur_ts("Timestamp:\t\t\t")
+                        suppress_playlists_notification = True
+                    else:
+                        # Change confirmed - update variables for notification
+                        playlists_old = list(stable_uris)
+                        playlists_old_count = stable_count
+                        playlists_count = len(current_uris)
+                        playlists = list(current_uris)
+
+                        # Update stable baseline and clear pending
+                        PLAYLISTS_BASELINE_CACHE[user_playlists_key] = {"uris": current_uris, "count": playlists_count}
+                        try:
+                            del PLAYLISTS_PENDING_CACHE[user_playlists_key]
+                        except Exception:
+                            pass
+                # else: dropping to 0, let PLAYLISTS_DISAPPEARED_COUNTER handle it below
+            else:
+                # No change vs stable baseline; clear any pending candidate
+                if user_playlists_key in PLAYLISTS_PENDING_CACHE:
+                    # If we had a pending change and we're back to stable baseline, this was a transient glitch that resolved - suppress notification
+                    suppress_playlists_notification = True
+                    # Update the old values to match current stable baseline so the notification condition check fails
+                    playlists_old_count = stable_count
+                    playlists_old = list(stable_uris)
+                    playlists_count = len(current_uris)
+                    playlists = list(current_uris)
+                    print(f"* Spotify API: Playlists for user '{username}' reverted to baseline ({stable_count}) after transient glitch; suppressing notification")
+                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print_cur_ts("Timestamp:\t\t\t")
+                    try:
+                        del PLAYLISTS_PENDING_CACHE[user_playlists_key]
+                    except Exception:
+                        pass
+
+            if not suppress_playlists_notification and playlists_count != playlists_old_count:
                 if playlists_count == 0:
                     playlists_zeroed_counter += 1
                     if playlists_zeroed_counter == PLAYLISTS_DISAPPEARED_COUNTER:
@@ -5641,6 +5726,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                         playlists_old_count = playlists_count
                         playlists_old = playlists
                         playlists_zeroed_counter = 0
+                        # Update baseline after accepting 0 as new baseline
+                        PLAYLISTS_BASELINE_CACHE[user_playlists_key] = {"uris": set(), "count": 0}
                     elif playlists_zeroed_counter < PLAYLISTS_DISAPPEARED_COUNTER:
                         print(f"* Spotify API: Playlists count dropped from {playlists_old_count} to 0, streak {playlists_zeroed_counter}/{PLAYLISTS_DISAPPEARED_COUNTER}; old count and list retained")
                         print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
@@ -5655,8 +5742,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     playlists_old_count = playlists_count
                     playlists_old = playlists
                     playlists_zeroed_counter = 0
+                    # Update baseline after confirmed change
+                    PLAYLISTS_BASELINE_CACHE[user_playlists_key] = {"uris": set(playlists or []), "count": playlists_count}
 
-            elif playlists_count == playlists_old_count:
+            elif not suppress_playlists_notification and playlists_count == playlists_old_count:
                 if playlists_count == 0:
                     playlists_zeroed_counter = 0
                     playlists_old = playlists
