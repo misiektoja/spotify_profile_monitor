@@ -785,8 +785,7 @@ class Logger(object):
 
     def write(self, message):
         # Expand tabs for file output (stdout remains untouched)
-        expanded_message = message.expandtabs(8)
-        self.logfile.write(expanded_message)
+        self.logfile.write(message.expandtabs(8))
         if (TRUNCATE_CHARS):
             message = truncate_string_per_line(message, TRUNCATE_CHARS)
         self.terminal.write(message)
