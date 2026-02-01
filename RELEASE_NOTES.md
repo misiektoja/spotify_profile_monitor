@@ -9,6 +9,7 @@ This is a high-level summary of the most important changes.
 - **NEW:** Implemented playlist change retry mechanism to address occasional Spotify API glitches returning incomplete/empty playlists list; see `PLAYLISTS_CHANGE_COUNTER` config option (closes [#31](https://github.com/misiektoja/spotify_profile_monitor/issues/31))
 - **IMPROVE:** Enhanced `--generate-config` to support writing directly to a file (e.g. `spotify_profile_monitor --generate-config spotify_profile_monitor.conf`). This avoids UTF-16 encoding issues on **Windows PowerShell**
 - **IMPROVE:** Expanded tabs to spaces in output log files to ensure **consistent alignment across different viewers**
+- **IMPROVE:** Enhanced error handling for empty or malformed secret files
 
 **Bug fixes**:
 
