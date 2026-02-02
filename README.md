@@ -1,37 +1,60 @@
 # spotify_profile_monitor
 
+<p align="left">
+  <img src="https://img.shields.io/github/v/release/misiektoja/spotify_profile_monitor?style=flat-square&color=blue" alt="GitHub Release" />
+  <img src="https://img.shields.io/pypi/v/spotify_profile_monitor?style=flat-square&color=orange" alt="PyPI Version" />
+  <img src="https://img.shields.io/github/stars/misiektoja/spotify_profile_monitor?style=flat-square&color=yellow" alt="GitHub Stars" />
+  <img src="https://img.shields.io/github/last-commit/misiektoja/spotify_profile_monitor?style=flat-square&color=green" alt="Last Commit" />
+  <img src="https://img.shields.io/github/license/misiektoja/spotify_profile_monitor?style=flat-square&color=blue" alt="License" />
+  <img src="https://img.shields.io/pypi/pyversions/spotify_profile_monitor?style=flat-square&color=blueviolet" alt="Python Versions" />
+  <img src="https://img.shields.io/badge/maintenance-active-brightgreen?style=flat-square" alt="Maintenance" />
+</p>
+
 Powerful Spotify OSINT tool for real-time tracking of profile changes, playlist updates, follower growth, collaborators and more — delivered straight to your terminal or inbox.
 
-✨ If you want to track Spotify friends' music activity, check out another tool I developed: [spotify_monitor](https://github.com/misiektoja/spotify_monitor).
+### 🚀 Quick Install
+```sh
+pip install spotify_profile_monitor
+```
 
-🛠️ If you're looking for debug tools to get Spotify Web Player access tokens and extract secret keys: [click here](#debugging-tools)
+<p align="center">
+   <img src="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/assets/spotify_profile_monitor.png" alt="spotify_profile_monitor_screenshot" width="90%"/>
+</p>
 
 <a id="features"></a>
 ## Features
 
-- **Real-time tracking** of Spotify user activities and profile changes:
-   - addition/removal of **followings and followers**
-   - addition/removal of **playlists**
-   - addition/removal of **tracks in playlists** (including collaborator info for newly added tracks)
-   - **playlists name and description** changes
-   - **number of likes** for playlists
-   - **number of collaborators** for playlists
-   - **profile picture** changes
-   - **username** changes
-- **Email notifications** for various events (as listed above)
-- **Attaching changed profile pictures** directly to email notifications
-- **Displaying the profile picture** right in your terminal (if you have `imgcat` installed)
-- Additional functionalities on top of the monitoring mode allowing to display **detailed info about the user**, **list of followers & followings**, **recently played artists** and possibility to **search for users** in Spotify catalog with specific names
-- Ability to **display and export** the list of tracks for a specific playlist (including **Liked Songs** for the user who owns the Spotify access token)
-- **Saving all profile changes** (including playlists) with timestamps to the **CSV file**
-- **Clickable** **Spotify**, **Apple Music**, **YouTube Music**, **Amazon Music**, **Deezer**, **Tidal**, **Genius Lyrics**, **AZLyrics**, **Tekstowo.pl**, **Musixmatch** and **Lyrics.com** search URLs printed in the console and included in email notifications (configurable per service)
-- Support for **hybrid authentication approach** to get a **Spotify access token** (`sp_dc cookie`/`desktop client` + `OAuth app`, or standalone `OAuth app`/`OAuth user`)
-- Possibility to **control the running copy** of the script via signals
-- **Functional, procedural Python** (minimal OOP)
+### 👤 Profile Monitoring
+- **Real-time tracking**: Monitor Spotify user activities and profile changes.
+- **Social Network**: Detect addition/removal of **followings** and **followers**.
+- **Identity Changes**: Track **profile picture** and **username** changes.
 
-<p align="center">
-   <img src="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/assets/spotify_profile_monitor.png" alt="spotify_profile_monitor_screenshot" width="100%"/>
-</p>
+### 📜 Playlist Tracking
+- **Content Updates**: Monitor addition/removal of **tracks in playlists**.
+- **Collaborator Info**: Identify who added which track in **collaborative playlists**.
+- **Social Proof**: Monitor **likes** and **collaborators** count for playlists.
+- **Metadata**: Track **name** and **description** changes.
+
+### 📊 Advanced Tools
+- **Deep Insights**: Display detailed info about users, followers and followings.
+- **Historical Data**: View **recently played artists** and **search for users** by name.
+- **Export Power**: Display and export tracks from any playlist (including **Liked Songs**).
+- **Global Search**: Instant links to **Spotify, YouTube Music, Apple Music, Tidal, lyrics** and more.
+
+### 🔔 Smart Interactions
+- **Instant Alerts**: Detailed **Email notifications** for all profile and playlist changes.
+- **Visual Reports**: Attach changed profile pictures directly to emails.
+- **Terminal Graphics**: Display profile pictures right in your terminal (via `imgcat`).
+
+### ⚙️ Power Features
+- **Auth Flexibility**: Hybrid support for `sp_dc` cookie, Desktop Client and OAuth.
+- **CSV Logging**: Save all changes with full timestamps to a CSV file.
+- **Flexible Config**: Support for files, dotenv and environment variables.
+- **Signal Control**: Manage the running script via system signals (`SIGHUP`, `USR1`, etc.).
+
+✨ If you want to track Spotify friends' music activity, check out another tool I developed: [spotify_monitor](https://github.com/misiektoja/spotify_monitor).
+
+🛠️ If you're looking for debug tools to get Spotify Web Player access tokens and extract secret keys: [click here](#debugging-tools)
 
 <a id="table-of-contents"></a>
 ## Table of Contents
