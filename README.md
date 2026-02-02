@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/maintenance-active-brightgreen?style=flat-square" alt="Maintenance" />
 </p>
 
-**spotify_profile_monitor** is a powerful Spotify OSINT tool for real-time tracking of profile changes, playlist updates, follower growth, collaborators and more — delivered straight to your terminal or inbox.
+Powerful Spotify OSINT tool for real-time tracking of profile changes, playlist updates, follower growth, collaborators and more — delivered straight to your terminal or inbox.
 
 ### 🚀 Quick Install
 ```sh
