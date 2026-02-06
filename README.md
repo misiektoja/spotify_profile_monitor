@@ -2,15 +2,15 @@
 
 <p align="left">
   <img src="https://img.shields.io/github/v/release/misiektoja/spotify_profile_monitor?style=flat-square&color=blue" alt="GitHub Release" />
-  <img src="https://img.shields.io/pypi/v/spotify_profile_monitor?style=flat-square&color=orange" alt="PyPI Version" />
-  <img src="https://img.shields.io/github/stars/misiektoja/spotify_profile_monitor?style=flat-square&color=yellow" alt="GitHub Stars" />
-  <img src="https://img.shields.io/github/last-commit/misiektoja/spotify_profile_monitor?style=flat-square&color=green" alt="Last Commit" />
+  <img src="https://img.shields.io/pypi/v/spotify_profile_monitor?style=flat-square&color=teal" alt="PyPI Version" />
+  <img src="https://img.shields.io/github/stars/misiektoja/spotify_profile_monitor?style=flat-square&color=magenta" alt="GitHub Stars" />
+  <img src="https://img.shields.io/badge/python-3.6+-blueviolet?style=flat-square" alt="Python Versions" />
   <img src="https://img.shields.io/github/license/misiektoja/spotify_profile_monitor?style=flat-square&color=blue" alt="License" />
-  <img src="https://img.shields.io/pypi/pyversions/spotify_profile_monitor?style=flat-square&color=blueviolet" alt="Python Versions" />
+  <img src="https://img.shields.io/github/last-commit/misiektoja/spotify_profile_monitor?style=flat-square&color=green" alt="Last Commit" />
   <img src="https://img.shields.io/badge/maintenance-active-brightgreen?style=flat-square" alt="Maintenance" />
 </p>
 
-Powerful Spotify OSINT tool for real-time tracking of profile changes, playlist updates, follower growth, collaborators and more — delivered straight to your terminal or inbox.
+Powerful Spotify tool for real-time tracking of profile changes, playlist updates, follower growth, collaborators and more - delivered straight to your terminal or inbox.
 
 ### 🚀 Quick Install
 ```sh
