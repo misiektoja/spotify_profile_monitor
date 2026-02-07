@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.2
+v3.3
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -19,7 +19,7 @@ spotipy
 wcwidth (optional, needed by TRUNCATE_CHARS feature)
 """
 
-VERSION = "3.2"
+VERSION = "3.3"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -1503,7 +1503,10 @@ def spotify_extract_id_or_name(s):
 # Sends a lightweight request to check Spotify token validity
 def check_token_validity(access_token: str, client_id: Optional[str] = None, user_agent: Optional[str] = None, oauth_app: bool = False) -> bool:
     url_cookie_client = "https://guc-spclient.spotify.com/presence-view/v1/buddylist"
-    url_oauth_app = "https://api.spotify.com/v1/browse/categories?limit=1&fields=categories.items(id)"
+
+    # Use a known stable track for validation (Bohemian Rhapsody - Queen)
+    url_oauth_app = "https://api.spotify.com/v1/tracks/7tFiyTwD0nx5a1eklYtX2J"
+
     url_oauth_user = "https://api.spotify.com/v1/me"
 
     if oauth_app or TOKEN_SOURCE == "oauth_app":
@@ -2652,20 +2655,29 @@ def is_playlist_private(access_token, playlist_uri, oauth_app: bool = False):
 
 # Checks if a Spotify user URI ID has been deleted
 def is_user_removed(access_token, user_uri_id, oauth_app: bool = False):
-    if TOKEN_SOURCE in {"cookie", "client"} and not oauth_app:
-        access_token = spotify_get_access_token_from_oauth_app(SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET)
-        oauth_app = True
-        if not access_token:
+    # For oauth_app / oauth_user: use web scraping fallback (official API removed in Feb 2026)
+    # open.spotify.com/user/{id} returns 404 for removed users, no auth needed
+    if TOKEN_SOURCE in {"oauth_app", "oauth_user"} or oauth_app:
+        url = f"https://open.spotify.com/user/{user_uri_id}"
+        try:
+            response = req.head(url, timeout=FUNCTION_TIMEOUT, allow_redirects=True, verify=VERIFY_SSL)
+            if response.status_code == 404:
+                return True
+            if response.status_code == 429:
+                return False  # Rate limited, can't determine
+            return False
+        except Exception:
             return False
 
-    url = f"https://api.spotify.com/v1/users/{user_uri_id}"
+    # For cookie/client: use internal API (works with these token types)
+    url = f"https://spclient.wg.spotify.com/user-profile-view/v3/profile/{user_uri_id}?playlist_limit=0&artist_limit=0&episode_limit=0&market=from_token"
 
     headers = {
         "Authorization": f"Bearer {access_token}",
         "User-Agent": USER_AGENT
     }
 
-    if TOKEN_SOURCE == "cookie" and not oauth_app:
+    if TOKEN_SOURCE == "cookie":
         headers.update({
             "Client-Id": SP_CACHED_CLIENT_ID
         })
@@ -2797,7 +2809,8 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks, oauth_app:
 
         sp_playlist_tracks = sp_playlist_tracks_concatenated_list
 
-        tracks_metadata = json_response1.get("tracks")
+        # Support both old ('tracks') and new ('items') field names (Spotify Feb 2026 API change)
+        tracks_metadata = json_response1.get("items") or json_response1.get("tracks")
         if not isinstance(tracks_metadata, dict):
             raise ValueError("Playlist's tracks metadata is missing or malformed")
 
@@ -2912,6 +2925,7 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
     out = {
         "sp_username": "",
         "sp_user_followers_count": 0,
+        "sp_user_followers_count_available": False,
         "sp_user_show_follows": None,
         "sp_user_followings_count": 0,
         "sp_user_public_playlists_count": 0,
@@ -2927,6 +2941,7 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
         out.update({
             "sp_username": json_response.get("name", ""),
             "sp_user_followers_count": _safe_int(json_response.get("followers_count"), "followers"),
+            "sp_user_followers_count_available": json_response.get("followers_count") is not None,
             "sp_user_show_follows": json_response.get("show_follows"),
             "sp_user_followings_count": _safe_int(json_response.get("following_count"), "followings"),
             "sp_user_image_url": json_response.get("image_url", "")
@@ -2955,40 +2970,75 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
         out["sp_user_recently_played_artists"] = artists_data
 
     else:  # oauth tokens
-        json_response = _rq(url2)
+        is_self = TOKEN_SOURCE == "oauth_user" and is_token_owner(access_token, user_uri_id)
 
-        out.update({
-            "sp_username": json_response.get("display_name", ""),
-            "sp_user_followers_count": _safe_int((json_response.get("followers") or {}).get("total"), "followers"),
-            "sp_user_image_url": (json_response.get("images") or [{}])[0].get("url", "")
-        })
+        if is_self:
+            # oauth_user monitoring self: use /me endpoints (still available post-Feb 2026)
+            url_me = "https://api.spotify.com/v1/me"
+            url_me_playlists = f"https://api.spotify.com/v1/me/playlists?limit={PLAYLISTS_LIMIT if get_playlists else 0}"
 
-        if get_playlists:
-            while url2_pl:
-                json_response = _rq(url2_pl)
-                raw_playlist_data_from_api = json_response.get("items")
-                current_list_to_process = raw_playlist_data_from_api if isinstance(raw_playlist_data_from_api, list) else []
-                out["sp_user_public_playlists_uris"].extend({"uri": p.get("uri"), "owner_uri": p.get("owner", {}).get("uri")} for p in current_list_to_process if isinstance(p, dict) and (GET_ALL_PLAYLISTS or p.get("owner", {}).get("uri") == f"spotify:user:{user_uri_id}"))
-                url2_pl = json_response.get("next")
-            out["sp_user_public_playlists_count"] = len(out["sp_user_public_playlists_uris"])
+            json_response = _rq(url_me)
 
+            followers_data = json_response.get("followers") or {}
+            followers_total = followers_data.get("total")
+
+            out.update({
+                "sp_username": json_response.get("display_name", ""),
+                # followers field removed in Feb 2026, handle gracefully
+                "sp_user_followers_count": _safe_int(followers_total, "followers"),
+                "sp_user_followers_count_available": followers_total is not None,
+                "sp_user_image_url": (json_response.get("images") or [{}])[0].get("url", "")
+            })
+
+            if get_playlists:
+                while url_me_playlists:
+                    json_response = _rq(url_me_playlists)
+                    raw_playlist_data_from_api = json_response.get("items")
+                    current_list_to_process = raw_playlist_data_from_api if isinstance(raw_playlist_data_from_api, list) else []
+                    out["sp_user_public_playlists_uris"].extend({"uri": p.get("uri"), "owner_uri": p.get("owner", {}).get("uri")} for p in current_list_to_process if isinstance(p, dict) and (GET_ALL_PLAYLISTS or p.get("owner", {}).get("uri") == f"spotify:user:{user_uri_id}"))
+                    url_me_playlists = json_response.get("next")
+                out["sp_user_public_playlists_count"] = len(out["sp_user_public_playlists_uris"])
+
+        else:
+            # oauth_app or oauth_user monitoring others: try existing endpoints
+            # These endpoints (GET /users/{id}, GET /users/{id}/playlists) will be removed in Feb 2026
+            try:
+                json_response = _rq(url2)
+
+                followers_data = json_response.get("followers") or {}
+                followers_total = followers_data.get("total")
+
+                out.update({
+                    "sp_username": json_response.get("display_name", ""),
+                    "sp_user_followers_count": _safe_int(followers_total, "followers"),
+                    "sp_user_followers_count_available": followers_total is not None,
+                    "sp_user_image_url": (json_response.get("images") or [{}])[0].get("url", "")
+                })
+
+                if get_playlists:
+                    while url2_pl:
+                        json_response = _rq(url2_pl)
+                        raw_playlist_data_from_api = json_response.get("items")
+                        current_list_to_process = raw_playlist_data_from_api if isinstance(raw_playlist_data_from_api, list) else []
+                        out["sp_user_public_playlists_uris"].extend({"uri": p.get("uri"), "owner_uri": p.get("owner", {}).get("uri")} for p in current_list_to_process if isinstance(p, dict) and (GET_ALL_PLAYLISTS or p.get("owner", {}).get("uri") == f"spotify:user:{user_uri_id}"))
+                        url2_pl = json_response.get("next")
+                    out["sp_user_public_playlists_count"] = len(out["sp_user_public_playlists_uris"])
+
+            except req.HTTPError as e:
+                if e.response is not None and e.response.status_code in {403, 404}:
+                    # Spotify Feb 2026 API removal: GET /users/{id} and GET /users/{id}/playlists removed
+                    print(f"\n* Warning: Cannot fetch profile for user '{user_uri_id}' with {TOKEN_SOURCE} token source")
+                    print("* Spotify removed GET /users/{{id}} and GET /users/{{id}}/playlists endpoints in February 2026")
+                    print("* To monitor other users, use 'cookie' or 'client' token source (with oauth_app hybrid)")
+                    print("* If you're using oauth_user to monitor your own account, ensure the user URI ID matches your account\n")
+                    raise ValueError(f"Cannot monitor user '{user_uri_id}' with '{TOKEN_SOURCE}' token source post-Feb 2026. Use 'cookie' or 'client' token source for monitoring other users.")
+                raise
+
+        # Recently played artists (only for oauth_user monitoring self)
         artists_data = []
-        if TOKEN_SOURCE == "oauth_user" and recently_played_limit > 0 and is_token_owner(access_token, user_uri_id):
+        if TOKEN_SOURCE == "oauth_user" and recently_played_limit > 0 and is_self:
 
             json_response = _rq(url3)
-
-            # print("─" * HORIZONTAL_LINE)
-            # if 'items' in json_response and isinstance(json_response['items'], list):
-            #     print(f"Total recently played tracks available: {len(json_response['items'])}")
-            #     for i, item in enumerate(json_response['items'][:recently_played_limit]):
-            #         if 'track' in item and isinstance(item['track'], dict):
-            #             track_name = item['track'].get('name', 'N/A')
-            #             artist_names = ", ".join([artist.get('name', 'N/A') for artist in item['track'].get('artists', []) if isinstance(artist, dict)])
-            #             played_at = item.get('played_at', 'N/A')
-            #             print(f"  {i + 1}. {artist_names} - {track_name} (played at: {get_date_from_ts(played_at)})")
-            # else:
-            #     print("No 'items' found in recently played tracks response or it's not a list")
-            # print("─" * HORIZONTAL_LINE + "\n")
 
             for item in json_response.get("items", []) or []:
                 for artist in item.get("track", {}).get("artists", []) or []:
@@ -3963,16 +4013,23 @@ def spotify_get_followers_and_followings(sp_accessToken, user_uri_id):
 
     print(f"User profile picture:\t{image_url != ''}")
 
-    print(f"\nFollowers:\t\t{followers_count}" + (f" (list not supported with {TOKEN_SOURCE})" if TOKEN_SOURCE in {"oauth_app", "oauth_user"} else ""))
+    followers_label = ""
+    if TOKEN_SOURCE in {"oauth_app", "oauth_user"}:
+        if not sp_user_data["sp_user_followers_count_available"]:
+            followers_label = f" (list and count not supported with {TOKEN_SOURCE})"
+        else:
+            followers_label = f" (list not supported with {TOKEN_SOURCE})"
+
+    print(f"\nFollowers:\t\t{followers_count}{followers_label}")
     if followers:
         print()
         for f_dict in followers:
             if "name" in f_dict and "uri" in f_dict:
                 print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
     if TOKEN_SOURCE == "oauth_user" and is_token_owner(sp_accessToken, user_uri_id):
-        print(f"\nFollowings:\t\t{followings_count} (only artists, without users)")
+        print(f"Followings:\t\t{followings_count} (only artists, without users)")
     else:
-        print(f"\nFollowings:\t\t{followings_count}" + (f" (list and count not supported with {TOKEN_SOURCE})" if TOKEN_SOURCE in {"oauth_app", "oauth_user"} else ""))
+        print(f"Followings:\t\t{followings_count}" + (f" (list and count not supported with {TOKEN_SOURCE})" if TOKEN_SOURCE in {"oauth_app", "oauth_user"} else ""))
     if followings:
         print()
         for f_dict in followings:
@@ -4624,16 +4681,23 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
     display_tmp_pic(image_url, f"spotify_profile_{FILE_SUFFIX}_pic_tmp_info.jpeg", imgcat_exe, True)
 
-    print(f"\nFollowers:\t\t\t{followers_count}")
+    followers_label = ""
+    if TOKEN_SOURCE in {"oauth_app", "oauth_user"}:
+        if not sp_user_data["sp_user_followers_count_available"]:
+            followers_label = f" (list and count not supported with {TOKEN_SOURCE})"
+        else:
+            followers_label = f" (list not supported with {TOKEN_SOURCE})"
+
+    print(f"\nFollowers:\t\t\t{followers_count}{followers_label}")
 
     is_user_owner = False
     if TOKEN_SOURCE == "oauth_user":
         is_user_owner = is_token_owner(sp_accessToken, user_uri_id)
 
     if TOKEN_SOURCE == "oauth_user" and is_user_owner:
-        print(f"\nFollowings:\t\t\t{followings_count} (only artists, without users)")
+        print(f"Followings:\t\t\t{followings_count} (only artists, without users)")
     else:
-        print(f"Followings:\t\t\t{followings_count}" + (f" (count not supported with {TOKEN_SOURCE})" if TOKEN_SOURCE in {"oauth_app", "oauth_user"} else ""))
+        print(f"Followings:\t\t\t{followings_count}" + (f" (list and count not supported with {TOKEN_SOURCE})" if TOKEN_SOURCE in {"oauth_app", "oauth_user"} else ""))
 
     list_of_playlists = []
 
