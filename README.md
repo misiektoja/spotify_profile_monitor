@@ -220,11 +220,13 @@ Since version 3.1, due to Spotify restrictions introduced on December 22, 2025, 
 
 Relies on the official Spotify Web API (Client Credentials OAuth flow). This method is easy to set up and safe to use, but has several limitations. The following features are **not** supported:
 - viewing the list of followers/followings
-- accessing the followings count (only the followers count is tracked)
+- accessing the followings count (only the followers count is tracked; **post-Feb 2026**: followers count also not available)
 - getting the list of recently played artists
 - showing other users' playlists added to user profile (unless the user is a collaborator on a playlist owned by other user)
 - fetching the list of liked tracks for the account that owns the access token
 - searching for Spotify users by name
+
+> ⚠️ **Breaking Change (February 11, 2026)**: Spotify is removing the `GET /users/{id}` endpoint. Using `oauth_app` alone to monitor users will no longer work after this date. Use `cookie` or `client` method instead.
 
 **Personal: `oauth_user`**
 
@@ -236,15 +238,20 @@ The following features are **not** supported when monitoring **your own account*
 - viewing the list of followers
 - viewing the complete list of followings (only followed artists are available; followed users are not included)
 - searching for Spotify users by name
+- **viewing follower count (post-Feb 2026)**
 
 **Note**: If you use `oauth_user` to monitor your own account, the tool will list all your playlists, including private ones.
 
 The following features are **not** supported when monitoring **another user** in this mode:
 - viewing the list of followers/followings
-- accessing the followings count (only the followers count is tracked)
+- accessing the followings count (only the followers count is tracked; **post-Feb 2026**: followers count also not available)
 - getting the list of recently played artists
 - showing other users' playlists added to user profile (unless the user is a collaborator on a playlist owned by other user)
 - searching for Spotify users by name
+
+> ⚠️ **Breaking Change (February 11, 2026)**: Spotify is removing the `GET /users/{id}` endpoint. Using `oauth_user` to monitor **other users** will no longer work after this date. **Self-monitoring** remains fully functional. For monitoring others, use the `cookie` or `client` method instead.
+
+> ⚠️ **Premium Required (March 9, 2026)**: Starting March 9, 2026, `oauth_user` mode will require the authorized user to have a Spotify Premium account.
 
 If no method is specified, the tool defaults to the `cookie` method.
 
