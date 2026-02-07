@@ -2,6 +2,18 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.3 (07 Feb 2026)
+
+**Features and Improvements**:
+
+- **IMPROVE:** Implemented API endpoints adaptability to handle **Spotify API changes** scheduled for **February 2026** (token validation, user removal scraping, graceful follower count degradation, playlist handling to support new `items` field naming)
+
+**Breaking changes**:
+
+- **BREAKING:** Starting **February 11, 2026**, `oauth_app` alone will no longer work for monitoring users (Spotify is removing `GET /users/{id}` endpoint) - use `cookie` or `client` method instead
+- **BREAKING:** Starting **February 11, 2026**, `oauth_user` will no longer work for monitoring **other users** (Spotify is removing the `GET /users/{id}` endpoint). **Self-monitoring** your own account via `oauth_user` remains fully functional. For monitoring others, use the `cookie` or `client` method instead.
+- **BREAKING:** Starting **March 9, 2026**, `oauth_user` mode will require the authorized user to have a **Spotify Premium** account
+
 # Changes in 3.2 (06 Feb 2026)
 
 **Features and Improvements**:
