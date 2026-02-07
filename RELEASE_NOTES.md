@@ -6,7 +6,7 @@ This is a high-level summary of the most important changes.
 
 **Features and Improvements**:
 
-- **IMPROVE:** Implemented API endpoints adaptability to handle **Spotify API changes** scheduled for **February 2026** (token validation, user removal scraping, graceful follower count degradation, playlist handling to support new `items` field naming)
+- **IMPROVE:** Implemented API endpoints adaptability to handle **Spotify API changes** scheduled for **February 11, 2026** (token validation, user removal scraping, graceful follower count degradation, playlist handling to support new `items` field naming)
 
 **Breaking changes**:
 
