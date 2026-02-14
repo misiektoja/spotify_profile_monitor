@@ -602,6 +602,7 @@ SECRET_CIPHER_DICT = {}
 SECRET_CIPHER_DICT_URL = ""
 TOTP_VER = 0
 TRUNCATE_CHARS = 0
+EXPORT_ALL = False
 
 exec(CONFIG_BLOCK, globals())
 
@@ -3159,7 +3160,7 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
     except Exception as e:
         print(f"* Error: {e}")
 
-    if not CLEAN_OUTPUT:
+    if not CLEAN_OUTPUT and not EXPORT_ALL:
         list_operation = "* Listing & saving" if csv_file_name else "* Listing"
         print(f"{list_operation} tracks for playlist '{playlist_url}' ...\n")
 
@@ -3183,7 +3184,7 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
 
     p_image_url = sp_playlist_data.get("sp_playlist_image_url", "")
 
-    if not CLEAN_OUTPUT:
+    if not CLEAN_OUTPUT and not EXPORT_ALL:
         print(f"Playlist '{p_name}' owned by '{p_owner}':\n")
 
     p_likes = sp_playlist_data.get("sp_playlist_followers_count", 0)
@@ -3251,13 +3252,14 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
                     added_at_ts_highest = added_at_dt_ts
                 added_at_dt_str = get_short_date_from_ts(added_at_dt, show_weekday=False, show_seconds=True, always_show_year=True)
                 added_at_dt_week_day = calendar.day_abbr[added_at_dt.weekday()]
-                if not CLEAN_OUTPUT:
+                if not CLEAN_OUTPUT and not EXPORT_ALL:
                     artist_track = artist_track[:75]
                     line_new = '%75s    %20s    %3s     %10s' % (artist_track, added_at_dt_str, added_at_dt_week_day, added_by_name)
                 else:
                     line_new = f"{artist_track}"
                     tracks_list.append(line_new)
-                print(line_new)
+                if not EXPORT_ALL:
+                    print(line_new)
 
                 try:
                     if csv_file_name:
@@ -3265,7 +3267,7 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
                 except Exception as e:
                     print(f"* Error: {e}")
 
-    if not CLEAN_OUTPUT:
+    if not CLEAN_OUTPUT and not EXPORT_ALL:
         print(f"\nName:\t\t\t'{p_name}'")
         if p_descr:
             print(f"Description:\t\t'{p_descr}'")
@@ -3293,7 +3295,7 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
         except Exception as e:
             print(f"* Error writing to the output file {csv_file_name} - {e}")
 
-    if p_image_url and not CLEAN_OUTPUT:
+    if p_image_url and not CLEAN_OUTPUT and not EXPORT_ALL:
         # print(f"Playlist artwork URL:\t{p_image_url}")
         print(f"Playlist artwork:\t", end="")
 
@@ -3874,6 +3876,60 @@ def spotify_print_public_playlists(list_of_playlists, playlists_to_skip=None):
             print(f"Recently updated playlist:\n\n- '{p_name_recent}'\n[ {p_url_recent} ]\n[ update: {get_date_from_ts(p_update_recent)} - {calculate_timespan(now_local(), p_update_recent)} ago ]")
 
 
+# Prints detailed info about user's playlists
+def spotify_export_all_public_playlists(sp_accessToken, list_of_playlists, playlists_to_skip=None):
+    from pathvalidate import sanitize_filename
+    
+    p_update = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
+    p_update_recent = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
+    p_name = ""
+    p_name_recent = ""
+    p_url = ""
+    p_url_recent = ""
+
+    if playlists_to_skip is None:
+        playlists_to_skip = []
+
+    if list_of_playlists:
+        print()
+        for playlist in list_of_playlists:
+            if "uri" in playlist:
+                p_uri = playlist.get("uri", "")
+                p_name = playlist.get("name", "")
+                p_descr = html.unescape(playlist.get("desc", ""))
+                p_likes = playlist.get("likes", 0)
+                p_tracks = playlist.get("tracks_count", 0)
+                p_url = playlist.get("url")
+                p_date = playlist.get("date")
+                p_update = playlist.get("update_date")
+                p_collaborators_count = playlist.get("collaborators_count")
+                p_collaborators = playlist.get("collaborators")
+                p_owner = playlist.get("owner", "")
+                p_owner_uri = playlist.get("owner_uri", "")
+                p_uri_id = spotify_extract_id_or_name(p_uri)
+                p_owner_name = spotify_extract_id_or_name(p_owner)
+                p_owner_id = spotify_extract_id_or_name(p_owner_uri)
+
+                skipped_from_processing = ""
+                if (playlists_to_skip and (p_uri_id in playlists_to_skip or p_owner_id in playlists_to_skip or p_owner_name in playlists_to_skip)) or (IGNORE_SPOTIFY_PLAYLISTS and p_owner_id == "spotify"):
+                    skipped_from_processing = " [ IGNORED ]"
+
+                print(f"- '{p_name}'{skipped_from_processing}\n[ {p_url} ]\n[ songs: {p_tracks}, likes: {p_likes}, collaborators: {p_collaborators_count} ]\n[ owner: {p_owner} ]")
+                if p_date:
+                    print(f"[ date: {get_date_from_ts(p_date)} - {calculate_timespan(now_local(), p_date)} ago ]")
+                if p_update:
+                    print(f"[ update: {get_date_from_ts(p_update)} - {calculate_timespan(now_local(), p_update)} ago ]")
+                # if p_descr:
+                    # print(f"'{p_descr}'")
+
+            safe_filename = sanitize_filename(p_name)
+            safe_filename_path = os.path.expanduser(safe_filename)
+            print(f"-- Exporting playlist to {safe_filename_path}.csv")
+            spotify_list_tracks_for_playlist(sp_accessToken, p_url, safe_filename_path + '.csv', CSV_FILE_FORMAT_EXPORT)
+            print(f"-- Export completed")
+            print()
+           
+
 # Prints detailed info about the user with the specified URI ID (-i flag)
 def spotify_get_user_details(sp_accessToken, user_uri_id):
     playlists_count = 0
@@ -3952,7 +4008,11 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
 
         if playlists:
             list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True)
-            spotify_print_public_playlists(list_of_playlists)
+            if EXPORT_ALL:
+                spotify_export_all_public_playlists(sp_accessToken, list_of_playlists)
+            else:
+                spotify_print_public_playlists(list_of_playlists)
+            
 
 
 # Returns recently played artists for a user with the specified URI (-a flag)
@@ -5855,7 +5915,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
 def main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, SP_LOGFILE, PROFILE_NOTIFICATION, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, ALARM_TIMEOUT, pyotp, CLEAN_OUTPUT, USER_AGENT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TRUNCATE_CHARS
-
+    global EXPORT_ALL
+    
     if "--generate-config" in sys.argv:
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
         # Check if a filename was provided after --generate-config
@@ -6034,6 +6095,12 @@ def main():
         metavar="URL",
         type=str,
         help="List all tracks for a Spotify playlist URL"
+    )
+    listing.add_argument(
+        "--export-all-playlists",
+        dest="export_all_playlists",
+        action="store_true",
+        help="Create files per playlist with all tracks for each Spotify playlist"
     )
     listing.add_argument(
         "-x", "--list-liked-tracks",
@@ -6458,6 +6525,9 @@ def main():
         except Exception as e:
             print(f"* Error: CSV file cannot be opened for writing: {e}")
             sys.exit(1)
+
+    if args.export_all_playlists:
+        EXPORT_ALL = True
 
     if args.list_tracks_for_playlist:
         try:
