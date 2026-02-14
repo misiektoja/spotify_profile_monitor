@@ -3824,6 +3824,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
 
 # Prints detailed info about user's playlists
 def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_to_skip=None):
+    from pathvalidate import sanitize_filename
     p_update = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
     p_update_recent = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
     p_name = ""
