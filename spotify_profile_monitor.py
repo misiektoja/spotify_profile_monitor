@@ -3868,9 +3868,9 @@ def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_
                     print(f"'{p_descr}'")
                 if EXPORT_ALL:
                     safe_filename = sanitize_filename(p_name)
-                    safe_filename_path = os.path.expanduser(safe_filename)
-                    print(f"-- Exporting playlist to {safe_filename_path}.csv")
-                    spotify_list_tracks_for_playlist(sp_accessToken, p_url, safe_filename_path + '.csv', CSV_FILE_FORMAT_EXPORT)
+                    safe_filename_path = os.path.expanduser(safe_filename + '.csv')
+                    print(f"-- Exporting playlist to {safe_filename_path}")
+                    spotify_list_tracks_for_playlist(sp_accessToken, p_url, safe_filename_path, CSV_FILE_FORMAT_EXPORT)
                     print(f"-- Export completed")
                 print()
            
