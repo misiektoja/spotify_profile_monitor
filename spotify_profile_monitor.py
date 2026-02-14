@@ -3823,7 +3823,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
 
 
 # Prints detailed info about user's playlists
-def spotify_print_public_playlists(list_of_playlists, playlists_to_skip=None):
+def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_to_skip=None):
     p_update = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
     p_update_recent = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
     p_name = ""
@@ -3865,8 +3865,14 @@ def spotify_print_public_playlists(list_of_playlists, playlists_to_skip=None):
                     print(f"[ update: {get_date_from_ts(p_update)} - {calculate_timespan(now_local(), p_update)} ago ]")
                 if p_descr:
                     print(f"'{p_descr}'")
+                if EXPORT_ALL:
+                    safe_filename = sanitize_filename(p_name)
+                    safe_filename_path = os.path.expanduser(safe_filename)
+                    print(f"-- Exporting playlist to {safe_filename_path}.csv")
+                    spotify_list_tracks_for_playlist(sp_accessToken, p_url, safe_filename_path + '.csv', CSV_FILE_FORMAT_EXPORT)
+                    print(f"-- Export completed")
                 print()
-
+           
             if p_update is not None and p_update > p_update_recent:
                 p_update_recent = p_update
                 p_name_recent = p_name
@@ -3874,61 +3880,7 @@ def spotify_print_public_playlists(list_of_playlists, playlists_to_skip=None):
 
         if p_update_recent is not None and p_update_recent > datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE)) and p_name_recent and p_url_recent:
             print(f"Recently updated playlist:\n\n- '{p_name_recent}'\n[ {p_url_recent} ]\n[ update: {get_date_from_ts(p_update_recent)} - {calculate_timespan(now_local(), p_update_recent)} ago ]")
-
-
-# Prints detailed info about user's playlists
-def spotify_export_all_public_playlists(sp_accessToken, list_of_playlists, playlists_to_skip=None):
-    from pathvalidate import sanitize_filename
-    
-    p_update = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
-    p_update_recent = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
-    p_name = ""
-    p_name_recent = ""
-    p_url = ""
-    p_url_recent = ""
-
-    if playlists_to_skip is None:
-        playlists_to_skip = []
-
-    if list_of_playlists:
-        print()
-        for playlist in list_of_playlists:
-            if "uri" in playlist:
-                p_uri = playlist.get("uri", "")
-                p_name = playlist.get("name", "")
-                p_descr = html.unescape(playlist.get("desc", ""))
-                p_likes = playlist.get("likes", 0)
-                p_tracks = playlist.get("tracks_count", 0)
-                p_url = playlist.get("url")
-                p_date = playlist.get("date")
-                p_update = playlist.get("update_date")
-                p_collaborators_count = playlist.get("collaborators_count")
-                p_collaborators = playlist.get("collaborators")
-                p_owner = playlist.get("owner", "")
-                p_owner_uri = playlist.get("owner_uri", "")
-                p_uri_id = spotify_extract_id_or_name(p_uri)
-                p_owner_name = spotify_extract_id_or_name(p_owner)
-                p_owner_id = spotify_extract_id_or_name(p_owner_uri)
-
-                skipped_from_processing = ""
-                if (playlists_to_skip and (p_uri_id in playlists_to_skip or p_owner_id in playlists_to_skip or p_owner_name in playlists_to_skip)) or (IGNORE_SPOTIFY_PLAYLISTS and p_owner_id == "spotify"):
-                    skipped_from_processing = " [ IGNORED ]"
-
-                print(f"- '{p_name}'{skipped_from_processing}\n[ {p_url} ]\n[ songs: {p_tracks}, likes: {p_likes}, collaborators: {p_collaborators_count} ]\n[ owner: {p_owner} ]")
-                if p_date:
-                    print(f"[ date: {get_date_from_ts(p_date)} - {calculate_timespan(now_local(), p_date)} ago ]")
-                if p_update:
-                    print(f"[ update: {get_date_from_ts(p_update)} - {calculate_timespan(now_local(), p_update)} ago ]")
-                # if p_descr:
-                    # print(f"'{p_descr}'")
-
-            safe_filename = sanitize_filename(p_name)
-            safe_filename_path = os.path.expanduser(safe_filename)
-            print(f"-- Exporting playlist to {safe_filename_path}.csv")
-            spotify_list_tracks_for_playlist(sp_accessToken, p_url, safe_filename_path + '.csv', CSV_FILE_FORMAT_EXPORT)
-            print(f"-- Export completed")
-            print()
-           
+          
 
 # Prints detailed info about the user with the specified URI ID (-i flag)
 def spotify_get_user_details(sp_accessToken, user_uri_id):
@@ -4008,11 +3960,7 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
 
         if playlists:
             list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True)
-            if EXPORT_ALL:
-                spotify_export_all_public_playlists(sp_accessToken, list_of_playlists)
-            else:
-                spotify_print_public_playlists(list_of_playlists)
-            
+            spotify_print_public_playlists(sp_accessToken, list_of_playlists)
 
 
 # Returns recently played artists for a user with the specified URI (-a flag)
@@ -4769,7 +4717,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
         if playlists:
             list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True, playlists_to_skip)
-            spotify_print_public_playlists(list_of_playlists, playlists_to_skip)
+            spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_to_skip)
 
     print_cur_ts("\nTimestamp:\t\t\t")
 
