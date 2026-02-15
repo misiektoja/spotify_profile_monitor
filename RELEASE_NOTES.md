@@ -2,6 +2,12 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.4 (TBD)
+
+**Features and Improvements**:
+
+- **NEW:** Added `--export-all-playlists` flag to export all user's playlists to individual CSV files (named after the playlist) when using `-i` / `--show-user-profile` mode (requires `pathvalidate` library) (thanks [@tomballgithub](https://github.com/tomballgithub))
+
 # Changes in 3.3 (07 Feb 2026)
 
 **Features and Improvements**:
