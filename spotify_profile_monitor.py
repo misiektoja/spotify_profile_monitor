@@ -17,6 +17,7 @@ tzlocal (optional)
 python-dotenv (optional)
 spotipy
 wcwidth (optional, needed by TRUNCATE_CHARS feature)
+pathvalidate (optional, needed by --export-all-playlists)
 """
 
 VERSION = "3.3"
@@ -3873,7 +3874,7 @@ def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_
                     spotify_list_tracks_for_playlist(sp_accessToken, p_url, safe_filename_path, CSV_FILE_FORMAT_EXPORT)
                     print(f"-- Export completed")
                 print()
-           
+
             if p_update is not None and p_update > p_update_recent:
                 p_update_recent = p_update
                 p_name_recent = p_name
@@ -3881,7 +3882,7 @@ def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_
 
         if p_update_recent is not None and p_update_recent > datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE)) and p_name_recent and p_url_recent:
             print(f"Recently updated playlist:\n\n- '{p_name_recent}'\n[ {p_url_recent} ]\n[ update: {get_date_from_ts(p_update_recent)} - {calculate_timespan(now_local(), p_update_recent)} ago ]")
-          
+
 
 # Prints detailed info about the user with the specified URI ID (-i flag)
 def spotify_get_user_details(sp_accessToken, user_uri_id):
@@ -5865,7 +5866,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 def main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, SP_LOGFILE, PROFILE_NOTIFICATION, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, ALARM_TIMEOUT, pyotp, CLEAN_OUTPUT, USER_AGENT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TRUNCATE_CHARS
     global EXPORT_ALL
-    
+
     if "--generate-config" in sys.argv:
         config_content = CONFIG_BLOCK.strip("\n") + "\n"
         # Check if a filename was provided after --generate-config
@@ -6476,6 +6477,10 @@ def main():
             sys.exit(1)
 
     if args.export_all_playlists:
+        try:
+            import pathvalidate
+        except ModuleNotFoundError:
+            raise SystemExit("Error: Couldn't find the pathvalidate library required for --export-all-playlists !\n\nTo install it, run:\n    pip install pathvalidate\n\nOnce installed, re-run this tool")
         EXPORT_ALL = True
 
     if args.list_tracks_for_playlist:
