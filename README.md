@@ -668,6 +668,12 @@ By default, only public playlists owned by the user are fetched. You can change 
 spotify_profile_monitor <spotify_user_uri_id> -i -k
 ```
 
+If you want to additionally export each of the user's playlists into a separate .CSV file (named after the playlist and sanitized), use the `--export-all-playlists` flag (requires `pathvalidate` library):
+
+```sh
+spotify_profile_monitor <spotify_user_uri_id> -i --export-all-playlists
+```
+
 If you want to completely disable the processing of a user's public playlists while displaying details for a specific Spotify user profile URL (to speed up the process), you can use the `-q` flag:
 
 ```sh
