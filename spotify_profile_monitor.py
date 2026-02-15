@@ -6477,7 +6477,7 @@ def main():
             sys.exit(1)
 
     if args.export_all_playlists:
-        if not args.user_details:
+        if not args.user_profile_details:
             print("Error: --export-all-playlists requires -i / --user-details flag !")
             sys.exit(1)
         try:
