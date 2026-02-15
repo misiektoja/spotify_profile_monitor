@@ -85,6 +85,7 @@ pip install spotify_profile_monitor
    * [Detection of Changed Profile Pictures](#detection-of-changed-profile-pictures)
    * [Displaying Images in Your Terminal](#displaying-images-in-your-terminal)
    * [Playlist Blacklisting](#playlist-blacklisting)
+   * [Restricted Playlists (Spotify API 404)](#restricted-playlists-spotify-api-404)
    * [Check Intervals](#check-intervals)
    * [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix)
    * [Coloring Log Output with GRC](#coloring-log-output-with-grc)
@@ -811,6 +812,24 @@ If certain playlists are blacklisted, there will be an appropriate message. For 
 [ update: Fri 23 Aug 2024, 17:05:15 - 7 months, 10 hours, 27 minutes ago ]
 'Unwind and let the afternoon unfold.'
 ```
+
+<a id="restricted-playlists-spotify-api-404"></a>
+### Restricted Playlists (Spotify API 404)
+
+Some playlists (especially Spotify-curated ones) may appear on profile pages, but return `404` on the public `/v1/playlists/{id}` endpoint.
+
+In such cases, the tool marks them as `[ RESTRICTED ]` and falls back to profile-view metadata (`public_playlists`) instead of treating them as a generic processing error.
+
+For restricted playlists, the tool can monitor:
+- added/removed from profile
+- playlist name changes
+- likes/followers count changes (when available in profile-view)
+
+For restricted playlists, the tool cannot monitor:
+- track-level changes
+- collaborators
+- description changes
+- creation/last update timestamps derived from track history
 
 <a id="check-intervals"></a>
 ### Check Intervals
