@@ -3727,7 +3727,8 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                             PLAYLIST_INFO_CACHE[p_uri] = {
                                 "status": "ok",
                                 "timestamp": time.time(),
-                                "name": sp_playlist_data.get("sp_playlist_name", "")
+                                "name": sp_playlist_data.get("sp_playlist_name", ""),
+                                "followers_count": sp_playlist_data.get("sp_playlist_followers_count")
                             }
                         except PlaylistRestrictedError:
                             sp_playlist_data = _build_restricted_playlist_data()
@@ -3853,6 +3854,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                 # Update cache with comprehensive playlist data
                 if p_uri in PLAYLIST_INFO_CACHE:
                     PLAYLIST_INFO_CACHE[p_uri].update({
+                        "followers_count": p_likes,
                         "tracks_count": p_tracks,
                         "duration_seconds": duration_sum,
                         "creation_date_ts": added_at_ts_lowest if added_at_ts_lowest > 0 else None,
@@ -4282,6 +4284,8 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                         continue
                     p_name = (current_meta.get("name") or f_dict.get("name") or cached.get("name") or "Unknown")
                     p_url = spotify_convert_uri_to_url(uri)
+                    current_likes = current_meta.get("followers_count", f_dict.get("followers_count", cached.get("followers_count")))
+                    current_likes_str = str(current_likes) if current_likes is not None else "n/a"
 
                     if is_restricted:
                         restricted_followers = current_meta.get("followers_count", f_dict.get("followers_count", cached.get("followers_count")))
@@ -4302,6 +4306,9 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                         console_output = f"- {p_name} [ {p_url} ]"
                         email_output = f"- {p_name} [ {p_url} ]"
                         html_output = f"- <a href=\"{p_url}\">{escape(p_name)}</a>"
+                        console_output += f"\n  Likes: {current_likes_str}"
+                        email_output += f"\n  Likes: {current_likes_str}"
+                        html_output += f"<br>&nbsp;&nbsp;Likes: <b>{escape(current_likes_str)}</b>"
 
                         if playlist_details and not playlist_details.get("error"):
                             if playlist_details.get("is_empty"):
@@ -4420,13 +4427,19 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                         p_name = old_meta.get("name", "Unknown")
 
                     p_url = spotify_convert_uri_to_url(uri)
+                    last_known_likes = old_meta.get("followers_count")
+                    if last_known_likes is None:
+                        last_known_likes = old_meta.get("likes")
+                    if last_known_likes is None and cached:
+                        last_known_likes = cached.get("followers_count")
+                    last_known_likes_str = str(last_known_likes) if last_known_likes is not None else "n/a"
 
                     if is_restricted:
                         restricted_followers = old_meta.get("followers_count", f_dict.get("followers_count", cached.get("followers_count") if cached else None))
                         followers_str = restricted_followers if restricted_followers is not None else "n/a"
-                        console_output = f"- {p_name} [ {p_url} ] [ RESTRICTED ]: removed from profile\n  Last known likes: {followers_str}\n  Metadata source: profile-view only"
-                        email_output = f"- {p_name} [ {p_url} ] [ RESTRICTED ]: removed from profile\n  Last known likes: {followers_str}\n  Metadata source: profile-view only"
-                        html_output = f"- <a href=\"{p_url}\">{escape(p_name)}</a> [ <b>RESTRICTED</b> ]: removed from profile<br>&nbsp;&nbsp;Last known likes: <b>{escape(str(followers_str))}</b><br>&nbsp;&nbsp;Metadata source: profile-view only"
+                        console_output = f"- {p_name} [ {p_url} ] [ RESTRICTED ]\n  Likes: {followers_str}\n  Metadata source: profile-view only"
+                        email_output = f"- {p_name} [ {p_url} ] [ RESTRICTED ]\n  Likes: {followers_str}\n  Metadata source: profile-view only"
+                        html_output = f"- <a href=\"{p_url}\">{escape(p_name)}</a> [ <b>RESTRICTED</b> ]<br>&nbsp;&nbsp;Likes: <b>{escape(str(followers_str))}</b><br>&nbsp;&nbsp;Metadata source: profile-view only"
 
                         print(console_output)
                         list_of_removed_f_list += email_output
@@ -4461,6 +4474,9 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                         console_output = f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private"
                         email_output = f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private"
                         html_output = f"- <a href=\"{p_url}\">{escape(p_name)}</a>: playlist has been removed or set to private"
+                        console_output += f"\n  Likes: {last_known_likes_str}"
+                        email_output += f"\n  Likes: {last_known_likes_str}"
+                        html_output += f"<br>&nbsp;&nbsp;Likes: <b>{escape(last_known_likes_str)}</b>"
 
                         # If we have cached details, show them
                         if playlist_details and not playlist_details.get("error"):
@@ -4510,6 +4526,9 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                         console_output = f"- {spotify_format_playlist_reference(uri)}"
                         email_output = f"- {spotify_format_playlist_reference(uri)}"
                         html_output = f"- <a href=\"{p_url}\">{escape(p_name)}</a>"
+                        console_output += f"\n  Likes: {last_known_likes_str}"
+                        email_output += f"\n  Likes: {last_known_likes_str}"
+                        html_output += f"<br>&nbsp;&nbsp;Likes: <b>{escape(last_known_likes_str)}</b>"
 
                         # Get playlist details if available
                         if playlist_details and not playlist_details.get("error"):
