@@ -6478,7 +6478,7 @@ def main():
 
     if args.export_all_playlists:
         if not args.user_profile_details:
-            print("Error: --export-all-playlists requires -i / --user-details flag !")
+            print("Error: --export-all-playlists requires -i / --show-user-profile flag !")
             sys.exit(1)
         try:
             import pathvalidate
