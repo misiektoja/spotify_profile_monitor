@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.3
+v3.4
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -20,7 +20,7 @@ wcwidth (optional, needed by TRUNCATE_CHARS feature)
 pathvalidate (optional, needed by --export-all-playlists)
 """
 
-VERSION = "3.3"
+VERSION = "3.4"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -6477,6 +6477,9 @@ def main():
             sys.exit(1)
 
     if args.export_all_playlists:
+        if not args.user_details:
+            print("Error: --export-all-playlists requires -i / --user-details flag !")
+            sys.exit(1)
         try:
             import pathvalidate
         except ModuleNotFoundError:
