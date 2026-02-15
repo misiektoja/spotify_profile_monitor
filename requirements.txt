@@ -7,3 +7,4 @@ tzlocal
 python-dotenv
 spotipy
 wcwidth
+pathvalidate
