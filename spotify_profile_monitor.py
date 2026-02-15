@@ -3825,7 +3825,6 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
 
 # Prints detailed info about user's playlists
 def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_to_skip=None):
-    from pathvalidate import sanitize_filename
     p_update = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
     p_update_recent = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
     p_name = ""
@@ -3868,6 +3867,7 @@ def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_
                 if p_descr:
                     print(f"'{p_descr}'")
                 if EXPORT_ALL and not skipped_from_processing:
+                    from pathvalidate import sanitize_filename
                     safe_filename = sanitize_filename(p_name)
                     safe_filename_path = os.path.expanduser(safe_filename + '.csv')
                     print(f"-- Exporting playlist to '{safe_filename_path}'")
