@@ -3866,7 +3866,7 @@ def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_
                     print(f"[ update: {get_date_from_ts(p_update)} - {calculate_timespan(now_local(), p_update)} ago ]")
                 if p_descr:
                     print(f"'{p_descr}'")
-                if EXPORT_ALL:
+                if EXPORT_ALL and not skipped_from_processing:
                     safe_filename = sanitize_filename(p_name)
                     safe_filename_path = os.path.expanduser(safe_filename + '.csv')
                     print(f"-- Exporting playlist to {safe_filename_path}")
