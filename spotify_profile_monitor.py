@@ -803,6 +803,11 @@ class TimeoutException(Exception):
     pass
 
 
+# Class used for custom PlaylistRestrictedError exception
+class PlaylistRestrictedError(Exception):
+    pass
+
+
 # Signal handler for SIGALRM when the operation times out
 def timeout_handler(sig, frame):
     raise TimeoutException
@@ -2772,6 +2777,8 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks, oauth_app:
 
     try:
         response1 = SESSION.get(url1, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
+        if response1.status_code == 404:
+            raise PlaylistRestrictedError(f"404 Not Found for playlist endpoint: {url1}")
         response1.raise_for_status()
         json_response1 = response1.json()
 
@@ -2909,7 +2916,7 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
         response.raise_for_status()
         return response.json()
 
-    def _trim(items: list[dict], keys=("image_url", "is_following", "name", "followers_count")) -> list[dict]:
+    def _trim(items: list[dict], keys=("image_url", "is_following")) -> list[dict]:
         if isinstance(items, list):
             for d in items:
                 for k in keys:
@@ -3674,34 +3681,87 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     else:
                         effective_get_tracks = get_tracks
 
-                    try:
-                        sp_playlist_data = spotify_get_playlist_info(sp_accessToken, p_uri, effective_get_tracks)
-                        PLAYLIST_INFO_CACHE[p_uri] = {
-                            "status": "ok",
-                            "timestamp": time.time(),
-                            # "data": sp_playlist_data,
-                            "name": sp_playlist_data.get("sp_playlist_name", "")
-                        }
-                    except Exception as e:
-                        existing = PLAYLIST_INFO_CACHE.get(p_uri, {})
-                        existing.update({
-                            "status": "error",
-                            "timestamp": time.time(),
-                            "error": str(e)
-                        })
-                        PLAYLIST_INFO_CACHE[p_uri] = existing
+                    restricted_playlist = False
+                    cached_entry = PLAYLIST_INFO_CACHE.get(p_uri, {})
 
-                        print(f"\n* Error while processing playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f": {e}" if e else ""))
-                        print_cur_ts("Timestamp:\t\t\t")
-                        error_while_processing = True
-                        if show_progress:
-                            _display_progress(idx, total_playlists, current_playlist_name, is_final=(idx == total_playlists))
-                        continue
+                    def _safe_profile_followers_count(raw_value):
+                        if raw_value is None:
+                            return None
+                        try:
+                            return int(raw_value)
+                        except (TypeError, ValueError):
+                            return None
+
+                    def _build_restricted_playlist_data():
+                        fallback_name = playlist.get("name", "") or cached_entry.get("name", "")
+                        fallback_owner = playlist.get("owner_name", "") or cached_entry.get("owner", "")
+                        fallback_owner_uri = playlist.get("owner_uri", "") or cached_entry.get("owner_uri", "")
+                        fallback_likes = _safe_profile_followers_count(playlist.get("followers_count"))
+
+                        return {
+                            "sp_playlist_name": fallback_name,
+                            "sp_playlist_description": "",
+                            "sp_playlist_followers_count": fallback_likes,
+                            "sp_playlist_tracks_count": 0,
+                            "sp_playlist_tracks_count_before_filtering": 0,
+                            "sp_playlist_tracks": [],
+                            "sp_playlist_owner": fallback_owner,
+                            "sp_playlist_owner_uri": fallback_owner_uri,
+                            "sp_playlist_image_url": "",
+                            "sp_playlist_restricted": True
+                        }
+
+                    if cached_entry.get("status") == "restricted":
+                        sp_playlist_data = _build_restricted_playlist_data()
+                        restricted_playlist = True
+                        PLAYLIST_INFO_CACHE[p_uri].update({
+                            "timestamp": time.time(),
+                            "name": sp_playlist_data.get("sp_playlist_name", ""),
+                            "owner": sp_playlist_data.get("sp_playlist_owner", ""),
+                            "owner_uri": sp_playlist_data.get("sp_playlist_owner_uri", ""),
+                            "followers_count": sp_playlist_data.get("sp_playlist_followers_count")
+                        })
+                    else:
+                        try:
+                            sp_playlist_data = spotify_get_playlist_info(sp_accessToken, p_uri, effective_get_tracks)
+                            PLAYLIST_INFO_CACHE[p_uri] = {
+                                "status": "ok",
+                                "timestamp": time.time(),
+                                "name": sp_playlist_data.get("sp_playlist_name", "")
+                            }
+                        except PlaylistRestrictedError:
+                            sp_playlist_data = _build_restricted_playlist_data()
+                            restricted_playlist = True
+                            PLAYLIST_INFO_CACHE[p_uri] = {
+                                "status": "restricted",
+                                "timestamp": time.time(),
+                                "name": sp_playlist_data.get("sp_playlist_name", ""),
+                                "owner": sp_playlist_data.get("sp_playlist_owner", ""),
+                                "owner_uri": sp_playlist_data.get("sp_playlist_owner_uri", ""),
+                                "followers_count": sp_playlist_data.get("sp_playlist_followers_count"),
+                                "error": "playlist endpoint returned 404 (restricted)"
+                            }
+                            # print(f"\n* Playlist {spotify_format_playlist_reference(p_uri)} is restricted, tracking metadata only")
+                        except Exception as e:
+                            existing = PLAYLIST_INFO_CACHE.get(p_uri, {})
+                            existing.update({
+                                "status": "error",
+                                "timestamp": time.time(),
+                                "error": str(e)
+                            })
+                            PLAYLIST_INFO_CACHE[p_uri] = existing
+
+                            print(f"\n* Error while processing playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f": {e}" if e else ""))
+                            print_cur_ts("Timestamp:\t\t\t")
+                            error_while_processing = True
+                            if show_progress:
+                                _display_progress(idx, total_playlists, current_playlist_name, is_final=(idx == total_playlists))
+                            continue
 
                     p_name = sp_playlist_data.get("sp_playlist_name", "")
                     current_playlist_name = p_name  # Update tracked name
                     p_descr = html.unescape(sp_playlist_data.get("sp_playlist_description", ""))
-                    p_likes = sp_playlist_data.get("sp_playlist_followers_count", 0)
+                    p_likes = sp_playlist_data.get("sp_playlist_followers_count")
                     p_tracks = sp_playlist_data.get("sp_playlist_tracks_count", 0)
                     p_tracks_before_filtering = sp_playlist_data.get("sp_playlist_tracks_count_before_filtering", 0)
                     p_url = spotify_convert_uri_to_url(p_uri)
@@ -3802,9 +3862,9 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     })
 
                 if list_of_tracks and effective_get_tracks:
-                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "list_of_tracks": list_of_tracks, "collaborators_count": p_collaborators_count, "collaborators": user_id_name_mapping, "owner": p_owner, "owner_uri": p_owner_uri, "unknown_added_by_tracks": unknown_added_by_tracks})
+                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "list_of_tracks": list_of_tracks, "collaborators_count": p_collaborators_count, "collaborators": user_id_name_mapping, "owner": p_owner, "owner_uri": p_owner_uri, "unknown_added_by_tracks": unknown_added_by_tracks, "restricted": restricted_playlist})
                 else:
-                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "collaborators_count": p_collaborators_count, "collaborators": {}, "owner": p_owner, "owner_uri": p_owner_uri, "unknown_added_by_tracks": unknown_added_by_tracks})
+                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "collaborators_count": p_collaborators_count, "collaborators": {}, "owner": p_owner, "owner_uri": p_owner_uri, "unknown_added_by_tracks": unknown_added_by_tracks, "restricted": restricted_playlist})
 
                 # Final refresh after successful processing
                 if show_progress:
@@ -3851,6 +3911,7 @@ def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_
                 p_collaborators = playlist.get("collaborators")
                 p_owner = playlist.get("owner", "")
                 p_owner_uri = playlist.get("owner_uri", "")
+                p_restricted = bool(playlist.get("restricted", False))
                 p_uri_id = spotify_extract_id_or_name(p_uri)
                 p_owner_name = spotify_extract_id_or_name(p_owner)
                 p_owner_id = spotify_extract_id_or_name(p_owner_uri)
@@ -3859,14 +3920,20 @@ def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_
                 if (playlists_to_skip and (p_uri_id in playlists_to_skip or p_owner_id in playlists_to_skip or p_owner_name in playlists_to_skip)) or (IGNORE_SPOTIFY_PLAYLISTS and p_owner_id == "spotify"):
                     skipped_from_processing = " [ IGNORED ]"
 
-                print(f"- '{p_name}'{skipped_from_processing}\n[ {p_url} ]\n[ songs: {p_tracks}, likes: {p_likes}, collaborators: {p_collaborators_count} ]\n[ owner: {p_owner} ]")
+                restricted_label = " [ RESTRICTED ]" if p_restricted else ""
+                likes_display = p_likes if p_likes is not None else "n/a"
+                if p_restricted:
+                    print(f"- '{p_name}'{skipped_from_processing}{restricted_label}\n[ {p_url} ]\n[ likes: {likes_display} ]\n[ owner: {p_owner} ]")
+                    print("[ metadata source: profile-view only ]")
+                else:
+                    print(f"- '{p_name}'{skipped_from_processing}\n[ {p_url} ]\n[ songs: {p_tracks}, likes: {likes_display}, collaborators: {p_collaborators_count} ]\n[ owner: {p_owner} ]")
                 if p_date:
                     print(f"[ date: {get_date_from_ts(p_date)} - {calculate_timespan(now_local(), p_date)} ago ]")
                 if p_update:
                     print(f"[ update: {get_date_from_ts(p_update)} - {calculate_timespan(now_local(), p_update)} ago ]")
                 if p_descr:
                     print(f"'{p_descr}'")
-                if EXPORT_ALL and not skipped_from_processing:
+                if EXPORT_ALL and not skipped_from_processing and not p_restricted:
                     from pathvalidate import sanitize_filename
                     safe_filename = sanitize_filename(p_name)
                     safe_filename_path = os.path.expanduser(safe_filename + '.csv')
@@ -4167,8 +4234,17 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
 
     f_diff_str = "+" + str(f_diff) if f_diff > 0 else str(f_diff)
 
-    f_list_stripped = remove_key_from_list_of_dicts_copy(f_list, "owner_name")
-    f_list_old_stripped = remove_key_from_list_of_dicts_copy(f_list_old, "owner_name")
+    if is_playlist:
+        def _playlist_identity(items):
+            if not items:
+                return []
+            return [{"uri": d.get("uri"), "owner_uri": d.get("owner_uri")} for d in items if isinstance(d, dict) and d.get("uri")]
+
+        f_list_stripped = _playlist_identity(f_list)
+        f_list_old_stripped = _playlist_identity(f_list_old)
+    else:
+        f_list_stripped = remove_key_from_list_of_dicts_copy(f_list, "owner_name")
+        f_list_old_stripped = remove_key_from_list_of_dicts_copy(f_list_old, "owner_name")
 
     removed_f_list = compare_two_lists_of_dicts(f_list_old_stripped, f_list_stripped)
     added_f_list = compare_two_lists_of_dicts(f_list_stripped, f_list_old_stripped)
@@ -4194,58 +4270,69 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                 if "uri" in f_dict:
 
                     uri = f_dict["uri"]
+                    current_meta = next((p for p in (f_list or []) if isinstance(p, dict) and p.get("uri") == uri), {})
                     cached = PLAYLIST_INFO_CACHE.get(uri)
-                    if not cached or cached.get("status") != "ok":
+                    cached_status = cached.get("status") if cached else ""
+                    is_restricted = cached_status == "restricted"
+
+                    if not cached or cached_status not in {"ok", "restricted"}:
                         print(f"- Skipping playlist {spotify_format_playlist_reference(uri)} due to cached error or missing data")
                         list_of_added_f_list += f"- Skipping playlist {spotify_format_playlist_reference(uri)} due to error\n"
                         list_of_added_f_list_html += f"- Skipping playlist {escape(spotify_format_playlist_reference(uri))} due to error<br>"
                         continue
-                    p_name = cached.get("name", "Unknown")
+                    p_name = (current_meta.get("name") or f_dict.get("name") or cached.get("name") or "Unknown")
                     p_url = spotify_convert_uri_to_url(uri)
 
-                    # Get playlist details
-                    playlist_details = None
-                    if sp_accessToken:
-                        try:
-                            playlist_details = get_playlist_details_for_notification(sp_accessToken, uri)
-                        except Exception as e:
-                            playlist_details = None
+                    if is_restricted:
+                        restricted_followers = current_meta.get("followers_count", f_dict.get("followers_count", cached.get("followers_count")))
+                        followers_str = restricted_followers if restricted_followers is not None else "n/a"
+                        console_output = f"- {p_name} [ {p_url} ] [ RESTRICTED ]\n  Likes: {followers_str}\n  Metadata source: profile-view only"
+                        email_output = f"- {p_name} [ {p_url} ] [ RESTRICTED ]\n  Likes: {followers_str}\n  Metadata source: profile-view only"
+                        html_output = f"- <a href=\"{p_url}\">{escape(p_name)}</a> [ <b>RESTRICTED</b> ]<br>&nbsp;&nbsp;Likes: <b>{escape(str(followers_str))}</b><br>&nbsp;&nbsp;Metadata source: profile-view only"
+                    else:
+                        # Get playlist details
+                        playlist_details = None
+                        if sp_accessToken:
+                            try:
+                                playlist_details = get_playlist_details_for_notification(sp_accessToken, uri)
+                            except Exception:
+                                playlist_details = None
 
-                    # Format console output
-                    console_output = f"- {p_name} [ {p_url} ]"
-                    email_output = f"- {p_name} [ {p_url} ]"
-                    html_output = f"- <a href=\"{p_url}\">{escape(p_name)}</a>"
+                        # Format console output
+                        console_output = f"- {p_name} [ {p_url} ]"
+                        email_output = f"- {p_name} [ {p_url} ]"
+                        html_output = f"- <a href=\"{p_url}\">{escape(p_name)}</a>"
 
-                    if playlist_details and not playlist_details.get("error"):
-                        if playlist_details.get("is_empty"):
-                            console_output += f"\n  (Playlist is empty)"
-                            email_output += f"\n  (Playlist is empty)"
-                            html_output += f"<br>&nbsp;&nbsp;(Playlist is empty)"
-                        else:
-                            # Songs count
-                            console_output += f"\n  Songs: {playlist_details.get('songs_count', 0)}"
-                            email_output += f"\n  Songs: {playlist_details.get('songs_count', 0)}"
-                            html_output += f"<br>&nbsp;&nbsp;Songs: <b>{playlist_details.get('songs_count', 0)}</b>"
+                        if playlist_details and not playlist_details.get("error"):
+                            if playlist_details.get("is_empty"):
+                                console_output += f"\n  (Playlist is empty)"
+                                email_output += f"\n  (Playlist is empty)"
+                                html_output += f"<br>&nbsp;&nbsp;(Playlist is empty)"
+                            else:
+                                # Songs count
+                                console_output += f"\n  Songs: {playlist_details.get('songs_count', 0)}"
+                                email_output += f"\n  Songs: {playlist_details.get('songs_count', 0)}"
+                                html_output += f"<br>&nbsp;&nbsp;Songs: <b>{playlist_details.get('songs_count', 0)}</b>"
 
-                            # Duration
-                            duration_str = display_time(playlist_details.get('duration_seconds', 0))
-                            console_output += f"\n  Duration: {duration_str}"
-                            email_output += f"\n  Duration: {duration_str}"
-                            html_output += f"<br>&nbsp;&nbsp;Duration: <b>{escape(duration_str)}</b>"
+                                # Duration
+                                duration_str = display_time(playlist_details.get('duration_seconds', 0))
+                                console_output += f"\n  Duration: {duration_str}"
+                                email_output += f"\n  Duration: {duration_str}"
+                                html_output += f"<br>&nbsp;&nbsp;Duration: <b>{escape(duration_str)}</b>"
 
-                            # Creation date
-                            if playlist_details.get('creation_date'):
-                                creation_info = f"{playlist_details.get('creation_date')} ({playlist_details.get('creation_date_since', '')} ago)"
-                                console_output += f"\n  Creation date: {creation_info}"
-                                email_output += f"\n  Creation date: {creation_info}"
-                                html_output += f"<br>&nbsp;&nbsp;Creation date: <b>{escape(playlist_details.get('creation_date'))}</b> ({escape(playlist_details.get('creation_date_since', ''))} ago)"
+                                # Creation date
+                                if playlist_details.get('creation_date'):
+                                    creation_info = f"{playlist_details.get('creation_date')} ({playlist_details.get('creation_date_since', '')} ago)"
+                                    console_output += f"\n  Creation date: {creation_info}"
+                                    email_output += f"\n  Creation date: {creation_info}"
+                                    html_output += f"<br>&nbsp;&nbsp;Creation date: <b>{escape(playlist_details.get('creation_date'))}</b> ({escape(playlist_details.get('creation_date_since', ''))} ago)"
 
-                            # Last update date
-                            if playlist_details.get('update_date'):
-                                update_info = f"{playlist_details.get('update_date')} ({playlist_details.get('update_date_since', '')} ago)"
-                                console_output += f"\n  Last update: {update_info}"
-                                email_output += f"\n  Last update: {update_info}"
-                                html_output += f"<br>&nbsp;&nbsp;Last update: <b>{escape(playlist_details.get('update_date'))}</b> ({escape(playlist_details.get('update_date_since', ''))} ago)"
+                                # Last update date
+                                if playlist_details.get('update_date'):
+                                    update_info = f"{playlist_details.get('update_date')} ({playlist_details.get('update_date_since', '')} ago)"
+                                    console_output += f"\n  Last update: {update_info}"
+                                    email_output += f"\n  Last update: {update_info}"
+                                    html_output += f"<br>&nbsp;&nbsp;Last update: <b>{escape(playlist_details.get('update_date'))}</b> ({escape(playlist_details.get('update_date_since', ''))} ago)"
 
                     print(console_output)
                     list_of_added_f_list += email_output
@@ -4296,14 +4383,17 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                 if "uri" in f_dict:
 
                     uri = f_dict["uri"]
+                    old_meta = next((p for p in (f_list_old or []) if isinstance(p, dict) and p.get("uri") == uri), {})
 
                     if uri in GLITCH_CACHE:
                         print(f"- Skipping playlist {spotify_format_playlist_reference(uri)} due to recent glitch")
                         continue
 
                     cached = PLAYLIST_INFO_CACHE.get(uri)
+                    cached_status = cached.get("status") if cached else ""
+                    is_restricted = cached_status == "restricted"
 
-                    if not cached or cached.get("status") != "ok":
+                    if not cached or cached_status not in {"ok", "restricted"}:
                         error_str = cached.get("error", "") if cached else ""
 
                         if "not found" in error_str.lower():
@@ -4325,11 +4415,36 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                             continue
 
                     if cached:
-                        p_name = cached.get("name", "Unknown")
+                        p_name = old_meta.get("name", cached.get("name", "Unknown"))
                     else:
-                        p_name = "Unknown"
+                        p_name = old_meta.get("name", "Unknown")
 
                     p_url = spotify_convert_uri_to_url(uri)
+
+                    if is_restricted:
+                        restricted_followers = old_meta.get("followers_count", f_dict.get("followers_count", cached.get("followers_count") if cached else None))
+                        followers_str = restricted_followers if restricted_followers is not None else "n/a"
+                        console_output = f"- {p_name} [ {p_url} ] [ RESTRICTED ]: removed from profile\n  Last known likes: {followers_str}\n  Metadata source: profile-view only"
+                        email_output = f"- {p_name} [ {p_url} ] [ RESTRICTED ]: removed from profile\n  Last known likes: {followers_str}\n  Metadata source: profile-view only"
+                        html_output = f"- <a href=\"{p_url}\">{escape(p_name)}</a> [ <b>RESTRICTED</b> ]: removed from profile<br>&nbsp;&nbsp;Last known likes: <b>{escape(str(followers_str))}</b><br>&nbsp;&nbsp;Metadata source: profile-view only"
+
+                        print(console_output)
+                        list_of_removed_f_list += email_output
+                        list_of_removed_f_list_html += html_output
+
+                        if len(removed_f_list) > 1 and idx < len(removed_f_list) - 1:
+                            print()
+                            list_of_removed_f_list += "\n\n"
+                            list_of_removed_f_list_html += "<br><br>"
+                        else:
+                            list_of_removed_f_list += "\n"
+                            list_of_removed_f_list_html += "<br>"
+                        try:
+                            if csv_file_name:
+                                write_csv_entry(csv_file_name, now_local_naive(), f_removed_csv, username, p_name, "")
+                        except Exception as e:
+                            print(f"* Error: {e}")
+                        continue
 
                     # Check if playlist is private first
                     is_private = is_playlist_private(sp_accessToken, uri) if sp_accessToken else False
@@ -5297,6 +5412,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     p_collaborators = playlist.get("collaborators_count")
                     p_collaborators_list = playlist.get("collaborators")
                     p_tracks_list = playlist.get("list_of_tracks")
+                    p_restricted = bool(playlist.get("restricted", False))
                     for playlist_old in list_of_playlists_old:
                         if "uri" in playlist_old:
                             if playlist_old.get("uri") == p_uri:
@@ -5308,9 +5424,11 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                 p_tracks_list_old = playlist_old.get("list_of_tracks")
                                 p_collaborators_old = playlist_old.get("collaborators_count")
                                 p_collaborators_list_old = playlist_old.get("collaborators")
+                                p_restricted_old = bool(playlist_old.get("restricted", False))
+                                restricted_pair = p_restricted or p_restricted_old
 
                                 # Number of likes changed
-                                if p_likes != p_likes_old:
+                                if p_likes is not None and p_likes_old is not None and p_likes != p_likes_old:
                                     try:
                                         p_likes_diff = p_likes - p_likes_old
                                         p_likes_diff_str = ""
@@ -5339,6 +5457,25 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                         send_email(m_subject, m_body, m_body_html, SMTP_SSL)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
+
+                                if restricted_pair:
+                                    if p_name != p_name_old:
+                                        p_message = f"* Playlist '{p_name_old}': name changed to new name '{p_name}' [RESTRICTED]\n* Playlist URL: {p_url}\n"
+                                        print(p_message)
+                                        try:
+                                            if csv_file_name:
+                                                write_csv_entry(csv_file_name, now_local_naive(), "Playlist Name", username, p_name_old, p_name)
+                                        except Exception as e:
+                                            print(f"* Error: {e}")
+                                        m_subject = f"Spotify user {username} playlist '{p_name_old}' name changed to '{p_name}'! [RESTRICTED]"
+                                        m_body = f"{p_message}\nMetadata source: profile-view only\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                        m_body_html = f"<html><head></head><body>Playlist '<b>{escape(p_name_old)}</b>': name changed to new name '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>' [<b>RESTRICTED</b>]<br><br>Metadata source: profile-view only<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                                        if PROFILE_NOTIFICATION:
+                                            print(f"Sending email notification to {RECEIVER_EMAIL}")
+                                            send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                                        print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                                        print_cur_ts("Timestamp:\t\t\t")
+                                    continue
 
                                 # Number of collaborators changed
 
