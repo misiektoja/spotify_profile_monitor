@@ -6050,7 +6050,7 @@ def main():
         "--export-all-playlists",
         dest="export_all_playlists",
         action="store_true",
-        help="Create files per playlist with all tracks for each Spotify playlist"
+        help="Create files per playlist with all tracks for each Spotify playlist (use with --i)"
     )
     listing.add_argument(
         "-x", "--list-liked-tracks",
