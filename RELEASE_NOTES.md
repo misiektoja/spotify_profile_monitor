@@ -7,6 +7,7 @@ This is a high-level summary of the most important changes.
 **Features and Improvements**:
 
 - **NEW:** Added `--export-all-playlists` flag to export all user's playlists to individual CSV files (named after the playlist) when using `-i` / `--show-user-profile` mode (requires `pathvalidate` library) (thanks [@tomballgithub](https://github.com/tomballgithub))
+- **IMPROVE:** Added graceful handling for playlists visible in user's profile, but returning `404` while getting its details (marked as `[ RESTRICTED ]`, applies mainly for Spotify-curated playlists, closes [#36](https://github.com/misiektoja/spotify_profile_monitor/issues/36))
 
 # Changes in 3.3 (07 Feb 2026)
 
