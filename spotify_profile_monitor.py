@@ -808,6 +808,11 @@ class TimeoutException(Exception):
     pass
 
 
+# Class used when TOTP secrets are unavailable or unusable for token generation
+class SecretsUnavailableError(Exception):
+    pass
+
+
 # Class used for custom PlaylistRestrictedError exception
 class PlaylistRestrictedError(Exception):
     pass
@@ -1731,8 +1736,12 @@ def fetch_server_time(session: req.Session, ua: str) -> int:
 def generate_totp():
     import pyotp
 
-    if str((ver := TOTP_VER or max(map(int, SECRET_CIPHER_DICT)))) not in SECRET_CIPHER_DICT:
-        raise Exception(f"generate_totp(): Defined TOTP_VER ({ver}) is missing in SECRET_CIPHER_DICT")
+    if not SECRET_CIPHER_DICT:
+        raise SecretsUnavailableError("generate_totp(): SECRET_CIPHER_DICT is empty")
+
+    ver = TOTP_VER or max(map(int, SECRET_CIPHER_DICT))
+    if str(ver) not in SECRET_CIPHER_DICT:
+        raise SecretsUnavailableError(f"generate_totp(): Defined TOTP_VER ({ver}) is missing in SECRET_CIPHER_DICT")
 
     secret_cipher_bytes = SECRET_CIPHER_DICT[str(ver)]
 
@@ -1917,6 +1926,11 @@ def spotify_get_access_token_from_sp_dc(sp_dc: str):
         debug_print("Using cached Spotify access token (sp_dc source)")
         return SP_CACHED_ACCESS_TOKEN
 
+    if not SECRET_CIPHER_DICT:
+        debug_print("SECRET_CIPHER_DICT is empty, fetching secrets before token refresh")
+        if not fetch_and_update_secrets():
+            raise RuntimeError("Failed to obtain TOTP secrets: SECRET_CIPHER_DICT is empty and secrets update failed")
+
     max_retries = TOKEN_MAX_RETRIES
     retry = 0
 
@@ -1941,6 +1955,13 @@ def spotify_get_access_token_from_sp_dc(sp_dc: str):
             else:
                 debug_print(f"Spotify access token obtained successfully, length={length}")
                 break
+        except SecretsUnavailableError as e:
+            last_error = str(e)
+            debug_print(f"TOTP secrets unavailable: {e}")
+            if fetch_and_update_secrets():
+                debug_print("TOTP secrets updated, retrying token refresh immediately")
+                continue
+            raise RuntimeError(f"Failed to obtain TOTP secrets for token refresh: {e}")
         except Exception as e:
             last_error = str(e)
             debug_print(f"Token refresh attempt failed: {e}")
