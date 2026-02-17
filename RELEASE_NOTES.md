@@ -8,6 +8,12 @@ This is a high-level summary of the most important changes.
 
 - **NEW:** Added `--export-all-playlists` flag to export all user's playlists to individual CSV files (named after the playlist) when using `-i` / `--show-user-profile` mode (requires `pathvalidate` library) (thanks [@tomballgithub](https://github.com/tomballgithub))
 - **IMPROVE:** Added graceful handling for playlists visible in user's profile, but returning `404` while getting its details (marked as `[ RESTRICTED ]`, applies mainly for Spotify-curated playlists, closes [#36](https://github.com/misiektoja/spotify_profile_monitor/issues/36))
+- **NEW:** Added **debug mode** with `DEBUG_MODE` config option and `--debug` CLI flag for technical troubleshooting output
+
+**Bug fixes**:
+
+- **BUGFIX:** Capped server-provided `Retry-After` for HTTP 429 responses to avoid long hangs
+- **BUGFIX:** Fixed fetching of TOTP secrets so it happens before retries
 
 # Changes in 3.3 (07 Feb 2026)
 
