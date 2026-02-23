@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 3.4 (TBD)
+# Changes in 3.4 (23 Feb 2026)
 
 **Features and Improvements**:
 
