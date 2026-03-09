@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.4
+v3.4.1
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -20,7 +20,7 @@ wcwidth (optional, needed by TRUNCATE_CHARS feature)
 pathvalidate (optional, needed by --export-all-playlists)
 """
 
-VERSION = "3.4"
+VERSION = "3.4.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -2799,7 +2799,7 @@ def is_playlist_private(access_token, playlist_uri, oauth_app: bool = False):
 
 # Checks if a Spotify user URI ID has been deleted
 def is_user_removed(access_token, user_uri_id, oauth_app: bool = False):
-    # For oauth_app / oauth_user: use web scraping fallback (official API removed in Feb 2026)
+    # For oauth_app / oauth_user: use web scraping fallback (Client Credentials token cannot access user profile endpoints)
     # open.spotify.com/user/{id} returns 404 for removed users, no auth needed
     if TOKEN_SOURCE in {"oauth_app", "oauth_user"} or oauth_app:
         url = f"https://open.spotify.com/user/{user_uri_id}"
@@ -2972,7 +2972,7 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks, oauth_app:
 
         sp_playlist_tracks = sp_playlist_tracks_concatenated_list
 
-        # Support both old ('tracks') and new ('items') field names (Spotify Feb 2026 API change)
+        # Support both old ('tracks') and new ('items') field names (Spotify Mar 2026 API change)
         tracks_metadata = json_response1.get("items") or json_response1.get("tracks")
         if not isinstance(tracks_metadata, dict):
             raise ValueError("Playlist's tracks metadata is missing or malformed")
@@ -3145,7 +3145,7 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
         is_self = TOKEN_SOURCE == "oauth_user" and is_token_owner(access_token, user_uri_id)
 
         if is_self:
-            # oauth_user monitoring self: use /me endpoints (still available post-Feb 2026)
+            # oauth_user monitoring self: use /me endpoints (still available for authenticated users)
             url_me = "https://api.spotify.com/v1/me"
             url_me_playlists = f"https://api.spotify.com/v1/me/playlists?limit={PLAYLISTS_LIMIT if get_playlists else 0}"
 
@@ -3156,7 +3156,7 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
 
             out.update({
                 "sp_username": json_response.get("display_name", ""),
-                # followers field removed in Feb 2026, handle gracefully
+                # followers field removed in Mar 2026, handle gracefully
                 "sp_user_followers_count": _safe_int(followers_total, "followers"),
                 "sp_user_followers_count_available": followers_total is not None,
                 "sp_user_image_url": (json_response.get("images") or [{}])[0].get("url", "")
@@ -3173,7 +3173,7 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
 
         else:
             # oauth_app or oauth_user monitoring others: try existing endpoints
-            # These endpoints (GET /users/{id}, GET /users/{id}/playlists) will be removed in Feb 2026
+            # Note: GET /users/{id} and GET /users/{id}/playlists are not accessible with Client Credentials (oauth_app) token
             try:
                 json_response = _rq(url2)
 
@@ -3198,12 +3198,12 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
 
             except req.HTTPError as e:
                 if e.response is not None and e.response.status_code in {403, 404}:
-                    # Spotify Feb 2026 API removal: GET /users/{id} and GET /users/{id}/playlists removed
+                    # oauth_app (Client Credentials) does not have permission to access user profile endpoints
                     print(f"\n* Warning: Cannot fetch profile for user '{user_uri_id}' with {TOKEN_SOURCE} token source")
-                    print("* Spotify removed GET /users/{{id}} and GET /users/{{id}}/playlists endpoints in February 2026")
+                    print("* GET /users/{{id}} and GET /users/{{id}}/playlists are not accessible with Client Credentials (oauth_app) token")
                     print("* To monitor other users, use 'cookie' or 'client' token source (with oauth_app hybrid)")
                     print("* If you're using oauth_user to monitor your own account, ensure the user URI ID matches your account\n")
-                    raise ValueError(f"Cannot monitor user '{user_uri_id}' with '{TOKEN_SOURCE}' token source post-Feb 2026. Use 'cookie' or 'client' token source for monitoring other users.")
+                    raise ValueError(f"Cannot monitor user '{user_uri_id}' with '{TOKEN_SOURCE}' token source. Use 'cookie' or 'client' token source for monitoring other users.")
                 raise
 
         # Recently played artists (only for oauth_user monitoring self)
@@ -5326,6 +5326,15 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     m_subject = f"spotify_profile_monitor: user OAuth token or credentials may be invalid, expired or require re-authorization! (uri: {user_uri_id})"
                     m_body = f"User OAuth token or credentials may be invalid, expired or require re-authorization!\n{e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     m_body_html = f"<html><head></head><body>User OAuth token or credentials may be invalid, expired or require re-authorization!<br>{escape(str(e))}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
+                    print(f"Sending email notification to {RECEIVER_EMAIL}")
+                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                    email_sent = True
+
+            elif 'cannot monitor user' in err:
+                if ERROR_NOTIFICATION and not email_sent:
+                    m_subject = f"spotify_profile_monitor: token source '{TOKEN_SOURCE}' not supported for monitoring this user! (uri: {user_uri_id})"
+                    m_body = f"Token source '{TOKEN_SOURCE}' is not supported for monitoring user '{user_uri_id}'!\n{e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+                    m_body_html = f"<html><head></head><body>Token source '{TOKEN_SOURCE}' is not supported for monitoring user '{user_uri_id}'!<br>{escape(str(e))}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
                     print(f"Sending email notification to {RECEIVER_EMAIL}")
                     send_email(m_subject, m_body, m_body_html, SMTP_SSL)
                     email_sent = True
