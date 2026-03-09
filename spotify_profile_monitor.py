@@ -3025,15 +3025,17 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks, oauth_app:
                 sp_playlist_tracks_count = sp_playlist_tracks_count_tmp
 
         followers_data = json_response1.get("followers")
-        if not isinstance(followers_data, dict):
-            raise ValueError("Playlist's followers data is missing or malformed")
+        total_followers_from_api = followers_data.get("total") if isinstance(followers_data, dict) else None
 
-        total_followers_from_api = followers_data.get("total")
+        sp_playlist_followers_count = None
+        if total_followers_from_api is not None:
+            try:
+                sp_playlist_followers_count = int(total_followers_from_api)
+            except (TypeError, ValueError):
+                sp_playlist_followers_count = None
 
-        if total_followers_from_api is None:
-            raise ValueError("Playlist's total number of saves / followers is missing or malformed")
-
-        sp_playlist_followers_count = int(total_followers_from_api)
+        if sp_playlist_followers_count is None:
+            debug_print(f"spotify_get_playlist_info(): followers count unavailable for uri={playlist_uri}, using n/a")
 
         sp_playlist_url = (json_response1.get("external_urls") or {}).get("spotify")
         if sp_playlist_url:
@@ -3363,7 +3365,7 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
     if not CLEAN_OUTPUT and not EXPORT_ALL:
         print(f"Playlist '{p_name}' owned by '{p_owner}':\n")
 
-    p_likes = sp_playlist_data.get("sp_playlist_followers_count", 0)
+    p_likes = sp_playlist_data.get("sp_playlist_followers_count")
     p_tracks = sp_playlist_data.get("sp_playlist_tracks_count", 0)
     p_tracks_before_filtering = sp_playlist_data.get("sp_playlist_tracks_count_before_filtering", 0)
     p_tracks_list = sp_playlist_data.get("sp_playlist_tracks", None)
@@ -3450,7 +3452,8 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
 
         songs_display = f"{p_tracks} ({p_tracks_before_filtering - p_tracks} filtered out)" if p_tracks_before_filtering > p_tracks else f"{p_tracks}"
 
-        print(f"URL:\t\t\t{playlist_url}\nSongs:\t\t\t{songs_display}\nLikes:\t\t\t{p_likes}")
+        likes_display = p_likes if p_likes is not None else "n/a"
+        print(f"URL:\t\t\t{playlist_url}\nSongs:\t\t\t{songs_display}\nLikes:\t\t\t{likes_display}")
 
         if added_at_ts_lowest > 0:
             p_creation_date = get_date_from_ts(int(added_at_ts_lowest))
@@ -5642,16 +5645,30 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                 p_restricted_old = bool(playlist_old.get("restricted", False))
                                 restricted_pair = p_restricted or p_restricted_old
 
-                                # Number of likes changed
-                                if p_likes is not None and p_likes_old is not None and p_likes != p_likes_old:
+                                likes_display_old = p_likes_old if p_likes_old is not None else "n/a"
+                                likes_display_new = p_likes if p_likes is not None else "n/a"
+
+                                # Number of likes changed or became available / unavailable
+                                likes_value_changed = p_likes is not None and p_likes_old is not None and p_likes != p_likes_old
+                                likes_became_available = p_likes is not None and p_likes_old is None
+                                likes_became_unavailable = p_likes is None and p_likes_old is not None
+
+                                if likes_value_changed or likes_became_available or likes_became_unavailable:
                                     try:
-                                        p_likes_diff = p_likes - p_likes_old
                                         p_likes_diff_str = ""
-                                        if p_likes_diff > 0:
-                                            p_likes_diff_str = "+" + str(p_likes_diff)
+                                        if likes_value_changed:
+                                            p_likes_diff = p_likes - p_likes_old
+                                            if p_likes_diff > 0:
+                                                p_likes_diff_str = "+" + str(p_likes_diff)
+                                            else:
+                                                p_likes_diff_str = str(p_likes_diff)
+                                            p_message = f"* Playlist '{p_name}': number of likes changed from {p_likes_old} to {p_likes} ({p_likes_diff_str})\n* Playlist URL: {p_url}\n"
+                                        elif likes_became_available:
+                                            p_likes_diff_str = "n/a -> " + str(p_likes)
+                                            p_message = f"* Playlist '{p_name}': number of likes became available ({likes_display_old} -> {likes_display_new})\n* Playlist URL: {p_url}\n"
                                         else:
-                                            p_likes_diff_str = str(p_likes_diff)
-                                        p_message = f"* Playlist '{p_name}': number of likes changed from {p_likes_old} to {p_likes} ({p_likes_diff_str})\n* Playlist URL: {p_url}\n"
+                                            p_likes_diff_str = str(p_likes_old) + " -> n/a"
+                                            p_message = f"* Playlist '{p_name}': number of likes became unavailable ({likes_display_old} -> {likes_display_new})\n* Playlist URL: {p_url}\n"
                                         print(p_message)
                                     except Exception as e:
                                         print(f"* Error while processing likes for playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f": {e}" if e else ""))
@@ -5660,13 +5677,13 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                                     try:
                                         if csv_file_name:
-                                            write_csv_entry(csv_file_name, now_local_naive(), "Playlist Likes", p_name, p_likes_old, p_likes)
+                                            write_csv_entry(csv_file_name, now_local_naive(), "Playlist Likes", p_name, likes_display_old, likes_display_new)
                                     except Exception as e:
                                         print(f"* Error: {e}")
 
-                                    m_subject = f"Spotify user {username} number of likes for playlist '{p_name}' has changed! ({p_likes_diff_str}, {p_likes_old} -> {p_likes})"
+                                    m_subject = f"Spotify user {username} number of likes for playlist '{p_name}' has changed! ({p_likes_diff_str}, {likes_display_old} -> {likes_display_new})"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                    m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>': number of likes changed from <b>{p_likes_old}</b> to <b>{p_likes}</b> (<b>{escape(p_likes_diff_str)}</b>)<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                                    m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>': number of likes changed from <b>{escape(str(likes_display_old))}</b> to <b>{escape(str(likes_display_new))}</b> (<b>{escape(p_likes_diff_str)}</b>)<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
                                     if PROFILE_NOTIFICATION:
                                         print(f"Sending email notification to {RECEIVER_EMAIL}")
                                         send_email(m_subject, m_body, m_body_html, SMTP_SSL)
