@@ -342,7 +342,7 @@ SECRET_CIPHER_DICT = {
 # Remote or local URL used to fetch updated secrets needed for TOTP generation
 # Set to empty string to disable
 # If you used "spotify_monitor_secret_grabber.py --secretdict > secretDict.json" specify the file location below
-SECRET_CIPHER_DICT_URL = "https://github.com/xyloflake/spot-secrets-go/blob/main/secrets/secretDict.json?raw=true"
+SECRET_CIPHER_DICT_URL = "https://raw.githubusercontent.com/xyloflake/spot-secrets-go/main/secrets/secretDict.json"
 # SECRET_CIPHER_DICT_URL = file:///C:/your_path/secretDict.json
 # SECRET_CIPHER_DICT_URL = "file:///your_path/secretDict.json"
 
