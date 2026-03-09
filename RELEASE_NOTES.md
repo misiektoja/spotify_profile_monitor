@@ -2,6 +2,18 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.4.1 (09 Mar 2026)
+
+**Features and Improvements**:
+
+- **IMPROVE:** Added toleration for missing playlist likes and tracking of N/A availability transitions
+- **IMPROVE:** Updated SECRET_CIPHER_DICT_URL used in `cookie` mode and enabled last v61 secret since it does not appear to be rotated anymore
+
+**Bug fixes**:
+
+- **BUGFIX:** Corrected inaccurate API change error messages and comments
+- **BUGFIX:** Added error email notification when user cannot be monitored
+
 # Changes in 3.4 (23 Feb 2026)
 
 **Features and Improvements**:
