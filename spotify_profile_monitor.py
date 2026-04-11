@@ -3949,7 +3949,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                 error_while_processing = True
                                 if show_progress:
                                     _display_progress(idx, total_playlists, current_playlist_name, is_final=(idx == total_playlists))
-                            elif failure_count == 2:
+                            elif failure_count == 2 and HIDE_DUPLICATE_NETWORK_ERRORS:
                                 print(f"- (Masking additional errors)")
                             continue
 
@@ -4042,7 +4042,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                         error_while_processing = True
                         if show_progress:
                             _display_progress(idx, total_playlists, current_playlist_name, is_final=(idx == total_playlists))
-                    elif failure_count == 2:
+                    elif failure_count == 2 and HIDE_DUPLICATE_NETWORK_ERRORS:
                         print(f"- (Masking additional errors)")
                     continue
 
