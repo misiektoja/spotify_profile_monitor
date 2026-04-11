@@ -3947,10 +3947,10 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                 print(f"\n* Error while processing playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f": {e}" if e else ""))
                                 # print_cur_ts("Timestamp:\t\t\t")
                                 error_while_processing = True
-                                if show_progress:
-                                    _display_progress(idx, total_playlists, current_playlist_name, is_final=(idx == total_playlists))
                             elif failure_count == 2 and HIDE_DUPLICATE_NETWORK_ERRORS:
                                 print(f"- (Masking additional errors)")
+                            if show_progress:
+                                _display_progress(idx, total_playlists, current_playlist_name, is_final=(idx == total_playlists))
                             continue
 
                     p_name = sp_playlist_data.get("sp_playlist_name", "")
@@ -4040,10 +4040,10 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                         print(f"\n* Unexpected error while building playlist data for: {spotify_format_playlist_reference(p_uri)}: {e}")
                         # print_cur_ts("Timestamp:\t\t\t")
                         error_while_processing = True
-                        if show_progress:
-                            _display_progress(idx, total_playlists, current_playlist_name, is_final=(idx == total_playlists))
                     elif failure_count == 2 and HIDE_DUPLICATE_NETWORK_ERRORS:
                         print(f"- (Masking additional errors)")
+                    if show_progress:
+                        _display_progress(idx, total_playlists, current_playlist_name, is_final=(idx == total_playlists))
                     continue
 
                 p_creation_date = datetime.fromtimestamp(int(added_at_ts_lowest), pytz.timezone(LOCAL_TIMEZONE)) if added_at_ts_lowest > 0 else None
