@@ -2644,6 +2644,12 @@ def spotify_has_oauth_app_credentials():
     return not any([not SP_APP_CLIENT_ID, SP_APP_CLIENT_ID == "your_spotify_app_client_id", not SP_APP_CLIENT_SECRET, SP_APP_CLIENT_SECRET == "your_spotify_app_client_secret"])
 
 
+# Describes the configured playlist backend policy for startup output
+def spotify_get_playlist_backend_description():
+    api_available = TOKEN_SOURCE in {"oauth_app", "oauth_user"} or spotify_has_oauth_app_credentials()
+    return "automatic (legacy Web API + web player)" if api_available else "web player"
+
+
 # Returns a cached or freshly generated anonymous Spotify web-player token
 def spotify_get_web_access_token_data():
     global SP_CACHED_WEB_ACCESS_TOKEN, SP_WEB_ACCESS_TOKEN_EXPIRES_AT, SP_CACHED_WEB_CLIENT_ID
@@ -7299,7 +7305,7 @@ def main():
     print(f"* Spotify polling intervals:\t[check: {display_time(SPOTIFY_CHECK_INTERVAL)}] [error: {display_time(SPOTIFY_ERROR_INTERVAL)}]")
     print(f"* Email notifications:\t\t[profile changes = {PROFILE_NOTIFICATION}] [followers/followings = {FOLLOWERS_FOLLOWINGS_NOTIFICATION}]\n*\t\t\t\t[errors = {ERROR_NOTIFICATION}]")
     print(f"* Token source:\t\t\t{TOKEN_SOURCE}")
-    print("* Playlist backend:\t\tautomatic (legacy Web API + web player)")
+    print(f"* Playlist backend:\t\t{spotify_get_playlist_backend_description()}")
     print(f"* Profile pic changes:\t\t{DETECT_CHANGED_PROFILE_PIC}")
     print(f"* Playlist changes:\t\t{DETECT_CHANGES_IN_PLAYLISTS}")
     print(f"* All public playlists:\t\t{GET_ALL_PLAYLISTS}")
