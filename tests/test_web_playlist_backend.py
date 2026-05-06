@@ -54,6 +54,17 @@ class WebPlaylistBackendTests(unittest.TestCase):
         self.assertEqual(session.get.call_args.kwargs["params"]["totpVer"], 61)
         validity_check.assert_not_called()
 
+    # Verifies startup output describes only playlist backends available from configuration
+    def test_describes_configured_playlist_backend(self):
+        self.assertEqual(monitor.spotify_get_playlist_backend_description(), "web player")
+        monitor.SP_APP_CLIENT_ID = "legacy-client"
+        monitor.SP_APP_CLIENT_SECRET = "legacy-secret"
+        self.assertEqual(monitor.spotify_get_playlist_backend_description(), "automatic (legacy Web API + web player)")
+        monitor.SP_APP_CLIENT_ID = "your_spotify_app_client_id"
+        monitor.SP_APP_CLIENT_SECRET = "your_spotify_app_client_secret"
+        monitor.TOKEN_SOURCE = "oauth_user"
+        self.assertEqual(monitor.spotify_get_playlist_backend_description(), "automatic (legacy Web API + web player)")
+
     # Discovers the playlist persisted-query hash from the canonical web-player bundle
     def test_discovers_playlist_query_hash(self):
         expected_hash = "a" * 64
