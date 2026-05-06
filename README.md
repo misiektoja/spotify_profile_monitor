@@ -47,7 +47,7 @@ pip install spotify_profile_monitor
 - **Terminal Graphics**: Display profile pictures right in your terminal (via `imgcat`).
 
 ### ⚙️ Power Features
-- **Auth Flexibility**: Hybrid support for `sp_dc` cookie, Desktop Client and OAuth.
+- **Auth Flexibility**: Automatic web-player playlist retrieval with `sp_dc` cookie, Desktop Client and OAuth token sources.
 - **CSV Logging**: Save all changes with full timestamps to a CSV file.
 - **Flexible Config**: Support for files, dotenv and environment variables.
 - **Signal Control**: Manage the running script via system signals (`SIGHUP`, `USR1`, etc.).
@@ -85,7 +85,7 @@ pip install spotify_profile_monitor
    * [Detection of Changed Profile Pictures](#detection-of-changed-profile-pictures)
    * [Displaying Images in Your Terminal](#displaying-images-in-your-terminal)
    * [Playlist Blacklisting](#playlist-blacklisting)
-   * [Restricted Playlists (Spotify API 404)](#restricted-playlists-spotify-api-404)
+   * [Restricted Playlists (Spotify API 403/404)](#restricted-playlists-spotify-api-404)
    * [Check Intervals](#check-intervals)
    * [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix)
    * [Coloring Log Output with GRC](#coloring-log-output-with-grc)
@@ -151,16 +151,16 @@ If you installed manually, download the newest *[spotify_profile_monitor.py](htt
 <a id="quick-start"></a>
 ## Quick Start
 
-- Grab your [Spotify sp_dc cookie](#spotify-sp_dc-cookie), set up [OAuth app credentials](#spotify-oauth-app) and track the `spotify_user_uri_id` profile changes (including playlists):
+- Grab your [Spotify sp_dc cookie](#spotify-sp_dc-cookie) and track the `spotify_user_uri_id` profile changes including playlists:
 
 ```sh
-spotify_profile_monitor <spotify_user_uri_id> -u "your_sp_dc_cookie_value" -r "your_spotify_app_client_id:your_spotify_app_client_secret"
+spotify_profile_monitor <spotify_user_uri_id> -u "your_sp_dc_cookie_value"
 ```
 
 Or if you installed [manually](#manual-installation):
 
 ```sh
-python3 spotify_profile_monitor.py <spotify_user_uri_id> -u "your_sp_dc_cookie_value" -r "your_spotify_app_client_id:your_spotify_app_client_secret"
+python3 spotify_profile_monitor.py <spotify_user_uri_id> -u "your_sp_dc_cookie_value"
 ```
 
 To get the list of all supported command-line arguments / flags:
@@ -191,7 +191,7 @@ spotify_profile_monitor --generate-config spotify_profile_monitor.conf
 
 Edit the `spotify_profile_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 
-**New in v3.1:** The tool now uses a hybrid authentication approach. OAuth app credentials (`SP_APP_CLIENT_ID`, `SP_APP_CLIENT_SECRET`) are required for playlist and user information retrieval when using either `cookie` or `client` token source methods. See [Spotify OAuth App](#spotify-oauth-app) section for setup instructions.
+**New in v3.5:** Public playlists use an automatic backend which supports newly restricted Spotify Development Mode apps. OAuth app credentials are no longer required with the `cookie` or `client` token source.
 
 **New in v2.9:** The configuration file includes options to enable/disable music service URLs (Apple Music, YouTube Music, Amazon Music, Deezer, Tidal) and lyrics service URLs (Genius, AZLyrics, Tekstowo.pl, Musixmatch, Lyrics.com) in console and email outputs.
 
@@ -200,7 +200,7 @@ Edit the `spotify_profile_monitor.conf` file and change any desired configuratio
 
 The tool supports four methods for obtaining a Spotify access token.
 
-When you decide to use the `cookie` or `client` token source method, the tool uses a **hybrid authentication approach** and you also need to configure **OAuth app credentials** (`SP_APP_CLIENT_ID`, `SP_APP_CLIENT_SECRET`) for playlist and user information retrieval as described in [Spotify OAuth App](#spotify-oauth-app).
+Public playlist details use an automatic backend. If working OAuth app credentials are configured, the tool first preserves the legacy Web API behavior. If Spotify returns a restricted response or if no app credentials are configured, the tool retrieves public playlist metadata and contents through the Spotify web-player service. The web backend discovers the current persisted-query hash automatically and does not require a Spotify app or Premium subscription.
 
 The token source method can be configured via the `TOKEN_SOURCE` configuration option or the `--token-source` flag.
 
@@ -256,7 +256,7 @@ The following features are **not** supported when monitoring **another user** in
 
 If no method is specified, the tool defaults to the `cookie` method.
 
-**Important**: It is strongly recommended to use a separate Spotify account with this tool if you obtain access tokens via the `cookie` or `client` methods. These methods interact with internal, undocumented endpoints for many features (like retrieving a list of followers/followings, followings count or recently played artists). If you prefer to use your regular Spotify account, consider the `oauth_app` or `oauth_user` methods - while they have some limitations, the tool remains fully functional with them. That said, while I've never encountered any issues on my own accounts, I can't guarantee that Spotify won't impose restrictions in the future - you've been warned.
+**Important**: It is strongly recommended to use a separate Spotify account with this tool if you obtain access tokens via the `cookie` or `client` methods. These methods interact with internal undocumented endpoints for features such as followers, followings and recently played artists. The automatic public playlist backend also uses an undocumented Spotify web-player interface. Spotify may change or restrict these interfaces in the future.
 
 <a id="spotify-sp_dc-cookie"></a>
 #### Spotify sp_dc Cookie
@@ -333,7 +333,7 @@ Advanced options are available for further customization - refer to the configur
 <a id="spotify-oauth-app"></a>
 #### Spotify OAuth App
 
-Can be used as a standalone mode, but also as a secondary mode to either a `cookie` or `client` token source method to retrieve playlist and user information (required due to restrictions introduced by Spotify on December 22, 2025).
+This mode can be used as a standalone token source. Its credentials can also be retained as an optional legacy Web API fallback for `cookie` or `client` mode, but they are no longer required for public playlist retrieval.
 
 This method uses an official Spotify Web API (Client Credentials OAuth flow).
 
@@ -547,13 +547,13 @@ If you use the default method to obtain a Spotify access token (`cookie`) and ha
 spotify_profile_monitor <spotify_user_uri_id> -u "your_sp_dc_cookie_value"
 ```
 
-**Note:** OAuth app credentials are now required for playlist and user information retrieval. If you haven't set `SP_APP_CLIENT_ID` and `SP_APP_CLIENT_SECRET` via environment variables or `.env` file, you can use the `-r` flag:
+OAuth app credentials are optional in `cookie` mode. Existing credentials can still be supplied with `-r` to retain the legacy Web API path when Spotify allows it:
 
 ```sh
 spotify_profile_monitor <spotify_user_uri_id> -u "your_sp_dc_cookie_value" -r "your_spotify_app_client_id:your_spotify_app_client_secret"
 ```
 
-See [Spotify OAuth App](#spotify-oauth-app) for detailed setup instructions.
+The tool falls back to the web-player playlist backend automatically when those credentials are absent or restricted.
 
 By default, the tool looks for a configuration file named `spotify_profile_monitor.conf` in:
  - current directory
@@ -814,11 +814,11 @@ If certain playlists are blacklisted, there will be an appropriate message. For 
 ```
 
 <a id="restricted-playlists-spotify-api-404"></a>
-### Restricted Playlists (Spotify API 404)
+### Restricted Playlists (Spotify API 403/404)
 
-Some playlists (especially Spotify-curated ones) may appear on profile pages, but return `404` on the public `/v1/playlists/{id}` endpoint.
+Some playlists may appear on profile pages but return `403` or `404` from the public Web API. Version 3.5 automatically retries them through the Spotify web-player backend.
 
-In such cases, the tool marks them as `[ RESTRICTED ]` and falls back to profile-view metadata (`public_playlists`) instead of treating them as a generic processing error.
+The tool marks a playlist as `[ RESTRICTED ]` and uses profile-view metadata only when both the Web API and web-player backend cannot retrieve it.
 
 For restricted playlists, the tool can monitor:
 - added/removed from profile
