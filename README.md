@@ -191,7 +191,7 @@ spotify_profile_monitor --generate-config spotify_profile_monitor.conf
 
 Edit the `spotify_profile_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 
-**New in v3.5:** Public playlists use an automatic backend which supports newly restricted Spotify Development Mode apps. OAuth app credentials are no longer required with the `cookie` or `client` token source.
+**New in v3.5:** Public playlists use an automatic backend which supports restricted Spotify Development Mode apps. OAuth app credentials are no longer required with the `cookie` or `client` token source. New users should not create a Spotify app solely for this tool.
 
 **New in v2.9:** The configuration file includes options to enable/disable music service URLs (Apple Music, YouTube Music, Amazon Music, Deezer, Tidal) and lyrics service URLs (Genius, AZLyrics, Tekstowo.pl, Musixmatch, Lyrics.com) in console and email outputs.
 
@@ -201,6 +201,8 @@ Edit the `spotify_profile_monitor.conf` file and change any desired configuratio
 The tool supports four methods for obtaining a Spotify access token.
 
 Public playlist details use an automatic backend. If working OAuth app credentials are configured, the tool first preserves the legacy Web API behavior. If Spotify returns a restricted response or if no app credentials are configured, the tool retrieves public playlist metadata and contents through the Spotify web-player service. The web backend discovers the current persisted-query hash automatically and does not require a Spotify app or Premium subscription.
+
+> **OAuth app guidance:** Spotify restricted new Development Mode apps created on or after February 11, 2026. Some older apps have been observed to retain the legacy endpoint access used by this tool, but creation date alone does not guarantee compatibility. Configure `oauth_app` only if you already have an app which you have verified still works. If it returns HTTP 403 then remove the OAuth app credentials and let the automatic web backend handle public playlists. See Spotify's [official migration guide](https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide).
 
 The token source method can be configured via the `TOKEN_SOURCE` configuration option or the `--token-source` flag.
 
@@ -217,9 +219,11 @@ Uses captured credentials from the Spotify desktop client and a Protobuf-based l
 
 Since version 3.1, due to Spotify restrictions introduced on December 22, 2025, it no longer shows other users' playlists added to a user's profile unless the user is a collaborator on a playlist owned by another user.
 
-**Safe fallback: `oauth_app`**
+**Optional legacy: `oauth_app`**
 
-Relies on the official Spotify Web API (Client Credentials OAuth flow). This method is easy to set up and safe to use, but has several limitations. The following features are **not** supported:
+Relies on the official Spotify Web API Client Credentials flow. This mode is retained for existing apps which still have verified access to the legacy endpoints. It is not required for `cookie` or `client` mode and is not recommended for a new setup.
+
+As a standalone token source it can monitor other users only when the existing app still retains the removed `GET /users/{id}` access. New Development Mode apps cannot use this workflow. The following features are also **not** supported:
 - viewing the list of followers/followings
 - accessing the followings count (only the followers count is tracked; **post-Feb 2026**: followers count also not available)
 - getting the list of recently played artists
@@ -227,7 +231,7 @@ Relies on the official Spotify Web API (Client Credentials OAuth flow). This met
 - fetching the list of liked tracks for the account that owns the access token
 - searching for Spotify users by name
 
-> ⚠️ **Breaking Change (February 11, 2026)**: Spotify is removing the `GET /users/{id}` endpoint. Using `oauth_app` alone to monitor users will no longer work after this date. Use `cookie` or `client` method instead.
+Use `cookie` or `client` for normal monitoring. Add `oauth_app` credentials only as an optional legacy Web API path after verifying that the existing app still works.
 
 **Personal: `oauth_user`**
 
@@ -333,21 +337,15 @@ Advanced options are available for further customization - refer to the configur
 <a id="spotify-oauth-app"></a>
 #### Spotify OAuth App
 
-This mode can be used as a standalone token source. Its credentials can also be retained as an optional legacy Web API fallback for `cookie` or `client` mode, but they are no longer required for public playlist retrieval.
+OAuth app credentials are not required for public playlist retrieval. This section is retained only for users who already have a verified legacy-compatible app or want to test standalone Client Credentials behavior.
 
-This method uses an official Spotify Web API (Client Credentials OAuth flow).
+Do not create a new Spotify app solely for `spotify_profile_monitor`. Apps created under the current Development Mode restrictions cannot provide the removed public user endpoints needed for standalone monitoring of other users.
 
-To obtain the credentials:
+If you already have a working existing app:
 
 - Log in to [Spotify Developer dashboard](https://developer.spotify.com/dashboard)
 
-- Create a new app
-
-- For **Redirect URL**, use: `http://127.0.0.1:1234`
-   - The URL must match exactly as shown, including not having a `/` at the end
-   - When copying the link via right-click, some browsers may add an extra `/` to the URL
-
-- Select **Web API** as the intended API
+- Open the existing app which still has verified legacy endpoint access
 
 - Copy the **Client ID** and **Client Secret**
 
@@ -357,7 +355,7 @@ To obtain the credentials:
    - Add it to [.env file](#storing-secrets) (`SP_APP_CLIENT_ID=...` and `SP_APP_CLIENT_SECRET=...`) for persistent use
    - Fallback: hard-code it in the code or config file
 
-Example:
+Optional legacy example:
 
 ```sh
 spotify_profile_monitor --token-source oauth_app -r "your_spotify_app_client_id:your_spotify_app_client_secret" <spotify_user_uri_id>
@@ -367,7 +365,7 @@ The tool automatically refreshes the OAuth app access token, so it remains valid
 
 If you store the `SP_APP_CLIENT_ID` and `SP_APP_CLIENT_SECRET` in a dotenv file you can update their values and send a `SIGHUP` signal to reload the file with the new secret values without restarting the tool. More info in [Storing Secrets](#storing-secrets) and [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix).
 
-You can also use this method as a standalone token source (without `cookie` or `client`) by setting `TOKEN_SOURCE` to `oauth_app`, but this has several limitations as described in the [Spotify access token source](#spotify-access-token-source) section.
+You can use this method as a standalone token source only when the existing app still retains all endpoints required for your selected operation. If it returns HTTP 403 use `cookie` or `client` without OAuth app credentials.
 
 <a id="spotify-oauth-user"></a>
 #### Spotify OAuth User
