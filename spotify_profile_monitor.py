@@ -11,7 +11,7 @@ Python pip3 requirements:
 requests
 python-dateutil
 urllib3
-pyotp (optional, needed when the token source is set to cookie)
+pyotp (needed for web-player token generation)
 pytz
 tzlocal (optional)
 python-dotenv (optional)
@@ -327,33 +327,13 @@ ENABLE_MUSIXMATCH_URL = False
 # Whether to show Lyrics.com lyrics URL in console and emails
 ENABLE_LYRICS_COM_URL = False
 
-# ---------------------------------------------------------------------
-
-# The section below is used when the token source is set to 'cookie'
+# Token refresh settings used by cookie mode and the anonymous playlist backend
 
 # Maximum number of attempts to get a valid access token in a single run of the spotify_get_access_token_from_sp_dc() function
 TOKEN_MAX_RETRIES = 3
 
 # Interval between access token retry attempts; in seconds
 TOKEN_RETRY_TIMEOUT = 0.5  # 0.5 second
-
-# Mapping of TOTP version identifiers to the secrets needed for TOTP generation
-# Newest secrets are downloaded automatically from SECRET_CIPHER_DICT_URL (see below)
-# Can also be fetched via spotify_monitor_secret_grabber.py utility - see debug dir
-SECRET_CIPHER_DICT = {
-    "61": [44, 55, 47, 42, 70, 40, 34, 114, 76, 74, 50, 111, 120, 97, 75, 76, 94, 102, 43, 69, 49, 120, 118, 80, 64, 78],
-}
-
-# Remote or local URL used to fetch updated secrets needed for TOTP generation
-# Set to empty string to disable
-# If you used "spotify_monitor_secret_grabber.py --secretdict > secretDict.json" specify the file location below
-SECRET_CIPHER_DICT_URL = "https://raw.githubusercontent.com/xyloflake/spot-secrets-go/main/secrets/secretDict.json"
-# SECRET_CIPHER_DICT_URL = file:///C:/your_path/secretDict.json
-# SECRET_CIPHER_DICT_URL = "file:///your_path/secretDict.json"
-
-# Identifier used to select the appropriate secret from SECRET_CIPHER_DICT when generating a TOTP token
-# Set to 0 to auto-select the highest available version
-TOTP_VER = 0
 
 # ---------------------------------------------------------------------
 
@@ -610,9 +590,6 @@ ENABLE_MUSIXMATCH_URL = False
 ENABLE_LYRICS_COM_URL = False
 TOKEN_MAX_RETRIES = 0
 TOKEN_RETRY_TIMEOUT = 0.0
-SECRET_CIPHER_DICT = {}
-SECRET_CIPHER_DICT_URL = ""
-TOTP_VER = 0
 TRUNCATE_CHARS = 0
 EXPORT_ALL = False
 
@@ -658,6 +635,10 @@ SP_WEB_PLAYLIST_BACKEND_PREFERRED = False
 
 # URL of the Spotify Web Player endpoint to get access token
 TOKEN_URL = "https://open.spotify.com/api/token"
+
+# TOTP version and cipher bytes currently selected by the Spotify web player
+TOTP_VERSION = 61
+TOTP_SECRET_CIPHER_BYTES = (44, 55, 47, 42, 70, 40, 34, 114, 76, 74, 50, 111, 120, 97, 75, 76, 94, 102, 43, 69, 49, 120, 118, 80, 64, 78)
 
 # URLs and page size used by the public web-player playlist backend
 WEB_PLAYER_URL = "https://open.spotify.com/"
@@ -710,7 +691,6 @@ if sys.version_info < (3, 6):
     sys.exit(1)
 
 import time
-from time import time_ns
 import string
 import json
 import os
@@ -841,11 +821,6 @@ class Logger(object):
 
 # Class used to generate timeout exceptions
 class TimeoutException(Exception):
-    pass
-
-
-# Class used when TOTP secrets are unavailable or unusable for token generation
-class SecretsUnavailableError(Exception):
     pass
 
 
@@ -1768,93 +1743,16 @@ def fetch_server_time(session: req.Session, ua: str) -> int:
     return int(parsedate_to_datetime(date_hdr).timestamp())
 
 
-# Creates a TOTP object using a secret derived from transformed cipher bytes
+# Creates a TOTP object using the fixed web-player v61 cipher bytes
 def generate_totp():
     import pyotp
 
-    if not SECRET_CIPHER_DICT:
-        raise SecretsUnavailableError("generate_totp(): SECRET_CIPHER_DICT is empty")
-
-    ver = TOTP_VER or max(map(int, SECRET_CIPHER_DICT))
-    if str(ver) not in SECRET_CIPHER_DICT:
-        raise SecretsUnavailableError(f"generate_totp(): Defined TOTP_VER ({ver}) is missing in SECRET_CIPHER_DICT")
-
-    secret_cipher_bytes = SECRET_CIPHER_DICT[str(ver)]
-
-    transformed = [e ^ ((t % 33) + 9) for t, e in enumerate(secret_cipher_bytes)]
+    transformed = [value ^ ((index % 33) + 9) for index, value in enumerate(TOTP_SECRET_CIPHER_BYTES)]
     joined = "".join(str(num) for num in transformed)
     hex_str = joined.encode().hex()
     secret = base64.b32encode(bytes.fromhex(hex_str)).decode().rstrip("=")
 
     return pyotp.TOTP(secret, digits=6, interval=30)
-
-
-def fetch_and_update_secrets():
-    global SECRET_CIPHER_DICT
-
-    if not SECRET_CIPHER_DICT_URL:
-        return False
-
-    try:
-        if SECRET_CIPHER_DICT_URL.startswith("file:"):
-            import os
-            from urllib.parse import urlparse, unquote
-
-            parsed = urlparse(SECRET_CIPHER_DICT_URL)
-
-            if parsed.netloc:
-                raw_path = f"/{parsed.netloc}{parsed.path or ''}"
-            else:
-                if SECRET_CIPHER_DICT_URL.startswith("file://"):
-                    raw_path = parsed.path or SECRET_CIPHER_DICT_URL[len("file://"):]
-                else:
-                    raw_path = parsed.path or SECRET_CIPHER_DICT_URL[len("file:"):]
-
-            raw_path = unquote(raw_path)
-
-            if raw_path.startswith("/~"):
-                raw_path = raw_path[1:]
-
-            if not raw_path.startswith("/") and not raw_path.startswith("~"):
-                raw_path = "/" + raw_path
-
-            path = os.path.expanduser(os.path.expandvars(raw_path))
-
-            print(f"Loading Spotify web-player TOTP secrets from file: {path}")
-            if os.path.getsize(path) == 0:
-                raise ValueError(f"Secret file is empty: {path}")
-            with open(path, "r", encoding="utf-8") as f:
-                secrets = json.load(f)
-            print("─" * HORIZONTAL_LINE)
-        else:
-            print(f"Fetching Spotify web-player TOTP secrets from URL: {SECRET_CIPHER_DICT_URL}")
-            debug_print(f"HTTP GET {SECRET_CIPHER_DICT_URL} [secrets update]")
-            response = req.get(SECRET_CIPHER_DICT_URL, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
-            response.raise_for_status()
-            debug_print(f"HTTP GET {SECRET_CIPHER_DICT_URL} -> {response.status_code}")
-            if not response.text.strip():
-                raise ValueError("Fetched payload is empty")
-            secrets = response.json()
-            print("─" * HORIZONTAL_LINE)
-
-        if not isinstance(secrets, dict) or not secrets:
-            raise ValueError("Fetched payload not a non-empty dict")
-
-        for key, value in secrets.items():
-            if not isinstance(key, str) or not key.isdigit():
-                raise ValueError(f"Invalid key format: {key}")
-            if not isinstance(value, list) or not all(isinstance(x, int) for x in value):
-                raise ValueError(f"Invalid value format for key {key}")
-
-        SECRET_CIPHER_DICT = secrets
-        return True
-
-    except json.JSONDecodeError as e:
-        print(f"fetch_and_update_secrets(): Failed to parse secrets (invalid JSON format): {e}")
-        return False
-    except Exception as e:
-        print(f"fetch_and_update_secrets(): Failed to get new secrets: {e}")
-        return False
 
 
 # Refreshes the Spotify access token using the sp_dc cookie, tries first with mode "transport" and if needed with "init"
@@ -1867,26 +1765,15 @@ def refresh_access_token_from_sp_dc(sp_dc: str) -> dict:
 
     server_time = fetch_server_time(session, USER_AGENT)
     totp_obj = generate_totp()
-    client_time = int(time_ns() / 1000 / 1000)
     otp_value = totp_obj.at(server_time)
-
-    totp_ver = TOTP_VER or max(map(int, SECRET_CIPHER_DICT))
 
     params = {
         "reason": "transport",
         "productType": "web-player",
         "totp": otp_value,
         "totpServer": otp_value,
-        "totpVer": totp_ver,
+        "totpVer": TOTP_VERSION,
     }
-
-    if totp_ver < 10:
-        params.update({
-            "sTime": server_time,
-            "cTime": client_time,
-            "buildDate": time.strftime("%Y-%m-%d", time.gmtime(server_time)),
-            "buildVer": f"web-player_{time.strftime('%Y-%m-%d', time.gmtime(server_time))}_{server_time * 1000}_{secrets.token_hex(4)}",
-        })
 
     headers = {
         "User-Agent": USER_AGENT,
@@ -1918,7 +1805,7 @@ def refresh_access_token_from_sp_dc(sp_dc: str) -> dict:
         if platform.system() != "Windows":
             signal.alarm(0)
 
-    if not transport or (transport and not check_token_validity(token, data.get("clientId", ""), USER_AGENT)):
+    if not transport or (sp_dc and not check_token_validity(token, data.get("clientId", ""), USER_AGENT)):
         params["reason"] = "init"
 
         try:
@@ -1962,11 +1849,6 @@ def spotify_get_access_token_from_sp_dc(sp_dc: str):
         debug_print("Using cached Spotify access token (sp_dc source)")
         return SP_CACHED_ACCESS_TOKEN
 
-    if not SECRET_CIPHER_DICT:
-        debug_print("SECRET_CIPHER_DICT is empty, fetching secrets before token refresh")
-        if not fetch_and_update_secrets():
-            raise RuntimeError("Failed to obtain TOTP secrets: SECRET_CIPHER_DICT is empty and secrets update failed")
-
     max_retries = TOKEN_MAX_RETRIES
     retry = 0
 
@@ -1991,13 +1873,6 @@ def spotify_get_access_token_from_sp_dc(sp_dc: str):
             else:
                 debug_print(f"Spotify access token obtained successfully, length={length}")
                 break
-        except SecretsUnavailableError as e:
-            last_error = str(e)
-            debug_print(f"TOTP secrets unavailable: {e}")
-            if fetch_and_update_secrets():
-                debug_print("TOTP secrets updated, retrying token refresh immediately")
-                continue
-            raise RuntimeError(f"Failed to obtain TOTP secrets for token refresh: {e}")
         except Exception as e:
             last_error = str(e)
             debug_print(f"Token refresh attempt failed: {e}")
@@ -2006,26 +1881,6 @@ def spotify_get_access_token_from_sp_dc(sp_dc: str):
                 time.sleep(TOKEN_RETRY_TIMEOUT)
 
     if retry == max_retries:
-
-        if fetch_and_update_secrets():
-            try:
-                debug_print("Retrying token refresh after secrets update")
-                token_data = refresh_access_token_from_sp_dc(sp_dc)
-                token = token_data["access_token"]
-                client_id = token_data.get("client_id", "")
-                length = token_data["length"]
-
-                SP_CACHED_ACCESS_TOKEN = token
-                SP_ACCESS_TOKEN_EXPIRES_AT = token_data["expires_at"]
-                SP_CACHED_CLIENT_ID = client_id
-
-                if SP_CACHED_ACCESS_TOKEN and check_token_validity(SP_CACHED_ACCESS_TOKEN, SP_CACHED_CLIENT_ID, USER_AGENT):
-                    debug_print("Spotify access token obtained successfully after secrets update")
-                    return SP_CACHED_ACCESS_TOKEN
-            except Exception as e:
-                last_error = str(e)
-                debug_print(f"Token refresh after secrets update failed: {e}")
-
         error_msg = f"Failed to obtain a valid Spotify access token after {max_retries} attempts"
         if last_error:
             error_msg += f": {last_error}"
@@ -2796,11 +2651,6 @@ def spotify_get_web_access_token_data():
     now = time.time()
     if SP_CACHED_WEB_ACCESS_TOKEN and now < SP_WEB_ACCESS_TOKEN_EXPIRES_AT - 60:
         return {"access_token": SP_CACHED_WEB_ACCESS_TOKEN, "expires_at": SP_WEB_ACCESS_TOKEN_EXPIRES_AT, "client_id": SP_CACHED_WEB_CLIENT_ID}
-
-    if not SECRET_CIPHER_DICT:
-        debug_print("SECRET_CIPHER_DICT is empty, fetching secrets for anonymous web-player token")
-        if not fetch_and_update_secrets():
-            raise RuntimeError("Failed to obtain TOTP secrets for the web-player playlist backend")
 
     token_data = refresh_access_token_from_sp_dc("")
     access_token = token_data.get("access_token", "")
@@ -6997,10 +6847,11 @@ def main():
 
     if TOKEN_SOURCE == "cookie":
         ALARM_TIMEOUT = int((TOKEN_MAX_RETRIES * TOKEN_RETRY_TIMEOUT) + 5)
-        try:
-            import pyotp
-        except ModuleNotFoundError:
-            raise SystemExit("Error: Couldn't find the pyotp library !\n\nTo install it, run:\n    pip install pyotp\n\nOnce installed, re-run this tool")
+
+    try:
+        import pyotp
+    except ModuleNotFoundError:
+        raise SystemExit("Error: Couldn't find the pyotp library !\n\nTo install it, run:\n    pip install pyotp\n\nOnce installed, re-run this tool")
 
     # spotipy is required when oauth_app is the selected token source
     if TOKEN_SOURCE == "oauth_app":
