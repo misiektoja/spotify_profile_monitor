@@ -278,7 +278,7 @@ If your `sp_dc` cookie expires, the tool will notify you via the console and ema
 
 If you store the `SP_DC_COOKIE` in a dotenv file you can update its value and send a `SIGHUP` signal to reload the file with the new `sp_dc` cookie without restarting the tool. More info in [Storing Secrets](#storing-secrets) and [Signal Controls (macOS/Linux/Unix)](#signal-controls-macoslinuxunix).
 
-> **NOTE:** secrets used for TOTP generation (`SECRET_CIPHER_DICT`) expire every few days, that's why since v2.7 the tool fetches it from remote URL (see `SECRET_CIPHER_DICT_URL`); you can also run the [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) and extract it by yourself (see [Secret Key Extraction from Spotify Web Player Bundles](#secret-key-extraction-from-spotify-web-player-bundles) for more info).
+> **NOTE:** Spotify still requires TOTP parameters for web-player token requests. The web player continues to select v61 which was first published in January 2026. Version 3.5 embeds v61 directly and no longer downloads a third-party secret dictionary. You can still use [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) to verify the current bundle values or prepare an update if Spotify resumes rotation.
 
 <a id="spotify-desktop-client"></a>
 #### Spotify Desktop Client
@@ -917,14 +917,16 @@ You should get a valid Spotify access token, example output:
    <img src="https://raw.githubusercontent.com/misiektoja/spotify_monitor/refs/heads/main/assets/spotify_monitor_totp_test.png" alt="spotify_monitor_totp_test" width="100%"/>
 </p>
 
-> **NOTE:** secrets used for TOTP generation (`SECRET_CIPHER_DICT`) expire every few days; you can either run the [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) and extract it by yourself (see [here](#secret-key-extraction-from-spotify-web-player-bundles) for more info) or you can pass `--fetch-secrets` flag in `spotify_monitor_totp_test` (available since v1.6). There is also a [xyloflake/spot-secrets-go/](https://github.com/xyloflake/spot-secrets-go/) repo which offers JSON files that are automatically updated with current secrets (you can pass `--download-secrets` flag in `spotify_monitor_totp_test` to get it automatically from remote URL, available since v1.8).
+> **NOTE:** Spotify still requires TOTP but continues to select v61. You can run [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) to extract the current bundle values or use the `--fetch-secrets` and `--download-secrets` options provided by `spotify_monitor_totp_test`.
 
 <a id="secret-key-extraction-from-spotify-web-player-bundles"></a>
 ### Secret Key Extraction from Spotify Web Player Bundles
 
-The [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) tool automatically extracts secret keys used for TOTP generation in Spotify Web Player JavaScript bundles.
+The [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) tool automatically extracts secret keys used for TOTP generation in Spotify Web Player JavaScript bundles. Version 1.3 scans the loaded bundle source for the inline object-literal format used by the current web player and retains the original runtime property hook as a fallback for older formats.
 
-> 💡 **Quick tip:** The easiest and recommended way to run this tool is via Docker. Jump directly to the [Docker usage section below](#-secret-key-extraction-via-docker-recommended-easiest-way).
+The restored extractor returns v59, v60 and v61 directly from Spotify's current web-player bundle even when the original runtime hook reports no captures.
+
+> **Quick tip:** The easiest and recommended way to run this tool is via Docker. Jump directly to the [Docker usage section below](#-secret-key-extraction-via-docker-recommended-easiest-way).
 
 Download from [here](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) or:
 
@@ -939,7 +941,7 @@ pip install playwright
 playwright install
 ```
 
-Run interactively (default output mode):
+Run interactively using the default output mode:
 
 ```sh
 python3 spotify_monitor_secret_grabber.py
@@ -952,6 +954,7 @@ You should get output similar to below:
 </p>
 
 Show help:
+
 ```sh
 python3 spotify_monitor_secret_grabber.py -h
 ```
@@ -964,19 +967,19 @@ python3 spotify_monitor_secret_grabber.py -h
 The script supports several output modes for different use cases:
 
 | Flag | Description | Output |
-|------|--------------|--------|
+|------|-------------|--------|
 | `--secret` | Prints plain JSON array of extracted secrets | `[{"version": X, "secret": "..."}, ...]` |
 | `--secretbytes` | Prints JSON array with ASCII byte values | `[{"version": X, "secret": [..]}, ...]` |
-| `--secretdict` | Prints JSON object/dict mapping version → byte list | `{"X": [..], "Y": [..]}` |
-| `--all` | Extracts secrets and **writes all three outputs** to local files | `secrets.json`, `secretBytes.json`, `secretDict.json` |
+| `--secretdict` | Prints JSON object/dict mapping version -> byte list | `{"X": [..], "Y": [..]}` |
+| `--all` | Extracts secrets and writes all three outputs to local files | `secrets.json`, `secretBytes.json`, `secretDict.json` |
 
-Print extracted secrets in specific format, for example Python-friendly secret bytes (JSON object/dict) and save to indicated file:
+Print extracted secrets in a specific format. For example you can create a Python-friendly secret byte mapping and save it to a file:
 
 ```sh
 python3 spotify_monitor_secret_grabber.py --secretdict > secretDict.json
 ```
 
-Or, to generate and save all secret formats to files (`secrets.json`, `secretBytes.json`, `secretDict.json`) at once:
+Generate and save all secret formats at once:
 
 ```sh
 python3 spotify_monitor_secret_grabber.py --all
@@ -987,52 +990,55 @@ Default file paths and names can be configured directly in the `OUTPUT_FILES` di
 ---
 
 <a id="-secret-key-extraction-via-docker-recommended-easiest-way"></a>
-### 🐳 Secret Key Extraction via Docker (Recommended Easiest Way)
+### Secret Key Extraction via Docker (Recommended Easiest Way)
 
 A prebuilt multi-architecture image is available on Docker Hub: [`misiektoja/spotify-secrets-grabber`](https://hub.docker.com/r/misiektoja/spotify-secrets-grabber)
 
 This image works on:
-- macOS (Intel & Apple Silicon)
+
+- macOS (Intel and Apple Silicon)
 - Linux (x86_64 and ARM64)
-- Windows (Docker Desktop / WSL2)
+- Windows (Docker Desktop or WSL2)
 - Raspberry Pi 4/5 (64-bit OS)
 
-Run interactively (default output mode):
+Run interactively using the default output mode:
 
 ```sh
 docker run --rm misiektoja/spotify-secrets-grabber
 ```
 
 Show help:
+
 ```sh
 docker run --rm misiektoja/spotify-secrets-grabber -h
 ```
 
-Print extracted secrets in specific format, for example Python-friendly secret bytes (JSON object/dict) and save to indicated file:
+Print a Python-friendly secret byte mapping and save it to a file:
+
 ```sh
 docker run --rm misiektoja/spotify-secrets-grabber --secretdict > secretDict.json
 ```
 
-Or, to generate and save all secret formats to files (`secrets.json`, `secretBytes.json`, `secretDict.json`) at once:
+Generate and save all secret formats at once:
 
 ```sh
 docker run --rm -v .:/work -w /work misiektoja/spotify-secrets-grabber --all
 ```
 
-*For SELinux hosts (Fedora/RHEL), use `-v .:/work:Z`.*
+For SELinux hosts such as Fedora or RHEL use `-v .:/work:Z`.
 
 <a id="optional-use-docker-compose-one-command-for-all-oss"></a>
-Or optionally use Docker Compose (a preconfigured [compose.yaml](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber_docker/compose.yaml) file is included in the repo):
+You can optionally use Docker Compose with the preconfigured [compose.yaml](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber_docker/compose.yaml) file included in the repository:
 
 ```sh
 docker compose run --rm spotify-secrets-grabber --all
 ```
 
-This will save all files into your current directory on any system (macOS, Linux or Windows).
+This saves all files into the current directory on macOS, Linux or Windows.
 
 ---
 
-You can now update the secrets used for TOTP generation (for example `SECRET_CIPHER_DICT` in `spotify_monitor_totp_test`, `spotify_monitor` and `spotify_profile_monitor`) either manually or by referencing an external `secretDict.json` file, which can be hosted in another repo or stored locally. See the description of `SECRET_CIPHER_DICT_URL` in those files for details.
+You can use the generated `secretDict.json` with `spotify_monitor_totp_test` and `spotify_monitor`. `spotify_profile_monitor` v3.5 embeds v61 directly and no longer depends on an external dictionary. If Spotify selects a new TOTP version later then the embedded version and cipher bytes must be updated after checking the current web-player bundle.
 
 <a id="change-log"></a>
 ## Change Log
