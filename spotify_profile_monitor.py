@@ -4284,6 +4284,28 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
     return list_of_playlists, error_while_processing
 
 
+# Builds the next playlist baseline from successful snapshots and accepted playlist membership
+def merge_playlist_snapshots(previous_snapshots, successful_snapshots, accepted_playlists):
+    previous_by_uri = {snapshot.get("uri"): snapshot for snapshot in (previous_snapshots or []) if isinstance(snapshot, dict) and snapshot.get("uri")}
+    successful_by_uri = {snapshot.get("uri"): snapshot for snapshot in (successful_snapshots or []) if isinstance(snapshot, dict) and snapshot.get("uri")}
+    merged_snapshots = []
+
+    for playlist in accepted_playlists or []:
+        if not isinstance(playlist, dict):
+            continue
+
+        playlist_uri = playlist.get("uri")
+        if not playlist_uri:
+            continue
+
+        if playlist_uri in successful_by_uri:
+            merged_snapshots.append(successful_by_uri[playlist_uri])
+        elif playlist_uri in previous_by_uri:
+            merged_snapshots.append(previous_by_uri[playlist_uri])
+
+    return merged_snapshots
+
+
 # Prints detailed info about user's playlists
 def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_to_skip=None):
     p_update = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
@@ -6302,9 +6324,6 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
 
-            if not error_while_processing:
-                list_of_playlists_old = list_of_playlists
-
             # Suppress transient playlist glitches by confirming changes across multiple checks  and keep a stable
             # baseline to avoid baseline poisoning
             global PLAYLISTS_BASELINE_CACHE
@@ -6437,6 +6456,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                         print_cur_ts("Timestamp:\t\t\t")
                     playlists_zeroed_counter = 0
                     playlists_old = playlists
+
+            if error_while_processing:
+                debug_print("Playlist processing was partial: advancing successful baselines while retaining failed baselines")
+            list_of_playlists_old = merge_playlist_snapshots(list_of_playlists_old, list_of_playlists, playlists_old)
 
         alive_counter += 1
 
