@@ -335,6 +335,27 @@ TOKEN_MAX_RETRIES = 3
 # Interval between access token retry attempts; in seconds
 TOKEN_RETRY_TIMEOUT = 0.5  # 0.5 second
 
+# ----------------------------------------------
+# Advanced options for 'cookie' token source
+# Modifying the values below is NOT recommended!
+# ----------------------------------------------
+
+# TOTP parameters used to sign Spotify web-player access token requests
+#
+# The web player derives a time-based one-time password from a versioned secret embedded in its JavaScript
+# bundle and sends it with every token request. Version 3.5 ships the v61 secret that the web player has
+# selected since January 2026, so no external secret dictionary is downloaded at runtime.
+#
+# You only need to change these if Spotify rotates the secret and cookie-based auth starts failing (for
+# example 'Bad credentials' or repeated token refresh errors) even though your sp_dc cookie is still valid.
+# To refresh them:
+#   - Run the spotify_monitor_secret_grabber tool to extract the current version and cipher bytes from the
+#     live web-player bundle (see the "Secret Key Extraction from Spotify Web Player Bundles" README section)
+#   - Set TOTP_VERSION to the extracted version identifier (a positive integer)
+#   - Set TOTP_SECRET_CIPHER_BYTES to the extracted cipher bytes (a non-empty sequence of integers)
+TOTP_VERSION = 61
+TOTP_SECRET_CIPHER_BYTES = (44, 55, 47, 42, 70, 40, 34, 114, 76, 74, 50, 111, 120, 97, 75, 76, 94, 102, 43, 69, 49, 120, 118, 80, 64, 78)
+
 # ---------------------------------------------------------------------
 
 # The section below is used when the token source is set to 'oauth_user'
@@ -590,6 +611,8 @@ ENABLE_MUSIXMATCH_URL = False
 ENABLE_LYRICS_COM_URL = False
 TOKEN_MAX_RETRIES = 0
 TOKEN_RETRY_TIMEOUT = 0.0
+TOTP_VERSION = 0
+TOTP_SECRET_CIPHER_BYTES: tuple[int, ...] = ()
 TRUNCATE_CHARS = 0
 EXPORT_ALL = False
 
@@ -635,10 +658,6 @@ SP_WEB_PLAYLIST_BACKEND_PREFERRED = False
 
 # URL of the Spotify Web Player endpoint to get access token
 TOKEN_URL = "https://open.spotify.com/api/token"
-
-# TOTP version and cipher bytes currently selected by the Spotify web player
-TOTP_VERSION = 61
-TOTP_SECRET_CIPHER_BYTES = (44, 55, 47, 42, 70, 40, 34, 114, 76, 74, 50, 111, 120, 97, 75, 76, 94, 102, 43, 69, 49, 120, 118, 80, 64, 78)
 
 # URLs and page size used by the public web-player playlist backend
 WEB_PLAYER_URL = "https://open.spotify.com/"
@@ -1743,11 +1762,17 @@ def fetch_server_time(session: req.Session, ua: str) -> int:
     return int(parsedate_to_datetime(date_hdr).timestamp())
 
 
-# Creates a TOTP object using the fixed web-player v61 cipher bytes
+# Builds a pyotp TOTP object from the configured web-player cipher bytes
 def generate_totp():
     import pyotp
 
-    transformed = [value ^ ((index % 33) + 9) for index, value in enumerate(TOTP_SECRET_CIPHER_BYTES)]
+    cipher_bytes = TOTP_SECRET_CIPHER_BYTES
+    if not cipher_bytes or not all(isinstance(value, int) and not isinstance(value, bool) for value in cipher_bytes):
+        raise ValueError("TOTP_SECRET_CIPHER_BYTES must be a non-empty sequence of integers; refresh it with the spotify_monitor_secret_grabber tool if Spotify rotated the web-player secret")
+    if not isinstance(TOTP_VERSION, int) or isinstance(TOTP_VERSION, bool) or TOTP_VERSION <= 0:
+        raise ValueError("TOTP_VERSION must be a positive integer; refresh it with the spotify_monitor_secret_grabber tool if Spotify rotated the web-player secret")
+
+    transformed = [value ^ ((index % 33) + 9) for index, value in enumerate(cipher_bytes)]
     joined = "".join(str(num) for num in transformed)
     hex_str = joined.encode().hex()
     secret = base64.b32encode(bytes.fromhex(hex_str)).decode().rstrip("=")
