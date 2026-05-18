@@ -4306,6 +4306,19 @@ def merge_playlist_snapshots(previous_snapshots, successful_snapshots, accepted_
     return merged_snapshots
 
 
+# Extracts playlist URI values for order-independent membership comparisons
+def extract_playlist_uris(playlist_list):
+    if not playlist_list:
+        return frozenset()
+
+    return frozenset(p.get("uri") if isinstance(p, dict) else p for p in playlist_list if p)
+
+
+# Reports whether a playlist count or URI membership changed
+def playlist_collection_changed(current_playlists, previous_playlists, current_count, previous_count):
+    return current_count != previous_count or extract_playlist_uris(current_playlists) != extract_playlist_uris(previous_playlists)
+
+
 # Prints detailed info about user's playlists
 def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_to_skip=None):
     p_update = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
@@ -4671,6 +4684,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
 
     removed_f_list = compare_two_lists_of_dicts(f_list_old_stripped, f_list_stripped)
     added_f_list = compare_two_lists_of_dicts(f_list_stripped, f_list_old_stripped)
+    playlist_membership_only_change = is_playlist and f_diff == 0 and bool(added_f_list or removed_f_list)
 
     list_of_added_f_list = ""
     list_of_removed_f_list = ""
@@ -4681,7 +4695,9 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
     added_f_list_mbody_html = ""
     removed_f_list_mbody_html = ""
 
-    if added_f_list or removed_f_list or ((f_str == "Followers" or f_str == "Followings") and TOKEN_SOURCE == "oauth_app"):
+    if playlist_membership_only_change:
+        print(f"* {f_str} changed for user {username} while the total remained {f_count}\n")
+    elif added_f_list or removed_f_list or ((f_str == "Followers" or f_str == "Followings") and TOKEN_SOURCE == "oauth_app"):
         print(f"* {f_str} number changed {f_str_by_or_from} user {username} from {f_old_count} to {f_count} ({f_diff_str})\n")
 
     if added_f_list:
@@ -5047,10 +5063,14 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
         return False
 
     if profile_notification:
-
-        m_subject = f"Spotify user {username} {str(f_str).lower()} number has changed! ({f_diff_str}, {f_old_count} -> {f_count})"
-        m_body = f"{f_str} number changed {f_str_by_or_from} user {username} from {f_old_count} to {f_count} ({f_diff_str})\n{removed_f_list_mbody}{list_of_removed_f_list}{added_f_list_mbody}{list_of_added_f_list}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-        m_body_html = f"<html><head></head><body>{escape(f_str)} number changed {escape(f_str_by_or_from)} user <b>{escape(username)}</b> from <b>{f_old_count}</b> to <b>{f_count}</b> (<b>{escape(f_diff_str)}</b>)<br>{removed_f_list_mbody_html}{list_of_removed_f_list_html}{added_f_list_mbody_html}{list_of_added_f_list_html}<br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+        if playlist_membership_only_change:
+            m_subject = f"Spotify user {username} {str(f_str).lower()} have changed! (total remains {f_count})"
+            m_body = f"{f_str} changed for user {username} while the total remained {f_count}\n{removed_f_list_mbody}{list_of_removed_f_list}{added_f_list_mbody}{list_of_added_f_list}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+            m_body_html = f"<html><head></head><body>{escape(f_str)} changed for user <b>{escape(username)}</b> while the total remained <b>{f_count}</b><br>{removed_f_list_mbody_html}{list_of_removed_f_list_html}{added_f_list_mbody_html}{list_of_added_f_list_html}<br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+        else:
+            m_subject = f"Spotify user {username} {str(f_str).lower()} number has changed! ({f_diff_str}, {f_old_count} -> {f_count})"
+            m_body = f"{f_str} number changed {f_str_by_or_from} user {username} from {f_old_count} to {f_count} ({f_diff_str})\n{removed_f_list_mbody}{list_of_removed_f_list}{added_f_list_mbody}{list_of_added_f_list}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+            m_body_html = f"<html><head></head><body>{escape(f_str)} number changed {escape(f_str_by_or_from)} user <b>{escape(username)}</b> from <b>{f_old_count}</b> to <b>{f_count}</b> (<b>{escape(f_diff_str)}</b>)<br>{removed_f_list_mbody_html}{list_of_removed_f_list_html}{added_f_list_mbody_html}{list_of_added_f_list_html}<br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
 
         print(f"Sending email notification to {RECEIVER_EMAIL}")
         send_email(m_subject, m_body, m_body_html, SMTP_SSL)
@@ -5331,7 +5351,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             except Exception as e:
                 print(f"* Cannot save list of playlists to '{playlists_file}' file: {e}")
 
-        if playlists_count != playlists_old_count:
+        if playlist_collection_changed(playlists, playlists_old, playlists_count, playlists_old_count):
             spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists to profile", "Added Playlist", "Removed playlists from profile", "Removed Playlist", playlists_file, csv_file_name, False, True, sp_accessToken)
 
         print_cur_ts("Timestamp:\t\t\t")
@@ -6329,16 +6349,6 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             global PLAYLISTS_BASELINE_CACHE
             global PLAYLISTS_PENDING_CACHE
 
-            # Helper to extract URI strings from playlist dict list for comparison
-            def extract_playlist_uris(playlist_list):
-                if not playlist_list:
-                    return frozenset()
-                return frozenset(
-                    p.get("uri") if isinstance(p, dict) else p
-                    for p in playlist_list
-                    if p
-                )
-
             user_playlists_key = f"user:{user_uri_id}"
             stable_entry = PLAYLISTS_BASELINE_CACHE.get(user_playlists_key)
             if stable_entry is None:
@@ -6410,7 +6420,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     except Exception:
                         pass
 
-            if not suppress_playlists_notification and playlists_count != playlists_old_count:
+            if not suppress_playlists_notification and playlist_collection_changed(playlists, playlists_old, playlists_count, playlists_old_count):
                 if playlists_count == 0:
                     playlists_zeroed_counter += 1
                     if playlists_zeroed_counter == PLAYLISTS_DISAPPEARED_COUNTER:
