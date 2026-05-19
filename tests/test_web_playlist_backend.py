@@ -265,6 +265,27 @@ class WebPlaylistBackendTests(unittest.TestCase):
         self.assertNotIsInstance(caught.exception, KeyError)
         self.assertIn("missing expiry", str(caught.exception))
 
+    # Retries idempotent web-player GraphQL POSTs while leaving other POSTs unretried
+    def test_web_player_adapter_retries_post(self):
+        self.assertIs(monitor.SESSION.get_adapter(monitor.WEB_PLAYER_QUERY_URL), monitor.web_player_adapter)
+        web_player_methods = getattr(monitor.SESSION.get_adapter(monitor.WEB_PLAYER_QUERY_URL), "max_retries").allowed_methods
+        default_methods = getattr(monitor.SESSION.get_adapter("https://api.spotify.com/v1/playlists/abc"), "max_retries").allowed_methods
+        self.assertIn("POST", web_player_methods)
+        self.assertNotIn("POST", default_methods)
+
+    # Stamps revision-cache entries with a timestamp so stale entries can be evicted
+    def test_revision_cache_entries_carry_timestamp(self):
+        playlist_uri = "spotify:playlist:ttl123"
+        metadata = {"playlistV2": {"attributes": [], "content": {"totalCount": 1}, "description": "", "followers": 1, "images": {"items": []}, "name": "Cached", "ownerV2": {"data": {"name": "Owner", "uri": "spotify:user:owner123"}}, "revisionId": "rev-1", "sharingInfo": {}}}
+        item = {"addedAt": {"isoString": "2026-07-01T10:00:00Z"}, "addedBy": {"data": {"uri": "spotify:user:owner123", "username": "owner123"}}, "itemV2": {"data": {"artists": {"items": [{"profile": {"name": "Artist"}, "uri": "spotify:artist:artist1"}]}, "name": "Track", "trackDuration": {"totalMilliseconds": 120000}, "uri": "spotify:track:track1"}}}
+        contents = {"playlistV2": {"content": {"items": [item], "totalCount": 1}}}
+
+        with patch.object(monitor, "spotify_web_playlist_query", side_effect=[metadata, contents]):
+            monitor.spotify_get_playlist_info_web(playlist_uri, True)
+
+        self.assertIn("timestamp", monitor.WEB_PLAYLIST_REVISION_CACHE[playlist_uri])
+        self.assertGreater(monitor.WEB_PLAYLIST_REVISION_CACHE[playlist_uri]["timestamp"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()
