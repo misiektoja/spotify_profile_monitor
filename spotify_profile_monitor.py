@@ -656,6 +656,12 @@ WEB_PLAYLIST_REVISION_CACHE = {}
 # Switches remaining playlist requests to the web backend after a restricted Web API response
 SP_WEB_PLAYLIST_BACKEND_PREFERRED = False
 
+# Counts consecutive legacy Web API failures before latching the web backend
+SP_WEB_PLAYLIST_API_FAILURES = 0
+
+# Number of consecutive non-restricted legacy Web API failures tolerated before preferring the web backend
+METADATA_API_FAILURE_LATCH_THRESHOLD = 3
+
 # URL of the Spotify Web Player endpoint to get access token
 TOKEN_URL = "https://open.spotify.com/api/token"
 
@@ -1856,9 +1862,13 @@ def refresh_access_token_from_sp_dc(sp_dc: str) -> dict:
     if not init or not data or "accessToken" not in data:
         raise Exception(f"refresh_access_token_from_sp_dc(): Unsuccessful token request{': ' + last_err if last_err else ''}")
 
+    expires_at_ms = data.get("accessTokenExpirationTimestampMs")
+    if not isinstance(expires_at_ms, (int, float)) or isinstance(expires_at_ms, bool):
+        raise Exception("refresh_access_token_from_sp_dc(): Unsuccessful token request: token response missing expiry")
+
     return {
         "access_token": token,
-        "expires_at": data["accessTokenExpirationTimestampMs"] // 1000,
+        "expires_at": int(expires_at_ms) // 1000,
         "client_id": data.get("clientId", ""),
         "length": len(token)
     }
@@ -3235,9 +3245,17 @@ def _spotify_get_playlist_info_api(access_token, playlist_uri, get_tracks, oauth
         raise
 
 
+# Decides whether to latch the web-player backend after a legacy Web API failure
+def spotify_should_latch_web_backend(error, consecutive_failures):
+    status_code = error.response.status_code if isinstance(error, req.HTTPError) and error.response is not None else None
+    if status_code in {403, 404}:
+        return True
+    return consecutive_failures >= METADATA_API_FAILURE_LATCH_THRESHOLD
+
+
 # Selects the legacy or web-player playlist backend and falls back automatically
 def spotify_get_playlist_info(access_token, playlist_uri, get_tracks, oauth_app: bool = False):
-    global SP_WEB_PLAYLIST_BACKEND_PREFERRED
+    global SP_WEB_PLAYLIST_BACKEND_PREFERRED, SP_WEB_PLAYLIST_API_FAILURES
 
     api_available = TOKEN_SOURCE in {"oauth_app", "oauth_user"} or oauth_app or spotify_has_oauth_app_credentials()
     api_error = None
@@ -3245,15 +3263,18 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks, oauth_app:
 
     if api_available and not SP_WEB_PLAYLIST_BACKEND_PREFERRED:
         try:
-            return _spotify_get_playlist_info_api(access_token, playlist_uri, get_tracks, oauth_app)
+            result = _spotify_get_playlist_info_api(access_token, playlist_uri, get_tracks, oauth_app)
+            SP_WEB_PLAYLIST_API_FAILURES = 0
+            return result
         except Exception as e:
             api_error = e
-            status_code = e.response.status_code if isinstance(e, req.HTTPError) and e.response is not None else None
-            if status_code == 403:
+            SP_WEB_PLAYLIST_API_FAILURES += 1
+            if spotify_should_latch_web_backend(e, SP_WEB_PLAYLIST_API_FAILURES):
                 SP_WEB_PLAYLIST_BACKEND_PREFERRED = True
-                debug_print("spotify_get_playlist_info(): Web API returned 403, preferring web-player backend for remaining playlists")
+                status_code = e.response.status_code if isinstance(e, req.HTTPError) and e.response is not None else None
+                debug_print(f"spotify_get_playlist_info(): legacy Web API unavailable (failures={SP_WEB_PLAYLIST_API_FAILURES}, status={status_code}), preferring web-player backend for remaining playlists")
             else:
-                debug_print(f"spotify_get_playlist_info(): legacy Web API backend failed for uri={playlist_uri}: {e}")
+                debug_print(f"spotify_get_playlist_info(): legacy Web API backend failed for uri={playlist_uri} (failures={SP_WEB_PLAYLIST_API_FAILURES}): {e}")
 
     try:
         return spotify_get_playlist_info_web(playlist_uri, get_tracks)
