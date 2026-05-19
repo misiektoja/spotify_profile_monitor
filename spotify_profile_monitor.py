@@ -795,6 +795,22 @@ adapter = HTTPAdapter(max_retries=retry, pool_connections=100, pool_maxsize=100)
 SESSION.mount("https://", adapter)
 SESSION.mount("http://", adapter)
 
+# The web-player GraphQL endpoint is queried through idempotent read-only POSTs, so it gets a dedicated
+# adapter that also retries POST on transient failures (other POSTs use the bare requests module, not SESSION)
+web_player_retry = CappedRetry(
+    total=5,
+    connect=3,
+    read=3,
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["GET", "HEAD", "OPTIONS", "POST"],
+    raise_on_status=False,
+    respect_retry_after_header=True
+)
+
+web_player_adapter = HTTPAdapter(max_retries=web_player_retry, pool_connections=100, pool_maxsize=100)
+SESSION.mount("https://api-partner.spotify.com", web_player_adapter)
+
 
 # Truncates each line of a string to a specified number of characters including tab expansion and multi-line support
 def truncate_string_per_line(message, truncate_width, tabsize=8):
@@ -2852,6 +2868,7 @@ def spotify_get_playlist_info_web(playlist_uri, get_tracks):
         cached_revision = WEB_PLAYLIST_REVISION_CACHE.get(playlist_uri, {})
         if revision_id and cached_revision.get("revision_id") == revision_id and cached_revision.get("total_tracks") == total_tracks:
             normalized_items = cached_revision.get("items", [])
+            cached_revision["timestamp"] = time.time()
             debug_print(f"spotify_get_playlist_info_web(): using cached revision for uri={playlist_uri}, revision_id={revision_id}")
         else:
             raw_items = []
@@ -2880,7 +2897,7 @@ def spotify_get_playlist_info_web(playlist_uri, get_tracks):
 
             normalized_items = [spotify_normalize_web_playlist_item(item) for item in raw_items]
             if revision_id:
-                WEB_PLAYLIST_REVISION_CACHE[playlist_uri] = {"items": normalized_items, "revision_id": revision_id, "total_tracks": total_tracks}
+                WEB_PLAYLIST_REVISION_CACHE[playlist_uri] = {"items": normalized_items, "revision_id": revision_id, "total_tracks": total_tracks, "timestamp": time.time()}
 
         filtered_tracks = []
         for item in normalized_items:
@@ -2931,7 +2948,7 @@ def spotify_get_playlist_info_web(playlist_uri, get_tracks):
         playlist_url = spotify_convert_uri_to_url(playlist_uri)
 
     debug_print(f"spotify_get_playlist_info_web(): uri={playlist_uri}, get_tracks={get_tracks}, revision_id={revision_id}, tracks={tracks_count}, tracks_raw={tracks_count_before_filtering}, followers={followers_count}")
-    return {"sp_playlist_collaborative": collaborative, "sp_playlist_description": metadata.get("description", ""), "sp_playlist_followers_count": followers_count, "sp_playlist_image_url": image_url, "sp_playlist_name": metadata.get("name", ""), "sp_playlist_owner": owner_data.get("name", "") or owner_data.get("username", ""), "sp_playlist_owner_uri": owner_uri, "sp_playlist_owner_url": spotify_convert_uri_to_url(owner_uri), "sp_playlist_revision_id": revision_id, "sp_playlist_tracks": filtered_tracks, "sp_playlist_tracks_count": tracks_count, "sp_playlist_tracks_count_before_filtering": tracks_count_before_filtering, "sp_playlist_url": playlist_url}
+    return {"sp_playlist_collaborative": collaborative, "sp_playlist_description": metadata.get("description", ""), "sp_playlist_followers_count": followers_count, "sp_playlist_image_url": image_url, "sp_playlist_name": metadata.get("name", ""), "sp_playlist_owner": owner_data.get("name", "") or owner_data.get("username", ""), "sp_playlist_owner_uri": owner_uri, "sp_playlist_owner_url": spotify_convert_uri_to_url(owner_uri), "sp_playlist_tracks": filtered_tracks, "sp_playlist_tracks_count": tracks_count, "sp_playlist_tracks_count_before_filtering": tracks_count_before_filtering, "sp_playlist_url": playlist_url}
 
 
 # Checks if a playlist has been completely removed and/or set as private
@@ -4724,11 +4741,13 @@ def get_playlist_details_for_notification(sp_accessToken, playlist_uri):
 def spotify_print_changed_followers_followings_playlists(username, f_list, f_list_old, f_count, f_old_count, f_str, f_str_by_or_from, f_added_str, f_added_csv, f_removed_str, f_removed_csv, f_file, csv_file_name, profile_notification, is_playlist, sp_accessToken=None):
     global GLITCH_CACHE
     global PLAYLIST_INFO_CACHE
+    global WEB_PLAYLIST_REVISION_CACHE
 
     if is_playlist:
         now = time.time()
         GLITCH_CACHE = {uri: ts for uri, ts in GLITCH_CACHE.items() if now - ts < SPOTIFY_CHECK_INTERVAL}
         PLAYLIST_INFO_CACHE = {uri: entry for uri, entry in PLAYLIST_INFO_CACHE.items() if now - entry.get("timestamp", 0) < PLAYLIST_INFO_CACHE_TTL}
+        WEB_PLAYLIST_REVISION_CACHE = {uri: entry for uri, entry in WEB_PLAYLIST_REVISION_CACHE.items() if now - entry.get("timestamp", 0) < PLAYLIST_INFO_CACHE_TTL}
 
     f_diff = f_count - f_old_count
 
