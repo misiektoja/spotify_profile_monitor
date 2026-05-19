@@ -21,6 +21,7 @@ class WebPlaylistBackendTests(unittest.TestCase):
         monitor.USER_AGENT = "Mozilla/5.0"
         monitor.SP_CACHED_PLAYLIST_QUERY_HASH = ""
         monitor.SP_WEB_PLAYLIST_BACKEND_PREFERRED = False
+        monitor.SP_WEB_PLAYLIST_API_FAILURES = 0
         monitor.WEB_PLAYLIST_REVISION_CACHE.clear()
 
     # Restores mutable backend state after each test
@@ -31,6 +32,7 @@ class WebPlaylistBackendTests(unittest.TestCase):
         monitor.USER_AGENT = self.original_user_agent
         monitor.SP_CACHED_PLAYLIST_QUERY_HASH = ""
         monitor.SP_WEB_PLAYLIST_BACKEND_PREFERRED = False
+        monitor.SP_WEB_PLAYLIST_API_FAILURES = 0
         monitor.WEB_PLAYLIST_REVISION_CACHE.clear()
 
     # Verifies the embedded v61 cipher generates the expected TOTP
@@ -166,6 +168,68 @@ class WebPlaylistBackendTests(unittest.TestCase):
         self.assertTrue(monitor.SP_WEB_PLAYLIST_BACKEND_PREFERRED)
         api_backend.assert_called_once()
         web_backend.assert_called_once()
+
+    # Switches to the web backend after a 404 Web API response, like the 403 path
+    def test_switches_to_web_backend_after_404(self):
+        monitor.SP_APP_CLIENT_ID = "restricted-client"
+        monitor.SP_APP_CLIENT_SECRET = "restricted-secret"
+        response = Mock(status_code=404)
+        api_error = requests.HTTPError("404 Not Found", response=response)
+        expected = {"sp_playlist_name": "Web"}
+
+        with patch.object(monitor, "_spotify_get_playlist_info_api", side_effect=api_error) as api_backend, patch.object(monitor, "spotify_get_playlist_info_web", return_value=expected) as web_backend:
+            result = monitor.spotify_get_playlist_info("restricted-token", "spotify:playlist:web123", True)
+
+        self.assertEqual(result, expected)
+        self.assertTrue(monitor.SP_WEB_PLAYLIST_BACKEND_PREFERRED)
+        api_backend.assert_called_once()
+        web_backend.assert_called_once()
+
+    # Latches the web backend only after repeated non-restricted legacy failures
+    def test_non_restricted_failures_latch_after_threshold(self):
+        monitor.SP_APP_CLIENT_ID = "legacy-client"
+        monitor.SP_APP_CLIENT_SECRET = "legacy-secret"
+        api_error = Exception("_spotify_get_playlist_info_api(): oauth_app token is missing")
+        expected = {"sp_playlist_name": "Web"}
+
+        with patch.object(monitor, "_spotify_get_playlist_info_api", side_effect=api_error) as api_backend, patch.object(monitor, "spotify_get_playlist_info_web", return_value=expected) as web_backend:
+            for _ in range(monitor.METADATA_API_FAILURE_LATCH_THRESHOLD - 1):
+                monitor.spotify_get_playlist_info("legacy-token", "spotify:playlist:web123", True)
+            self.assertFalse(monitor.SP_WEB_PLAYLIST_BACKEND_PREFERRED)
+            monitor.spotify_get_playlist_info("legacy-token", "spotify:playlist:web123", True)
+            self.assertTrue(monitor.SP_WEB_PLAYLIST_BACKEND_PREFERRED)
+
+        self.assertEqual(api_backend.call_count, monitor.METADATA_API_FAILURE_LATCH_THRESHOLD)
+        self.assertEqual(web_backend.call_count, monitor.METADATA_API_FAILURE_LATCH_THRESHOLD)
+
+    # Resets the consecutive-failure counter after a successful legacy request
+    def test_success_resets_failure_counter(self):
+        monitor.SP_APP_CLIENT_ID = "legacy-client"
+        monitor.SP_APP_CLIENT_SECRET = "legacy-secret"
+        expected = {"sp_playlist_name": "Legacy"}
+        side_effects = [Exception("network glitch"), expected, Exception("network glitch")]
+
+        with patch.object(monitor, "_spotify_get_playlist_info_api", side_effect=side_effects), patch.object(monitor, "spotify_get_playlist_info_web", return_value={"sp_playlist_name": "Web"}):
+            monitor.spotify_get_playlist_info("legacy-token", "spotify:playlist:web123", True)
+            monitor.spotify_get_playlist_info("legacy-token", "spotify:playlist:web123", True)
+            self.assertEqual(monitor.SP_WEB_PLAYLIST_API_FAILURES, 0)
+            monitor.spotify_get_playlist_info("legacy-token", "spotify:playlist:web123", True)
+
+        self.assertFalse(monitor.SP_WEB_PLAYLIST_BACKEND_PREFERRED)
+        self.assertEqual(monitor.SP_WEB_PLAYLIST_API_FAILURES, 1)
+
+    # Reports an actionable error instead of KeyError when the token response omits its expiry
+    def test_token_refresh_missing_expiry_is_actionable(self):
+        response = Mock(status_code=200)
+        response.raise_for_status.return_value = None
+        response.json.return_value = {"accessToken": "anonymous-token", "clientId": "web-client"}
+        session = Mock()
+        session.get.return_value = response
+        with patch.object(monitor.req, "Session", return_value=session), patch.object(monitor, "fetch_server_time", return_value=1700000000):
+            with self.assertRaises(Exception) as caught:
+                monitor.refresh_access_token_from_sp_dc("")
+        self.assertNotIsInstance(caught.exception, KeyError)
+        self.assertIn("missing expiry", str(caught.exception))
 
 
 if __name__ == "__main__":
