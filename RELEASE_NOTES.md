@@ -2,6 +2,34 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.5 (TBD)
+
+**Features and Improvements**:
+
+- **NEW:** Added an automatic public playlist backend for Spotify's restricted Development Mode apps
+- **NEW:** Added anonymous web-player token caching, dynamic persisted-query discovery and paginated playlist retrieval
+- **IMPROVE:** Preserved the legacy Web API path for existing app credentials and switched remaining requests automatically after a restricted response
+- **IMPROVE:** Added playlist revision caching to avoid downloading unchanged track lists
+- **IMPROVE:** Removed the OAuth app credential requirement from `cookie` and `client` modes
+- **IMPROVE:** Exposed the web player's unchanged v61 TOTP version and cipher bytes as the `TOTP_VERSION` and `TOTP_SECRET_CIPHER_BYTES` config options so a future rotation can be patched from the config file without a code release, while removing remote secret-dictionary fetching
+- **IMPROVE:** Validated the configured web-player TOTP parameters in `generate_totp` so a malformed override reports an actionable error
+- **IMPROVE:** Avoided the authenticated token validity probe for anonymous web-player tokens
+- **IMPROVE:** Made startup output distinguish direct web-player use from automatic legacy Web API fallback
+- **IMPROVE:** Fetched only playlist metadata from the web-player backend when track details are not needed, avoiding full track pagination for skipped playlists and matching the legacy path's raw total count
+- **IMPROVE:** Retried transient failures (HTTP 429 / 5xx) on the idempotent web-player GraphQL read requests through a dedicated adapter
+- **IMPROVE:** Bounded the web-player playlist revision cache with the same TTL-based eviction used by the playlist info cache to avoid unbounded memory growth in long-running processes
+
+**Bug fixes**:
+
+- **BUGFIX:** Restored public playlist metadata, track history and collaborator monitoring for newly created Spotify apps
+- **BUGFIX:** Added safe handling for web-player GraphQL validation errors and incomplete pagination responses
+- **BUGFIX:** Removed misleading secret-update requests after unrelated token failures
+- **BUGFIX:** Latched the web-player playlist backend immediately on an app-level HTTP 403 and otherwise only after repeated legacy Web API failures, so misconfigured OAuth app credentials no longer trigger a failed legacy request for every playlist lookup while a single restricted (404) playlist still falls back per-call without switching the whole backend
+- **BUGFIX:** Guarded a missing token expiry field in `refresh_access_token_from_sp_dc` so a malformed token response reports an actionable error instead of raising `KeyError`
+- **BUGFIX:** Prevented duplicate playlist track notifications after partial polling failures by advancing successful playlist baselines while retaining failed playlist baselines for retry
+- **BUGFIX:** Detected added and removed playlists when the total count stays unchanged, persisted the accepted membership and added accurate console and email wording
+- **BUGFIX:** Suppressed spurious track and collaborator change notifications when a playlist's data source switches between the legacy Web API and the web-player backend by re-baselining that cycle silently
+
 # Changes in 3.4.1 (09 Mar 2026)
 
 **Features and Improvements**:
