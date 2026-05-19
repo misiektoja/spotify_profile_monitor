@@ -12,6 +12,7 @@
 
 Powerful Spotify tool for real-time tracking of profile changes, playlist updates, follower growth, collaborators and more - delivered straight to your terminal or inbox.
 
+<a id="-quick-install"></a>
 ### 🚀 Quick Install
 ```sh
 pip install spotify_profile_monitor
