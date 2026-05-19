@@ -2845,58 +2845,65 @@ def spotify_get_playlist_info_web(playlist_uri, get_tracks):
         raise ValueError(f"Playlist's total tracks number is missing or malformed for {playlist_uri}")
 
     revision_id = metadata.get("revisionId", "")
-    cached_revision = WEB_PLAYLIST_REVISION_CACHE.get(playlist_uri, {})
-    if revision_id and cached_revision.get("revision_id") == revision_id and cached_revision.get("total_tracks") == total_tracks:
-        normalized_items = cached_revision.get("items", [])
-        debug_print(f"spotify_get_playlist_info_web(): using cached revision for uri={playlist_uri}, revision_id={revision_id}")
+
+    # Skip track pagination when the caller only needs playlist metadata (mirrors the legacy Web API path,
+    # which reports the raw total and no track list when get_tracks is False)
+    if get_tracks:
+        cached_revision = WEB_PLAYLIST_REVISION_CACHE.get(playlist_uri, {})
+        if revision_id and cached_revision.get("revision_id") == revision_id and cached_revision.get("total_tracks") == total_tracks:
+            normalized_items = cached_revision.get("items", [])
+            debug_print(f"spotify_get_playlist_info_web(): using cached revision for uri={playlist_uri}, revision_id={revision_id}")
+        else:
+            raw_items = []
+            offset = 0
+            while offset < total_tracks:
+                variables = {"includeEpisodeContentRatingsV2": False, "limit": WEB_PLAYLIST_PAGE_LIMIT, "offset": offset, "uri": playlist_uri}
+                page_data = spotify_web_playlist_query("fetchPlaylistContents", variables)
+                page_playlist = page_data.get("playlistV2")
+                if not isinstance(page_playlist, dict):
+                    raise PlaylistRestrictedError(f"Playlist contents are unavailable from the Spotify web-player service: {playlist_uri}")
+                page_content = page_playlist.get("content") or {}
+                page_items = page_content.get("items") if isinstance(page_content, dict) else None
+                if not isinstance(page_items, list) or not page_items:
+                    raise RuntimeError(f"Spotify web-player returned incomplete playlist contents for {playlist_uri} at offset {offset}")
+                page_total = page_content.get("totalCount") if isinstance(page_content, dict) else None
+                if page_total is not None:
+                    try:
+                        total_tracks = int(page_total)
+                    except (TypeError, ValueError):
+                        raise ValueError(f"Playlist's paginated total tracks number is malformed for {playlist_uri}")
+                raw_items.extend(page_items)
+                offset += len(page_items)
+
+            if len(raw_items) < total_tracks:
+                raise RuntimeError(f"Spotify web-player returned {len(raw_items)} of {total_tracks} playlist items for {playlist_uri}")
+
+            normalized_items = [spotify_normalize_web_playlist_item(item) for item in raw_items]
+            if revision_id:
+                WEB_PLAYLIST_REVISION_CACHE[playlist_uri] = {"items": normalized_items, "revision_id": revision_id, "total_tracks": total_tracks}
+
+        filtered_tracks = []
+        for item in normalized_items:
+            track_info = item.get("track") if isinstance(item, dict) else None
+            if not isinstance(track_info, dict):
+                continue
+            artists = track_info.get("artists") or []
+            artist_name = artists[0].get("name", "") if artists and isinstance(artists[0], dict) else ""
+            track_name = track_info.get("name", "")
+            if not artist_name or not track_name:
+                continue
+            duration_ms_value = track_info.get("duration_ms")
+            if duration_ms_value is None:
+                raise ValueError(f"Track '{track_name}' (URI: {track_info.get('uri', 'Unknown URI')}) in playlist {playlist_uri} has a missing or null duration (duration_ms)")
+            try:
+                duration_ms_int = int(duration_ms_value)
+            except (TypeError, ValueError):
+                raise ValueError(f"Track '{track_name}' (URI: {track_info.get('uri', 'Unknown URI')}) in playlist {playlist_uri} has an invalid, non-numeric duration_ms: '{duration_ms_value}'")
+            if duration_ms_int >= 1000:
+                filtered_tracks.append(item)
     else:
-        raw_items = []
-        offset = 0
-        while offset < total_tracks:
-            variables = {"includeEpisodeContentRatingsV2": False, "limit": WEB_PLAYLIST_PAGE_LIMIT, "offset": offset, "uri": playlist_uri}
-            page_data = spotify_web_playlist_query("fetchPlaylistContents", variables)
-            page_playlist = page_data.get("playlistV2")
-            if not isinstance(page_playlist, dict):
-                raise PlaylistRestrictedError(f"Playlist contents are unavailable from the Spotify web-player service: {playlist_uri}")
-            page_content = page_playlist.get("content") or {}
-            page_items = page_content.get("items") if isinstance(page_content, dict) else None
-            if not isinstance(page_items, list) or not page_items:
-                raise RuntimeError(f"Spotify web-player returned incomplete playlist contents for {playlist_uri} at offset {offset}")
-            page_total = page_content.get("totalCount") if isinstance(page_content, dict) else None
-            if page_total is not None:
-                try:
-                    total_tracks = int(page_total)
-                except (TypeError, ValueError):
-                    raise ValueError(f"Playlist's paginated total tracks number is malformed for {playlist_uri}")
-            raw_items.extend(page_items)
-            offset += len(page_items)
-
-        if len(raw_items) < total_tracks:
-            raise RuntimeError(f"Spotify web-player returned {len(raw_items)} of {total_tracks} playlist items for {playlist_uri}")
-
-        normalized_items = [spotify_normalize_web_playlist_item(item) for item in raw_items]
-        if revision_id:
-            WEB_PLAYLIST_REVISION_CACHE[playlist_uri] = {"items": normalized_items, "revision_id": revision_id, "total_tracks": total_tracks}
-
-    filtered_tracks = []
-    for item in normalized_items:
-        track_info = item.get("track") if isinstance(item, dict) else None
-        if not isinstance(track_info, dict):
-            continue
-        artists = track_info.get("artists") or []
-        artist_name = artists[0].get("name", "") if artists and isinstance(artists[0], dict) else ""
-        track_name = track_info.get("name", "")
-        if not artist_name or not track_name:
-            continue
-        duration_ms_value = track_info.get("duration_ms")
-        if duration_ms_value is None:
-            raise ValueError(f"Track '{track_name}' (URI: {track_info.get('uri', 'Unknown URI')}) in playlist {playlist_uri} has a missing or null duration (duration_ms)")
-        try:
-            duration_ms_int = int(duration_ms_value)
-        except (TypeError, ValueError):
-            raise ValueError(f"Track '{track_name}' (URI: {track_info.get('uri', 'Unknown URI')}) in playlist {playlist_uri} has an invalid, non-numeric duration_ms: '{duration_ms_value}'")
-        if duration_ms_int >= 1000:
-            filtered_tracks.append(item)
+        normalized_items = []
+        filtered_tracks = []
 
     owner_data = (metadata.get("ownerV2") or {}).get("data") or {}
     if not isinstance(owner_data, dict):
@@ -3248,9 +3255,19 @@ def _spotify_get_playlist_info_api(access_token, playlist_uri, get_tracks, oauth
 # Decides whether to latch the web-player backend after a legacy Web API failure
 def spotify_should_latch_web_backend(error, consecutive_failures):
     status_code = error.response.status_code if isinstance(error, req.HTTPError) and error.response is not None else None
-    if status_code in {403, 404}:
+    # A 403 signals an app-level restriction (the whole legacy path is unavailable) so latch immediately; an
+    # individual restricted playlist (404 / PlaylistRestrictedError) must not switch the backend for every
+    # playlist, so it only contributes to the consecutive-failure threshold below
+    if status_code == 403:
         return True
     return consecutive_failures >= METADATA_API_FAILURE_LATCH_THRESHOLD
+
+
+# Records which backend produced a playlist snapshot so change detection can ignore backend switches
+def spotify_tag_playlist_source(playlist_data, source):
+    if isinstance(playlist_data, dict):
+        playlist_data["sp_playlist_source"] = source
+    return playlist_data
 
 
 # Selects the legacy or web-player playlist backend and falls back automatically
@@ -3265,7 +3282,7 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks, oauth_app:
         try:
             result = _spotify_get_playlist_info_api(access_token, playlist_uri, get_tracks, oauth_app)
             SP_WEB_PLAYLIST_API_FAILURES = 0
-            return result
+            return spotify_tag_playlist_source(result, "api")
         except Exception as e:
             api_error = e
             SP_WEB_PLAYLIST_API_FAILURES += 1
@@ -3277,14 +3294,14 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks, oauth_app:
                 debug_print(f"spotify_get_playlist_info(): legacy Web API backend failed for uri={playlist_uri} (failures={SP_WEB_PLAYLIST_API_FAILURES}): {e}")
 
     try:
-        return spotify_get_playlist_info_web(playlist_uri, get_tracks)
+        return spotify_tag_playlist_source(spotify_get_playlist_info_web(playlist_uri, get_tracks), "web")
     except Exception as e:
         web_error = e
         debug_print(f"spotify_get_playlist_info(): web-player backend failed for uri={playlist_uri}: {e}")
 
     if api_available and (SP_WEB_PLAYLIST_BACKEND_PREFERRED or api_error is None):
         try:
-            return _spotify_get_playlist_info_api(access_token, playlist_uri, get_tracks, oauth_app)
+            return spotify_tag_playlist_source(_spotify_get_playlist_info_api(access_token, playlist_uri, get_tracks, oauth_app), "api")
         except Exception as e:
             api_error = e
             debug_print(f"spotify_get_playlist_info(): legacy Web API fallback failed for uri={playlist_uri}: {e}")
@@ -4204,6 +4221,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     p_owner = sp_playlist_data.get("sp_playlist_owner", "")
                     p_owner_uri = sp_playlist_data.get("sp_playlist_owner_uri", "")
                     p_owner_id = spotify_extract_id_or_name(p_owner_uri) if p_owner_uri else ""
+                    p_source = sp_playlist_data.get("sp_playlist_source", "")
 
                     p_tracks_list = sp_playlist_data.get("sp_playlist_tracks", None)
                     added_at_ts_lowest = 0
@@ -4306,9 +4324,9 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     })
 
                 if list_of_tracks and effective_get_tracks:
-                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "list_of_tracks": list_of_tracks, "collaborators_count": p_collaborators_count, "collaborators": user_id_name_mapping, "owner": p_owner, "owner_uri": p_owner_uri, "unknown_added_by_tracks": unknown_added_by_tracks, "restricted": restricted_playlist})
+                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "list_of_tracks": list_of_tracks, "collaborators_count": p_collaborators_count, "collaborators": user_id_name_mapping, "owner": p_owner, "owner_uri": p_owner_uri, "unknown_added_by_tracks": unknown_added_by_tracks, "restricted": restricted_playlist, "source": p_source})
                 else:
-                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "collaborators_count": p_collaborators_count, "collaborators": {}, "owner": p_owner, "owner_uri": p_owner_uri, "unknown_added_by_tracks": unknown_added_by_tracks, "restricted": restricted_playlist})
+                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "collaborators_count": p_collaborators_count, "collaborators": {}, "owner": p_owner, "owner_uri": p_owner_uri, "unknown_added_by_tracks": unknown_added_by_tracks, "restricted": restricted_playlist, "source": p_source})
 
                 # Final refresh after successful processing
                 if show_progress:
@@ -5934,6 +5952,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     p_collaborators_list = playlist.get("collaborators")
                     p_tracks_list = playlist.get("list_of_tracks")
                     p_restricted = bool(playlist.get("restricted", False))
+                    p_source = playlist.get("source", "")
                     for playlist_old in list_of_playlists_old:
                         if "uri" in playlist_old:
                             if playlist_old.get("uri") == p_uri:
@@ -5946,7 +5965,15 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                 p_collaborators_old = playlist_old.get("collaborators_count")
                                 p_collaborators_list_old = playlist_old.get("collaborators")
                                 p_restricted_old = bool(playlist_old.get("restricted", False))
+                                p_source_old = playlist_old.get("source", "")
                                 restricted_pair = p_restricted or p_restricted_old
+                                # When the backend that produced this snapshot differs from the previous one, the two
+                                # sources can legitimately disagree on the filtered track set (for example a different
+                                # market), so treat this cycle as a silent re-baseline and skip track/collaborator
+                                # change detection to avoid spurious notifications
+                                source_changed = bool(p_source) and bool(p_source_old) and p_source != p_source_old
+                                if source_changed:
+                                    debug_print(f"playlist diff: uri={p_uri} backend source changed ({p_source_old} -> {p_source}); re-baselining tracks/collaborators without notification")
 
                                 likes_display_old = p_likes_old if p_likes_old is not None else "n/a"
                                 likes_display_new = p_likes if p_likes is not None else "n/a"
@@ -6031,6 +6058,16 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                 stable_map = stable_entry.get("map") or {}
                                 current_ids = set((p_collaborators_list or {}).keys()) if isinstance(p_collaborators_list, dict) else set()
                                 suppress_collab_notification = False
+
+                                if source_changed and current_ids != stable_ids:
+                                    # Backend switched this cycle; adopt the new source's collaborators as the baseline
+                                    # instead of reporting a switch-induced difference as a real collaborator change
+                                    current_map = (p_collaborators_list or {}) if isinstance(p_collaborators_list, dict) else {}
+                                    stable_ids = current_ids
+                                    stable_map = current_map
+                                    COLLABORATORS_BASELINE_CACHE[p_uri] = {"ids": current_ids, "map": current_map}
+                                    COLLABORATORS_PENDING_CACHE.pop(p_uri, None)
+                                    suppress_collab_notification = True
 
                                 if current_ids != stable_ids:
                                     pending = COLLABORATORS_PENDING_CACHE.get(p_uri)
@@ -6162,8 +6199,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
 
-                                # Number of tracks changed
-                                if p_tracks != p_tracks_old or p_update != p_update_old:
+                                # Number of tracks changed (skipped on a backend switch to avoid switch-induced diffs)
+                                if not source_changed and (p_tracks != p_tracks_old or p_update != p_update_old):
                                     p_after_str = ""
                                     try:
 
