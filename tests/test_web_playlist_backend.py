@@ -140,6 +140,21 @@ class WebPlaylistBackendTests(unittest.TestCase):
         self.assertEqual(first_result["sp_playlist_tracks"], second_result["sp_playlist_tracks"])
         self.assertEqual(query.call_count, 3)
 
+    # Fetches metadata only and skips track pagination when get_tracks is False
+    def test_metadata_only_when_get_tracks_false(self):
+        playlist_uri = "spotify:playlist:meta123"
+        metadata = {"playlistV2": {"attributes": [], "content": {"totalCount": 42}, "description": "Description", "followers": 7, "images": {"items": [{"sources": [{"url": "https://image.test/cover.jpg"}]}]}, "name": "Playlist", "ownerV2": {"data": {"name": "Owner", "uri": "spotify:user:owner123", "username": "owner123"}}, "revisionId": "revision-1", "sharingInfo": {}}}
+
+        with patch.object(monitor, "spotify_web_playlist_query", side_effect=[metadata]) as query:
+            result = monitor.spotify_get_playlist_info_web(playlist_uri, False)
+
+        self.assertEqual(query.call_count, 1)
+        self.assertEqual(query.call_args_list[0].args[0], "fetchPlaylistMetadata")
+        self.assertEqual(result["sp_playlist_tracks_count"], 42)
+        self.assertEqual(result["sp_playlist_tracks_count_before_filtering"], 42)
+        self.assertEqual(result["sp_playlist_tracks"], [])
+        self.assertEqual(result["sp_playlist_name"], "Playlist")
+
     # Preserves the legacy Web API path when configured credentials still work
     def test_preserves_working_legacy_api_backend(self):
         monitor.SP_APP_CLIENT_ID = "legacy-client"
@@ -150,6 +165,7 @@ class WebPlaylistBackendTests(unittest.TestCase):
             result = monitor.spotify_get_playlist_info("legacy-token", "spotify:playlist:legacy123", True)
 
         self.assertEqual(result, expected)
+        self.assertEqual(result.get("sp_playlist_source"), "api")
         api_backend.assert_called_once()
         web_backend.assert_not_called()
 
@@ -165,25 +181,43 @@ class WebPlaylistBackendTests(unittest.TestCase):
             result = monitor.spotify_get_playlist_info("restricted-token", "spotify:playlist:web123", True)
 
         self.assertEqual(result, expected)
+        self.assertEqual(result.get("sp_playlist_source"), "web")
         self.assertTrue(monitor.SP_WEB_PLAYLIST_BACKEND_PREFERRED)
         api_backend.assert_called_once()
         web_backend.assert_called_once()
 
     # Switches to the web backend after a 404 Web API response, like the 403 path
-    def test_switches_to_web_backend_after_404(self):
-        monitor.SP_APP_CLIENT_ID = "restricted-client"
-        monitor.SP_APP_CLIENT_SECRET = "restricted-secret"
-        response = Mock(status_code=404)
-        api_error = requests.HTTPError("404 Not Found", response=response)
+    def test_restricted_404_falls_back_to_web_without_latching(self):
+        monitor.SP_APP_CLIENT_ID = "legacy-client"
+        monitor.SP_APP_CLIENT_SECRET = "legacy-secret"
+        api_error = monitor.PlaylistRestrictedError("404 Not Found for playlist endpoint")
         expected = {"sp_playlist_name": "Web"}
 
         with patch.object(monitor, "_spotify_get_playlist_info_api", side_effect=api_error) as api_backend, patch.object(monitor, "spotify_get_playlist_info_web", return_value=expected) as web_backend:
-            result = monitor.spotify_get_playlist_info("restricted-token", "spotify:playlist:web123", True)
+            result = monitor.spotify_get_playlist_info("legacy-token", "spotify:playlist:web123", True)
 
         self.assertEqual(result, expected)
-        self.assertTrue(monitor.SP_WEB_PLAYLIST_BACKEND_PREFERRED)
+        self.assertEqual(result.get("sp_playlist_source"), "web")
+        self.assertFalse(monitor.SP_WEB_PLAYLIST_BACKEND_PREFERRED)
         api_backend.assert_called_once()
         web_backend.assert_called_once()
+
+    # Latches the web backend only after repeated restricted 404 responses, not on the first one
+    def test_repeated_restricted_404_latches_after_threshold(self):
+        monitor.SP_APP_CLIENT_ID = "legacy-client"
+        monitor.SP_APP_CLIENT_SECRET = "legacy-secret"
+        api_error = monitor.PlaylistRestrictedError("404 Not Found for playlist endpoint")
+        expected = {"sp_playlist_name": "Web"}
+
+        with patch.object(monitor, "_spotify_get_playlist_info_api", side_effect=api_error) as api_backend, patch.object(monitor, "spotify_get_playlist_info_web", return_value=expected) as web_backend:
+            for _ in range(monitor.METADATA_API_FAILURE_LATCH_THRESHOLD - 1):
+                monitor.spotify_get_playlist_info("legacy-token", "spotify:playlist:web123", True)
+            self.assertFalse(monitor.SP_WEB_PLAYLIST_BACKEND_PREFERRED)
+            monitor.spotify_get_playlist_info("legacy-token", "spotify:playlist:web123", True)
+            self.assertTrue(monitor.SP_WEB_PLAYLIST_BACKEND_PREFERRED)
+
+        self.assertEqual(api_backend.call_count, monitor.METADATA_API_FAILURE_LATCH_THRESHOLD)
+        self.assertEqual(web_backend.call_count, monitor.METADATA_API_FAILURE_LATCH_THRESHOLD)
 
     # Latches the web backend only after repeated non-restricted legacy failures
     def test_non_restricted_failures_latch_after_threshold(self):
