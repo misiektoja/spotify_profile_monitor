@@ -4,31 +4,19 @@ This is a high-level summary of the most important changes.
 
 # Changes in 3.5 (TBD)
 
+Version **3.5** keeps public playlist monitoring working under Spotify's current API restrictions. It adds automatic fallback to Spotify web-player data, removes the extra OAuth app requirement for cookie and client users and improves playlist polling accuracy and efficiency.
+
 **Features and Improvements**:
 
-- **NEW:** Added an automatic public playlist backend for Spotify's restricted Development Mode apps
-- **NEW:** Added anonymous web-player token caching, dynamic persisted-query discovery and paginated playlist retrieval
-- **IMPROVE:** Preserved the legacy Web API path for existing app credentials and switched remaining requests automatically after a restricted response
-- **IMPROVE:** Added playlist revision caching to avoid downloading unchanged track lists
-- **IMPROVE:** Removed the OAuth app credential requirement from `cookie` and `client` modes
-- **IMPROVE:** Exposed the web player's unchanged v61 TOTP version and cipher bytes as the `TOTP_VERSION` and `TOTP_SECRET_CIPHER_BYTES` config options so a future rotation can be patched from the config file without a code release, while removing remote secret-dictionary fetching
-- **IMPROVE:** Validated the configured web-player TOTP parameters in `generate_totp` so a malformed override reports an actionable error
-- **IMPROVE:** Avoided the authenticated token validity probe for anonymous web-player tokens
-- **IMPROVE:** Made startup output distinguish direct web-player use from automatic legacy Web API fallback
-- **IMPROVE:** Fetched only playlist metadata from the web-player backend when track details are not needed, avoiding full track pagination for skipped playlists and matching the legacy path's raw total count
-- **IMPROVE:** Retried transient failures (HTTP 429 / 5xx) on the idempotent web-player GraphQL read requests through a dedicated adapter
-- **IMPROVE:** Bounded the web-player playlist revision cache with the same TTL-based eviction used by the playlist info cache to avoid unbounded memory growth in long-running processes
+- **NEW:** Added an **automatic public web-player playlist backend** for Spotify's restricted Development Mode apps. It restores public playlist details, track history and collaborator monitoring without relying on blocked legacy Web API endpoints. Large playlists are loaded across all pages and the tool automatically refreshes temporary tokens, adapts to Spotify query changes and retries brief Spotify service failures
+- **IMPROVE:** Made **Spotify OAuth app credentials optional** alongside cookie and client modes. Existing complete `SP_APP_CLIENT_ID` and `SP_APP_CLIENT_SECRET` configurations remain supported and are tried first, then public playlist requests switch automatically to the web-player backend if the legacy API is restricted. Startup output now shows which playlist backend will be used. Note: This OAuth change does **not** replace the other authentication modes. Standalone `oauth_app` remains a legacy option that works only with an existing compatible app, while `oauth_user` setup and its own app credentials remain unchanged
+- **CONFIG CHANGE:** Changed **TOTP secret handling** for cookie mode. Version 3.5 embeds the current v61 cipher and no longer downloads a third-party secret dictionary. Existing configs keep working with the built-in default, but `SECRET_CIPHER_DICT`, `SECRET_CIPHER_DICT_URL` and `TOTP_VER` no longer control token generation. Future overrides use `TOTP_VERSION` and `TOTP_SECRET_CIPHER_BYTES`, which are validated before use and can be updated from values produced by `spotify_monitor_secret_grabber`
+- **IMPROVE:** Made **large and unchanged playlists faster to process**. Playlist revisions are cached so unchanged track lists are not downloaded again, metadata-only checks skip unnecessary track pages and caches remain bounded during long-running monitoring
 
 **Bug fixes**:
 
-- **BUGFIX:** Restored public playlist metadata, track history and collaborator monitoring for newly created Spotify apps
-- **BUGFIX:** Added safe handling for web-player GraphQL validation errors and incomplete pagination responses
-- **BUGFIX:** Removed misleading secret-update requests after unrelated token failures
-- **BUGFIX:** Latched the web-player playlist backend immediately on an app-level HTTP 403 and otherwise only after repeated legacy Web API failures, so misconfigured OAuth app credentials no longer trigger a failed legacy request for every playlist lookup while a single restricted (404) playlist still falls back per-call without switching the whole backend
-- **BUGFIX:** Guarded a missing token expiry field in `refresh_access_token_from_sp_dc` so a malformed token response reports an actionable error instead of raising `KeyError`
-- **BUGFIX:** Prevented duplicate playlist track notifications after partial polling failures by advancing successful playlist baselines while retaining failed playlist baselines for retry
-- **BUGFIX:** Detected added and removed playlists when the total count stays unchanged, persisted the accepted membership and added accurate console and email wording
-- **BUGFIX:** Suppressed spurious track and collaborator change notifications when a playlist's data source switches between the legacy Web API and the web-player backend by re-baselining that cycle silently
+- **BUGFIX:** Correctly detects **added and removed playlists even when the total count stays unchanged**, with accurate console and email messages
+- **BUGFIX:** Prevents **duplicate track notifications after a partial polling failure**. Successful playlists now advance normally while only failed playlists remain pending for another check
 
 # Changes in 3.4.1 (09 Mar 2026)
 
