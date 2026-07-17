@@ -40,25 +40,25 @@ TOKEN_SOURCE = "cookie"
 # The section below is used when the token source is set to 'cookie'
 # (to configure the alternative 'oauth_app', 'oauth_user' or 'client' methods, see the section at the end of this config block)
 #
-# - Log in to Spotify web client (https://open.spotify.com/) and retrieve your sp_dc cookie
-#   (use your web browser's dev console or "Cookie-Editor" by cgagnier to extract it easily: https://cookie-editor.com/)
+# - Log in to Spotify Web Player and follow the manual cookie extraction guide:
+#   https://github.com/misiektoja/spotify_profile_monitor#manual-cookie-extraction
 # - Provide the SP_DC_COOKIE secret using one of the following methods:
-#   - Pass it at runtime with -u / --spotify-dc-cookie
-#   - Set it as an environment variable (e.g. export SP_DC_COOKIE=...)
-#   - Add it to ".env" file (SP_DC_COOKIE=...) for persistent use
-#   - Fallback: hard-code it in the code or config file
+#   - Add it to a ".env" file for persistent use (recommended)
+#   - Set it as an environment variable (for example export SP_DC_COOKIE=...)
+#   - Pass it at runtime with -u / --spotify-dc-cookie (not recommended because command-line secrets may be exposed)
+#   - Fallback: hard-code it in the code or config file (not recommended)
 SP_DC_COOKIE = "your_sp_dc_cookie_value"
 
 # ---------------------------------------------------------------------
 
-# The section below is used when the token source is set to 'oauth_app' (Client Credentials OAuth Flow)
-# It can also provide a legacy playlist fallback in 'cookie' and 'client' modes
+# The optional section below enables the legacy Client Credentials OAuth path
+# Do not create a new Spotify app only for this tool because new apps normally lack the required legacy endpoint access
+# Configure these values only for an existing app that you have verified still supports the legacy endpoints
+# Restricted or incomplete apps fall back automatically to the Spotify web-player backend for public playlists
 #
-# To obtain the credentials:
+# To use a working existing app:
 #   - Log in to Spotify Developer dashboard: https://developer.spotify.com/dashboard
-#   - Create a new app
-#   - For 'Redirect URL', use: http://127.0.0.1:1234
-#   - Select 'Web API' as the intended API
+#   - Open the existing app with verified legacy endpoint access
 #   - Copy the 'Client ID' and 'Client Secret'
 #
 # Provide the SP_APP_CLIENT_ID and SP_APP_CLIENT_SECRET secrets using one of the following methods:
@@ -67,7 +67,7 @@ SP_DC_COOKIE = "your_sp_dc_cookie_value"
 #   - Add it to ".env" file (SP_APP_CLIENT_ID=... and SP_APP_CLIENT_SECRET=...) for persistent use
 #   - Fallback: hard-code it in the code or config file
 #
-# The tool automatically refreshes the access token, so it remains valid indefinitely
+# The tool automatically refreshes and caches the OAuth app access token when these credentials are configured
 SP_APP_CLIENT_ID = "your_spotify_app_client_id"
 SP_APP_CLIENT_SECRET = "your_spotify_app_client_secret"
 
