@@ -66,10 +66,12 @@ pip install spotify_profile_monitor
    * [Manual Installation](#manual-installation)
    * [Upgrading](#upgrading)
 3. [Quick Start](#quick-start)
+   * [Before You Start](#before-you-start)
 4. [Configuration](#configuration)
    * [Configuration File](#configuration-file)
    * [Spotify access token source](#spotify-access-token-source)
       * [Spotify sp_dc Cookie](#spotify-sp_dc-cookie)
+         * [Manual Cookie Extraction](#manual-cookie-extraction)
       * [Spotify Desktop Client](#spotify-desktop-client)
       * [Spotify OAuth App](#spotify-oauth-app)
       * [Spotify OAuth User](#spotify-oauth-user)
@@ -152,16 +154,32 @@ If you installed manually, download the newest *[spotify_profile_monitor.py](htt
 <a id="quick-start"></a>
 ## Quick Start
 
-- Grab your [Spotify sp_dc cookie](#spotify-sp_dc-cookie) and track the `spotify_user_uri_id` profile changes including playlists:
+<a id="before-you-start"></a>
+### Before you start
+
+You need two values:
+
+1. The raw Spotify user ID for the person you want to monitor. Follow the [user ID instructions](#how-to-get-a-friends-user-uri-id) to copy a profile link. Use the part after `/user/` and before `?` if the link contains one.
+2. The `sp_dc` login cookie from the Spotify account used for monitoring. Follow the [manual cookie extraction steps](#manual-cookie-extraction) and treat this value like a password.
+
+Create a plain text file named `.env` in the directory where you will run Spotify Profile Monitor. Add your cookie to it:
+
+```ini
+SP_DC_COOKIE="your_sp_dc_cookie_value"
+```
+
+Do not share this file or commit it to a repository.
+
+Start monitoring profile and playlist changes:
 
 ```sh
-spotify_profile_monitor <spotify_user_uri_id> -u "your_sp_dc_cookie_value"
+spotify_profile_monitor <spotify_user_uri_id>
 ```
 
 Or if you installed [manually](#manual-installation):
 
 ```sh
-python3 spotify_profile_monitor.py <spotify_user_uri_id> -u "your_sp_dc_cookie_value"
+python3 spotify_profile_monitor.py <spotify_user_uri_id>
 ```
 
 To get the list of all supported command-line arguments / flags:
@@ -255,9 +273,9 @@ The following features are **not** supported when monitoring **another user** in
 - showing other users' playlists added to user profile (unless the user is a collaborator on a playlist owned by other user)
 - searching for Spotify users by name
 
-> ⚠️ **Breaking Change (February 11, 2026)**: Spotify is removing the `GET /users/{id}` endpoint. Using `oauth_user` to monitor **other users** will no longer work after this date. **Self-monitoring** remains fully functional. For monitoring others, use the `cookie` or `client` method instead.
+> **Current limitation:** Spotify removed the `GET /users/{id}` endpoint on February 11, 2026. `oauth_user` can no longer monitor other users. Self-monitoring still works. For monitoring others, use the `cookie` or `client` method.
 
-> ⚠️ **Premium Required (March 9, 2026)**: Starting March 9, 2026, `oauth_user` mode will require the authorized user to have a Spotify Premium account.
+> **Premium required:** Since March 9, 2026, `oauth_user` requires the authorized user to have a Spotify Premium account.
 
 If no method is specified, the tool defaults to the `cookie` method.
 
@@ -268,16 +286,28 @@ If no method is specified, the tool defaults to the `cookie` method.
 
 This is the default method used to obtain a Spotify access token.
 
-- Log in to [https://open.spotify.com/](https://open.spotify.com/) in your web browser.
+<a id="manual-cookie-extraction"></a>
+##### Manual cookie extraction
 
-- Locate and copy the value of the `sp_dc` cookie.
-   - Use your web browser's dev console or **Cookie-Editor** by cgagnier to extract it easily: [https://cookie-editor.com/](https://cookie-editor.com/)
+Treat `sp_dc` like a password. Anyone who has it may be able to use your Spotify login session.
 
-- Provide the `SP_DC_COOKIE` secret using one of the following methods:
-   - Pass it at runtime with `-u` / `--spotify-dc-cookie`
-   - Set it as an [environment variable](#storing-secrets) (e.g. `export SP_DC_COOKIE=...`)
-   - Add it to [.env file](#storing-secrets) (`SP_DC_COOKIE=...`) for persistent use
-   - Fallback: hard-code it in the code or config file
+Follow these steps:
+
+1. Open [Spotify Web Player](https://open.spotify.com/) and sign in to the Spotify account you want to use for monitoring.
+2. Open your browser's developer tools. Press `F12` or `Ctrl+Shift+I` on Windows and Linux. Press `Command+Option+I` on macOS.
+3. In Firefox, open **Storage** > **Cookies** > `https://open.spotify.com`.
+4. In Chrome, Brave or Chromium, open **Application** > **Storage** > **Cookies** > `https://open.spotify.com`.
+5. Find the cookie named `sp_dc` and copy only its **Value**. Do not copy the cookie name or the complete table row.
+6. Save it as `SP_DC_COOKIE` in `.env` as shown in [Quick Start](#quick-start).
+
+As an alternative, [Cookie-Editor by cgagnier](https://cookie-editor.com/) can display the `sp_dc` value. Only use a browser extension that you trust because browser extensions can access sensitive login cookies.
+
+You can provide `SP_DC_COOKIE` in these ways:
+
+* Add `SP_DC_COOKIE="your_sp_dc_cookie_value"` to a [dotenv file](#storing-secrets) for persistent use. This is recommended.
+* Set it as an [environment variable](#storing-secrets), for example `export SP_DC_COOKIE="your_sp_dc_cookie_value"`.
+* Pass it for one run with `-u` or `--spotify-dc-cookie`. This is not recommended because the value may appear in shell history or process listings.
+* Store it in the configuration file or source code as a last resort. This is not recommended because it is easier to expose or commit accidentally.
 
 If your `sp_dc` cookie expires, the tool will notify you via the console and email. In that case, you'll need to grab the new `sp_dc` cookie value.
 
@@ -499,7 +529,7 @@ export SMTP_PASSWORD="your_smtp_password"
 
 On **Windows Command Prompt** use `set` instead of `export` and on **Windows PowerShell** use `$env`.
 
-Alternatively store them persistently in a dotenv file (recommended):
+Alternatively store them persistently in a dotenv file (recommended). Create a plain text file named `.env` in the directory where you run Spotify Profile Monitor then add only the values you use:
 
 ```ini
 SP_DC_COOKIE="your_sp_dc_cookie_value"
@@ -916,7 +946,12 @@ You should get a valid Spotify access token, example output:
    <img src="https://raw.githubusercontent.com/misiektoja/spotify_monitor/refs/heads/main/assets/spotify_monitor_totp_test.png" alt="spotify_monitor_totp_test" width="100%"/>
 </p>
 
-> **NOTE:** Spotify still requires TOTP but continues to select v61. You can run [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) to extract the current bundle values or use the `--fetch-secrets` and `--download-secrets` options provided by `spotify_monitor_totp_test`.
+> **NOTE:** Spotify still requires TOTP but continues to select v61. If the embedded values stop working, `spotify_monitor_totp_test` offers two recovery methods. `--fetch-secrets` launches a headless browser and extracts current values from Spotify Web Player. It requires Playwright plus its browser files. `--download-secrets` reads `SECRET_CIPHER_DICT_URL`, which may point to a remote URL or a local `file:` URL. The default remote source is [xyloflake/spot-secrets-go](https://github.com/xyloflake/spot-secrets-go). These options affect only the test utility during that run. Spotify Profile Monitor v3.5 uses `TOTP_VERSION` and `TOTP_SECRET_CIPHER_BYTES` instead.
+
+```sh
+python3 spotify_monitor_totp_test.py --sp-dc "your_sp_dc_cookie_value" --fetch-secrets
+python3 spotify_monitor_totp_test.py --sp-dc "your_sp_dc_cookie_value" --download-secrets
+```
 
 <a id="secret-key-extraction-from-spotify-web-player-bundles"></a>
 ### Secret Key Extraction from Spotify Web Player Bundles
