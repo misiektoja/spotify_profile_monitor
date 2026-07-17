@@ -58,6 +58,20 @@ class WebPlaylistBackendTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 monitor.generate_totp()
 
+    # Verifies generated config discourages new apps only in the optional legacy OAuth section
+    def test_generated_config_discourages_new_legacy_oauth_app(self):
+        oauth_app_section = monitor.CONFIG_BLOCK.split("# The optional section below enables the legacy Client Credentials OAuth path", 1)[1].split("# SMTP settings", 1)[0]
+        self.assertIn("Do not create a new Spotify app only for this tool", oauth_app_section)
+        self.assertNotIn("Create a new app", oauth_app_section)
+        self.assertIn("#   - Create a new app", monitor.CONFIG_BLOCK.split("# The section below is used when the token source is set to 'oauth_user'", 1)[1])
+
+    # Verifies generated config recommends private dotenv storage for the cookie
+    def test_generated_config_recommends_safe_cookie_storage(self):
+        cookie_section = monitor.CONFIG_BLOCK.split("# The section below is used when the token source is set to 'cookie'", 1)[1].split("# The optional section below enables the legacy Client Credentials OAuth path", 1)[0]
+        self.assertIn("#manual-cookie-extraction", cookie_section)
+        self.assertIn('Add it to a ".env" file for persistent use (recommended)', cookie_section)
+        self.assertIn("command-line secrets may be exposed", cookie_section)
+
     # Verifies anonymous token retrieval skips the authenticated validity probe
     def test_anonymous_token_skips_authenticated_validity_probe(self):
         response = Mock(status_code=200)
