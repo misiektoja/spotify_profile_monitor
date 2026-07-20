@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 3.5 (TBD)
+# Changes in 3.5 (21 Jul 2026)
 
 Version **3.5** keeps public playlist monitoring working under Spotify's current API restrictions. It adds automatic fallback to Spotify web-player data, removes the extra OAuth app requirement for cookie and client users and improves playlist polling accuracy and efficiency.
 
