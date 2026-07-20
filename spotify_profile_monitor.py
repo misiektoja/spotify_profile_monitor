@@ -210,7 +210,7 @@ FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER = 3
 COLLABORATORS_CHANGE_COUNTER = 2
 
 # To avoid multiple errors at same time during networking issues when communicating with Spotify,
-# enabling this will eliminate showing multiple errors at a time, replacing 
+# enabling this will eliminate showing multiple errors at a time, replacing
 # that output with "(Masking additional errors)"
 HIDE_DUPLICATE_NETWORK_ERRORS = False
 
