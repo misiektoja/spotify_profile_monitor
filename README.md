@@ -517,7 +517,7 @@ spotify_profile_monitor --send-test-email
 
 Spotify Profile Monitor can send profile, follower and error alerts through Discord or the native [ntfy publish API](https://docs.ntfy.sh/publish/). Webhook delivery works with or without email.
 
-`WEBHOOK_PROVIDER` selects the request format. It defaults to `"discord"`. Use `--webhook-provider discord` or `--webhook-provider ntfy` for a one-run override.
+`WEBHOOK_PROVIDER` selects the request format. It defaults to `"discord"`. Standard Discord and public `ntfy.sh` URLs automatically select the matching format if this configured value is stale. Self-hosted ntfy and compatible endpoints still use the configured provider. Use `--webhook-provider discord` or `--webhook-provider ntfy` for an explicit one-run override.
 
 #### Discord
 
@@ -532,7 +532,7 @@ To create a private Discord webhook URL:
 spotify_profile_monitor --set-webhook-url
 ```
 
-The command saves `WEBHOOK_URL` in `.env` without putting the private value in shell history. Treat this URL like a password because anyone who has it can post through it.
+The command saves only `WEBHOOK_URL` in `.env` without putting the private value in shell history. Treat this URL like a password because anyone who has it can post through it.
 
 Keep the default request format in `spotify_profile_monitor.conf`:
 
@@ -542,7 +542,7 @@ WEBHOOK_PROVIDER = "discord"
 
 #### ntfy
 
-Choose a hard-to-guess topic and set the provider to `"ntfy"`:
+Choose a hard-to-guess topic. Public `ntfy.sh` URLs are recognized automatically. Set the provider to `"ntfy"` for a self-hosted ntfy server:
 
 ```ini
 WEBHOOK_PROVIDER = "ntfy"
@@ -906,7 +906,7 @@ You can also enable profile webhooks for one run:
 spotify_profile_monitor <spotify_user_uri_id> --webhook-profile
 ```
 
-Use `--webhook` or `--no-webhook` to turn all configured webhook alerts on or off for one run. Use `--webhook-provider {discord,ntfy}` to override the configured request format.
+Use `--webhook` or `--no-webhook` to turn all configured webhook alerts on or off for one run. Standard Discord and public `ntfy.sh` URLs automatically correct a stale configured provider. Use `--webhook-provider {discord,ntfy}` as an explicit override for self-hosted ntfy or compatible endpoints.
 
 The recommended way to save the private destination is `--set-webhook-url`. Use `--webhook-url URL` only when shell history or process visibility is acceptable. See [Webhook Settings](#webhook-settings) for Discord setup, ntfy artwork and advanced payload customization.
 
