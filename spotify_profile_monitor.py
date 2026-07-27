@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.5
+v3.6
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -18,9 +18,10 @@ python-dotenv (optional)
 spotipy
 wcwidth (optional, needed by TRUNCATE_CHARS feature)
 pathvalidate (optional, needed by --export-all-playlists)
+Pillow (needed for ntfy artwork attachments)
 """
 
-VERSION = "3.5"
+VERSION = "3.6"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -105,6 +106,92 @@ FOLLOWERS_FOLLOWINGS_NOTIFICATION = True
 # Whether to send an email on errors
 # Can also be disabled via the -e flag
 ERROR_NOTIFICATION = True
+
+# ----------------------------
+# Webhook Notifications
+# ----------------------------
+
+# Master switch for webhook notifications through Discord or ntfy
+# Event settings below select which notifications are sent
+# Can also be enabled via the --webhook flag
+WEBHOOK_ENABLED = False
+
+# Service used to deliver webhook notifications: "discord" or "ntfy"
+# Can also be set via the --webhook-provider flag
+WEBHOOK_PROVIDER = "discord"
+
+# Private destination used to send webhook notifications
+# Discord: Edit Channel -> Integrations -> Webhooks -> New Webhook -> Copy Webhook URL
+# ntfy: complete topic URL such as https://ntfy.sh/your-private-topic
+# Prefer --set-webhook-url, an environment variable or a dotenv file instead of storing this private URL here
+# The --webhook-url flag is available for one-run overrides but may leave the private URL in shell history
+WEBHOOK_URL = "your_webhook_url"
+
+# Discord display name (leave empty to use the webhook default)
+WEBHOOK_USERNAME = "Spotify Profile Monitor"
+
+# Discord avatar URL (leave empty to use the webhook default)
+WEBHOOK_AVATAR_URL = ""
+
+# Whether to send a webhook notification when the user's profile changes
+# Can also be enabled via the --webhook-profile flag
+WEBHOOK_PROFILE_NOTIFICATION = False
+
+# Whether to send webhook notifications when followers or followings change
+# Only applies if WEBHOOK_PROFILE_NOTIFICATION / --webhook-profile is enabled
+# Can also be disabled via the --no-webhook-followers-followings-notify flag
+WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION = True
+
+# Whether to send a webhook notification on monitoring errors
+# Can also be enabled via --webhook-errors or disabled via --no-webhook-error-notify
+WEBHOOK_ERROR_NOTIFICATION = True
+
+# Optional request headers for advanced webhook integrations
+# Values support the same placeholders as WEBHOOK_TEMPLATE
+WEBHOOK_HEADERS = {}
+
+# ----------------------------
+# Advanced Webhook Settings
+# ----------------------------
+
+# Discord-format webhook request payload template
+# Supported placeholders include title, description, version, image_url, fields, fields_str, color, timestamp,
+# username and avatar_url
+WEBHOOK_TEMPLATE = {
+    "username": "{username}",
+    "avatar_url": "{avatar_url}",
+    "allowed_mentions": {
+        "parse": [],
+    },
+    "embeds": [{
+        "title": "{title}",
+        "description": "{description}",
+        "color": "{color}",
+        "footer": {
+            "text": "Spotify Profile Monitor v{version}",
+        },
+        "timestamp": "{timestamp}",
+    }],
+}
+
+# Optional transformations applied to WEBHOOK_TEMPLATE and WEBHOOK_HEADERS values
+# Tuple format: (field_to_target, method_name, *optional_arguments)
+#
+# Examples:
+#   [
+#       ("title", "upper"),
+#       ("description", "replace", "**", ""),
+#       ("description", "strip"),
+#   ]
+WEBHOOK_TRANSFORMS = []
+
+# Optional ntfy access token for Bearer authentication
+# Prefer an environment variable or dotenv file instead of storing this token here
+NTFY_ACCESS_TOKEN = ""
+
+# Whether to attach profile or playlist artwork to supported ntfy alerts
+# Image preparation or delivery failures fall back to text
+NTFY_IMAGES = True
 
 # How often to check for user profile changes; in seconds
 # Can also be set using the -c flag
@@ -564,6 +651,19 @@ RECEIVER_EMAIL = ""
 PROFILE_NOTIFICATION = False
 FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
 ERROR_NOTIFICATION = False
+WEBHOOK_ENABLED = False
+WEBHOOK_URL = ""
+WEBHOOK_PROVIDER = ""
+WEBHOOK_USERNAME = ""
+WEBHOOK_AVATAR_URL = ""
+WEBHOOK_HEADERS = {}
+WEBHOOK_TEMPLATE = {}
+WEBHOOK_TRANSFORMS = []
+NTFY_ACCESS_TOKEN = ""
+NTFY_IMAGES = False
+WEBHOOK_PROFILE_NOTIFICATION = False
+WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
+WEBHOOK_ERROR_NOTIFICATION = False
 SPOTIFY_CHECK_INTERVAL = 0
 SPOTIFY_ERROR_INTERVAL = 0
 LOCAL_TIMEZONE = ""
@@ -622,7 +722,7 @@ exec(CONFIG_BLOCK, globals())
 DEFAULT_CONFIG_FILENAME = "spotify_profile_monitor.conf"
 
 # List of secret keys to load from env/config
-SECRET_KEYS = ("SP_DC_COOKIE", "SP_APP_CLIENT_ID", "SP_APP_CLIENT_SECRET", "SP_USER_CLIENT_ID", "SP_USER_CLIENT_SECRET", "REFRESH_TOKEN", "SP_SHA256", "SMTP_PASSWORD")
+SECRET_KEYS = ("SP_DC_COOKIE", "SP_APP_CLIENT_ID", "SP_APP_CLIENT_SECRET", "SP_USER_CLIENT_ID", "SP_USER_CLIENT_SECRET", "REFRESH_TOKEN", "SP_SHA256", "SMTP_PASSWORD", "WEBHOOK_URL", "NTFY_ACCESS_TOKEN")
 
 # Strings removed from track names for generating proper Genius search URLs
 re_search_str = r'remaster|extended|original mix|remix|original soundtrack|radio( |-)edit|\(feat\.|( \(.*version\))|( - .*version)'
@@ -734,6 +834,7 @@ from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
 import argparse
 import csv
+import getpass
 try:
     import pytz
 except ModuleNotFoundError:
@@ -744,7 +845,7 @@ except ImportError:
     get_localzone = None
 import platform
 import html
-from urllib.parse import quote_plus, quote, urljoin, urlparse
+from urllib.parse import quote_plus, quote, urljoin, urlparse, urlsplit
 import re
 import ipaddress
 from itertools import zip_longest
@@ -752,11 +853,14 @@ from html import escape
 import subprocess
 import base64
 import random
+import shlex
+import tempfile
 from collections import Counter
 from email.utils import parsedate_to_datetime
+from io import BytesIO
 from pathlib import Path
 import secrets
-from typing import Optional
+from typing import Any, Callable, List, Optional, Sequence, Tuple, cast
 from email.utils import parsedate_to_datetime
 
 import urllib3
@@ -764,12 +868,35 @@ if not VERIFY_SSL:
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 SESSION = req.Session()
+WEBHOOK_SESSION = req.Session()
 
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 # Cap server-provided Retry-After to avoid long blocking sleeps on 429 responses
 MAX_RETRY_AFTER_SECONDS = 60
+
+# Keep webhook delivery independent from Spotify API retries and long server timers
+WEBHOOK_MAX_ATTEMPTS = 2
+WEBHOOK_MAX_RETRY_AFTER_SECONDS = 5.0
+WEBHOOK_FALLBACK_RETRY_SECONDS = 1.0
+WEBHOOK_TIMEOUT_SECONDS = 10
+WEBHOOK_EMBED_TITLE_LIMIT = 256
+WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
+NTFY_MESSAGE_LIMIT_BYTES = 4096
+NTFY_IMAGE_DOWNLOAD_LIMIT_BYTES = 5 * 1024 * 1024
+NTFY_IMAGE_DOWNLOAD_CHUNK_BYTES = 64 * 1024
+NTFY_IMAGE_PIXEL_LIMIT = 25_000_000
+NTFY_IMAGE_FILENAME = "spotify-profile.jpg"
+NTFY_IMAGE_ALLOWED_HOST_SUFFIXES = ("scdn.co", "spotifycdn.com")
+
+PILImage: Any = None
+try:
+    from PIL import Image as PILImageModule
+    PILImage = PILImageModule
+except ImportError:
+    pass
+NTFY_IMAGES_AVAILABLE = PILImage is not None
 
 
 class CappedRetry(Retry):
@@ -950,6 +1077,45 @@ def sanitize_debug_headers(headers):
         else:
             out[k] = v
     return out
+
+
+# Returns all complete secret values currently known to the process
+def known_secret_values(extra_values: Sequence[Any] = ()) -> List[str]:
+    values = []
+    for key in SECRET_KEYS:
+        value = globals().get(key)
+        if isinstance(value, str) and value and not value.startswith("your_"):
+            values.append(value)
+    webhook_headers = globals().get("WEBHOOK_HEADERS")
+    if isinstance(webhook_headers, dict):
+        for key, value in webhook_headers.items():
+            if isinstance(key, str) and key.casefold() == "authorization" and isinstance(value, str) and value:
+                values.append(value)
+    for key in ("SP_CACHED_ACCESS_TOKEN", "SP_CACHED_REFRESH_TOKEN", "SP_CACHED_CLIENT_TOKEN", "SP_CACHED_OAUTH_APP_TOKEN", "SP_CACHED_WEB_ACCESS_TOKEN"):
+        value = globals().get(key)
+        if isinstance(value, str) and value:
+            values.append(value)
+    for value in extra_values:
+        if isinstance(value, str) and value:
+            values.append(value)
+    return sorted(set(values), key=len, reverse=True)
+
+
+# Redacts credentials and serialized secret fields from arbitrary error text
+def sanitize_error_text(value: Any, extra_secrets: Sequence[Any] = ()) -> str:
+    text = str(value or "")
+    for secret in known_secret_values(extra_secrets):
+        text = text.replace(secret, "<redacted>")
+    patterns = (
+        (r"(?m)(\b(?:SP_DC_COOKIE|REFRESH_TOKEN|SP_APP_CLIENT_ID|SP_APP_CLIENT_SECRET|SP_USER_CLIENT_ID|SP_USER_CLIENT_SECRET|SP_SHA256|SMTP_PASSWORD|WEBHOOK_URL|NTFY_ACCESS_TOKEN)\b\s*=\s*).*$", r"\1<redacted>"),
+        (r"(?i)(authorization['\"]?\s*[:=]\s*['\"]?bearer\s+)[^\s,;'\"}]+", r"\1<redacted>"),
+        (r"(?i)(cookie\s*[:=][^\r\n]*?sp_dc\s*=\s*)[^\s;,;'\"}]+", r"\1<redacted>"),
+        (r"(?i)(\bsp_dc\s*=\s*)[^\s;,;'\"}]+", r"\1<redacted>"),
+        (r"(?i)(['\"]?(?:access_token|refresh_token|client-token|client_token|smtp_password|webhook_url|ntfy_access_token)['\"]?\s*[:=]\s*['\"]?)[^\s,;'\"}]+", r"\1<redacted>"),
+    )
+    for pattern, replacement in patterns:
+        text = re.sub(pattern, replacement, text)
+    return text
 
 
 # Converts absolute value of seconds to human readable format
@@ -1135,6 +1301,400 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
         print(f"Error sending email: {e}")
         return 1
     return 0
+
+
+# Returns whether a webhook URL is a complete private HTTPS link
+def validate_webhook_url(url: Any = None) -> bool:
+    selected_url = WEBHOOK_URL if url is None else url
+    if not isinstance(selected_url, str) or not selected_url.strip():
+        return False
+    try:
+        parsed = urlsplit(selected_url.strip())
+    except ValueError:
+        return False
+    return parsed.scheme.casefold() == "https" and bool(parsed.hostname) and not parsed.username and not parsed.password and bool(parsed.path.strip("/"))
+
+
+# Returns the normalized configured webhook provider or an empty string when unsupported
+def normalized_webhook_provider(provider: Any = None) -> str:
+    selected_provider = WEBHOOK_PROVIDER if provider is None else provider
+    if not isinstance(selected_provider, str):
+        return ""
+    normalized = selected_provider.strip().casefold()
+    return normalized if normalized in ("discord", "ntfy") else ""
+
+
+# Returns whether one configured webhook alert is enabled independently of email settings
+def webhook_event_enabled(notification_type: str) -> bool:
+    settings = {
+        "profile": WEBHOOK_PROFILE_NOTIFICATION,
+        "followers_followings": WEBHOOK_PROFILE_NOTIFICATION and WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION,
+        "error": WEBHOOK_ERROR_NOTIFICATION,
+    }
+    return bool(WEBHOOK_ENABLED and settings.get(notification_type, False))
+
+
+# Returns whether either notification channel is enabled for one event
+def notification_channels_enabled(notification_type: str, email_enabled: bool = False) -> bool:
+    return bool(email_enabled or webhook_event_enabled(notification_type))
+
+
+# Returns whether either enabled notification channel has not attempted one event
+def notification_channels_pending(notification_type: str, email_enabled: bool, email_attempted: bool, webhook_attempted: bool) -> bool:
+    return bool((email_enabled and not email_attempted) or (webhook_event_enabled(notification_type) and not webhook_attempted))
+
+
+# Parses a webhook rate-limit delay and caps untrusted server values to a short wait
+def webhook_retry_after_seconds(response: Any) -> float:
+    candidates = []
+    headers = getattr(response, "headers", {}) or {}
+    if hasattr(headers, "get"):
+        candidates.append(headers.get("Retry-After"))
+    try:
+        payload = response.json()
+    except Exception:
+        payload = None
+    if isinstance(payload, dict):
+        candidates.append(payload.get("retry_after"))
+    for candidate in candidates:
+        if candidate is None or candidate == "":
+            continue
+        try:
+            seconds = float(candidate)
+        except (TypeError, ValueError):
+            try:
+                retry_at = parsedate_to_datetime(str(candidate))
+                seconds = (retry_at - datetime.now(retry_at.tzinfo)).total_seconds()
+            except Exception:
+                continue
+        return max(0.0, min(seconds, WEBHOOK_MAX_RETRY_AFTER_SECONDS))
+    return WEBHOOK_FALLBACK_RETRY_SECONDS
+
+
+# Applies configured placeholders recursively to a webhook template
+def format_payload(template: Any, payload: dict) -> Any:
+    if isinstance(template, dict):
+        return {key: format_payload(value, payload) for key, value in template.items()}
+    if isinstance(template, list):
+        return [format_payload(value, payload) for value in template]
+    if isinstance(template, tuple):
+        return tuple(format_payload(value, payload) for value in template)
+    if isinstance(template, str):
+        if template == "{fields}":
+            return payload.get("fields", [])
+        if template == "{color}":
+            return payload.get("color", 0x1DB954)
+        try:
+            return template.format(**payload)
+        except KeyError:
+            return template
+    return template
+
+
+# Returns a configuration error for unsafe or unsupported webhook customization
+def validate_webhook_customization(provider: Any = None) -> Optional[str]:
+    selected_provider = normalized_webhook_provider(provider)
+    if selected_provider == "discord":
+        if not isinstance(WEBHOOK_USERNAME, str):
+            return "WEBHOOK_USERNAME must be a string"
+        if not isinstance(WEBHOOK_AVATAR_URL, str):
+            return "WEBHOOK_AVATAR_URL must be a string"
+        if WEBHOOK_AVATAR_URL.strip() and not validate_webhook_url(WEBHOOK_AVATAR_URL):
+            return "WEBHOOK_AVATAR_URL must contain a complete HTTPS link without embedded credentials"
+        if not isinstance(WEBHOOK_TEMPLATE, (dict, list, str)):
+            return "WEBHOOK_TEMPLATE must be a dictionary, list or string"
+    if not isinstance(WEBHOOK_TRANSFORMS, (list, tuple)):
+        return "WEBHOOK_TRANSFORMS must be a list or tuple"
+    for index, transform in enumerate(WEBHOOK_TRANSFORMS):
+        if not isinstance(transform, (list, tuple)) or len(transform) < 2 or not isinstance(transform[0], str) or not isinstance(transform[1], str):
+            return f"WEBHOOK_TRANSFORMS entry {index + 1} must contain a field name and string method name"
+        if transform[1].startswith("_") or not callable(getattr("", transform[1], None)):
+            return f"WEBHOOK_TRANSFORMS entry {index + 1} uses an unsupported string method"
+    return None
+
+
+# Applies configured string transformations to one webhook value mapping
+def apply_webhook_transforms(payload: dict) -> dict:
+    transformed = dict(payload)
+    for index, transform in enumerate(WEBHOOK_TRANSFORMS):
+        field = transform[0]
+        method_name = transform[1]
+        if field not in transformed or not isinstance(transformed[field], str):
+            continue
+        try:
+            transformed[field] = getattr(transformed[field], method_name)(*transform[2:])
+        except Exception as exc:
+            raise ValueError(f"WEBHOOK_TRANSFORMS entry {index + 1} could not apply {field}.{method_name}") from exc
+    return transformed
+
+
+# Builds bounded placeholder values shared by webhook templates, headers and providers
+def build_webhook_values(title: str, description: str, notification_type: str, image_url: str = "") -> dict:
+    colors = {"profile": 0x1DB954, "followers_followings": 0x3498DB, "error": 0xE74C3C}
+    safe_title = sanitize_error_text(title)[:WEBHOOK_EMBED_TITLE_LIMIT] or "Spotify Profile Monitor"
+    safe_description = sanitize_error_text(description)[:WEBHOOK_EMBED_DESCRIPTION_LIMIT]
+    username = WEBHOOK_USERNAME.strip()[:80] if isinstance(WEBHOOK_USERNAME, str) else ""
+    avatar_url = WEBHOOK_AVATAR_URL.strip() if isinstance(WEBHOOK_AVATAR_URL, str) else ""
+    payload = {"title": safe_title, "description": safe_description, "version": VERSION, "image_url": str(image_url or ""), "fields": [], "fields_str": "", "color": colors.get(notification_type, 0x1DB954), "timestamp": datetime.now().astimezone().isoformat(), "username": username, "avatar_url": avatar_url}
+    return apply_webhook_transforms(payload)
+
+
+# Builds one customized Discord-format payload while keeping mentions disabled
+def build_webhook_payload(title: str, description: str, notification_type: str, image_url: str = "", payload_values: Optional[dict] = None) -> Any:
+    values = build_webhook_values(title, description, notification_type, image_url) if payload_values is None else payload_values
+    try:
+        payload = format_payload(WEBHOOK_TEMPLATE, values)
+    except Exception as exc:
+        raise ValueError("WEBHOOK_TEMPLATE could not be formatted with the supported placeholders") from exc
+    if isinstance(payload, dict):
+        if payload.get("username") == "":
+            payload.pop("username")
+        if payload.get("avatar_url") == "":
+            payload.pop("avatar_url")
+        payload["allowed_mentions"] = {"parse": []}
+    return payload
+
+
+# Truncates text to a UTF-8 byte limit without returning a partial character
+def truncate_utf8_bytes(text: str, max_bytes: int) -> str:
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return text
+    return encoded[:max_bytes].decode("utf-8", errors="ignore")
+
+
+# Builds one bounded ntfy title and message pair
+def build_ntfy_webhook_message(title: str, description: str) -> Tuple[str, str]:
+    safe_title = sanitize_error_text(title)[:WEBHOOK_EMBED_TITLE_LIMIT] or "Spotify Profile Monitor"
+    safe_message = truncate_utf8_bytes(sanitize_error_text(description), NTFY_MESSAGE_LIMIT_BYTES)
+    return safe_title, safe_message
+
+
+# Returns a safe validation error for one custom webhook header mapping
+def _validate_webhook_header_mapping(headers: Any) -> Optional[str]:
+    if not isinstance(headers, dict):
+        return "WEBHOOK_HEADERS must be a dictionary of string header names and values"
+    normalized_names = set()
+    for name, value in headers.items():
+        if not isinstance(name, str) or not re.fullmatch(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+", name):
+            return "WEBHOOK_HEADERS contains an invalid HTTP header name"
+        normalized_name = name.casefold()
+        if normalized_name in normalized_names:
+            return "WEBHOOK_HEADERS contains duplicate case-insensitive header names"
+        normalized_names.add(normalized_name)
+        if not isinstance(value, str):
+            return f"WEBHOOK_HEADERS value for {name} must be a string"
+        if "\r" in value or "\n" in value:
+            return f"WEBHOOK_HEADERS value for {name} must not contain line breaks"
+    return None
+
+
+# Returns a safe configuration error for custom webhook headers or ntfy access tokens
+def validate_webhook_headers(provider: Any = None) -> Optional[str]:
+    selected_provider = normalized_webhook_provider(provider)
+    header_error = _validate_webhook_header_mapping(WEBHOOK_HEADERS)
+    if header_error is not None:
+        return header_error
+    if selected_provider == "ntfy":
+        if not isinstance(NTFY_ACCESS_TOKEN, str):
+            return "NTFY_ACCESS_TOKEN must be a string"
+        token = NTFY_ACCESS_TOKEN.strip()
+        if "\r" in token or "\n" in token:
+            return "NTFY_ACCESS_TOKEN must not contain line breaks"
+        if token.casefold().startswith(("bearer ", "basic ")):
+            return "NTFY_ACCESS_TOKEN must contain only the access token without an Authorization scheme"
+    return None
+
+
+# Builds provider-specific headers while formatting placeholders and applying private ntfy authentication
+def build_webhook_headers(provider: str, payload: dict) -> dict:
+    validation_error = validate_webhook_headers(provider)
+    if validation_error is not None:
+        raise ValueError(validation_error)
+    try:
+        formatted_headers = format_payload(WEBHOOK_HEADERS, payload)
+    except Exception as exc:
+        raise ValueError("WEBHOOK_HEADERS could not be formatted with the supported placeholders") from exc
+    formatted_error = _validate_webhook_header_mapping(formatted_headers)
+    if formatted_error is not None:
+        raise ValueError(formatted_error)
+    headers = dict(cast(dict, formatted_headers))
+    if not any(name.casefold() == "user-agent" for name in headers):
+        headers["User-Agent"] = f"SpotifyProfileMonitor/{VERSION}"
+    if provider == "ntfy":
+        headers = {name: value for name, value in headers.items() if name.casefold() != "content-type"}
+        headers["Content-Type"] = "text/plain; charset=utf-8"
+        token = NTFY_ACCESS_TOKEN.strip()
+        if token:
+            headers = {name: value for name, value in headers.items() if name.casefold() != "authorization"}
+            headers["Authorization"] = f"Bearer {token}"
+    return headers
+
+
+# Returns whether one image URL is a complete HTTPS URL on a Spotify CDN host
+def spotify_image_url_is_allowed(image_url: str) -> bool:
+    try:
+        parsed_url = urlsplit(image_url)
+    except ValueError:
+        return False
+    hostname = parsed_url.hostname.casefold() if parsed_url.hostname else ""
+    return parsed_url.scheme.casefold() == "https" and any(hostname == suffix or hostname.endswith(f".{suffix}") for suffix in NTFY_IMAGE_ALLOWED_HOST_SUFFIXES)
+
+
+# Builds one bounded in-memory JPEG for an ntfy attachment
+def build_ntfy_image(image_url: str = "") -> Optional[bytes]:
+    if not NTFY_IMAGES or not image_url or not NTFY_IMAGES_AVAILABLE:
+        return None
+    try:
+        if not spotify_image_url_is_allowed(image_url):
+            raise ValueError("ntfy image URL must use a Spotify HTTPS CDN host")
+        debug_print(f"NTFY downloading image from {image_url}")
+        response = WEBHOOK_SESSION.get(image_url, headers={"User-Agent": f"SpotifyProfileMonitor/{VERSION}"}, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=VERIFY_SSL, stream=True, allow_redirects=False)
+        with response:
+            response.raise_for_status()
+            content_type = str((response.headers or {}).get("Content-Type", "")).split(";", 1)[0].strip().casefold()
+            if content_type and not content_type.startswith("image/"):
+                raise ValueError(f"ntfy image response has unsupported content type {content_type}")
+            content_length = (response.headers or {}).get("Content-Length")
+            if content_length is not None and int(content_length) > NTFY_IMAGE_DOWNLOAD_LIMIT_BYTES:
+                raise ValueError(f"ntfy image exceeds {NTFY_IMAGE_DOWNLOAD_LIMIT_BYTES} bytes")
+            image_bytes = bytearray()
+            for chunk in response.iter_content(chunk_size=NTFY_IMAGE_DOWNLOAD_CHUNK_BYTES):
+                if not chunk:
+                    continue
+                image_bytes.extend(chunk)
+                if len(image_bytes) > NTFY_IMAGE_DOWNLOAD_LIMIT_BYTES:
+                    raise ValueError(f"ntfy image exceeds {NTFY_IMAGE_DOWNLOAD_LIMIT_BYTES} bytes")
+        if not image_bytes:
+            raise ValueError("ntfy image response was empty")
+        image_module = cast(Any, PILImage)
+        with image_module.open(BytesIO(bytes(image_bytes))) as original_img:
+            if original_img.width * original_img.height > NTFY_IMAGE_PIXEL_LIMIT:
+                raise ValueError(f"ntfy image exceeds {NTFY_IMAGE_PIXEL_LIMIT} pixels")
+            original_img.load()
+            debug_print(f"NTFY original image dimensions: {original_img.size}")
+            resized_img = original_img.convert("RGB")
+        try:
+            resized_img.thumbnail((160, 160), image_module.Resampling.LANCZOS)
+            debug_print(f"NTFY resized image dimensions: {resized_img.size}")
+            canvas = image_module.new("RGB", (400, 160), (27, 32, 35))
+            try:
+                paste_x = (canvas.size[0] - resized_img.size[0]) // 2
+                paste_y = (canvas.size[1] - resized_img.size[1]) // 2
+                canvas.paste(resized_img, (paste_x, paste_y))
+                output = BytesIO()
+                canvas.save(output, format="JPEG", quality=85, optimize=True)
+                return output.getvalue()
+            finally:
+                canvas.close()
+        finally:
+            resized_img.close()
+    except Exception as error:
+        debug_print(f"NTFY image generation failed, sending text only: {sanitize_error_text(error)}")
+        return None
+
+
+# Prints one secret-safe webhook delivery error
+def print_webhook_error(detail: Any) -> None:
+    safe_detail = sanitize_error_text(detail)
+    print(f"Error sending webhook - {safe_detail or 'unknown delivery error'}")
+
+
+# Sends one webhook through an isolated bounded retry path that never uses Spotify retries
+def send_webhook(title: str, description: str, notification_type: str = "profile", force: bool = False, sleeper: Optional[Callable[[float], None]] = None, image_url: str = "") -> int:
+    if not force and not webhook_event_enabled(notification_type):
+        return 1
+    if not validate_webhook_url():
+        print_webhook_error("WEBHOOK_URL must contain a complete HTTPS link")
+        return 1
+    provider = normalized_webhook_provider()
+    if not provider:
+        print_webhook_error("WEBHOOK_PROVIDER must be discord or ntfy")
+        return 1
+    customization_error = validate_webhook_customization(provider)
+    if customization_error is not None:
+        print_webhook_error(customization_error)
+        return 1
+    header_error = validate_webhook_headers(provider)
+    if header_error is not None:
+        print_webhook_error(header_error)
+        return 1
+    try:
+        webhook_values = build_webhook_values(title, description, notification_type, image_url)
+        request_headers = build_webhook_headers(provider, webhook_values)
+        discord_payload = build_webhook_payload(title, description, notification_type, image_url, webhook_values) if provider == "discord" else None
+    except ValueError as exc:
+        print_webhook_error(exc)
+        return 1
+    sleep_func = time.sleep if sleeper is None else sleeper
+    ntfy_title, ntfy_message = build_ntfy_webhook_message(str(webhook_values["title"]), str(webhook_values["description"])) if provider == "ntfy" else ("", "")
+    ntfy_image = build_ntfy_image(image_url) if provider == "ntfy" and NTFY_IMAGES and image_url else None
+    use_ntfy_image = ntfy_image is not None
+    last_error = None
+    for attempt in range(WEBHOOK_MAX_ATTEMPTS):
+        try:
+            if provider == "ntfy":
+                if use_ntfy_image:
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=ntfy_image, params={"title": ntfy_title, "message": ntfy_message}, headers=dict(request_headers, **{"Content-Type": "image/jpeg", "X-Filename": NTFY_IMAGE_FILENAME}), timeout=WEBHOOK_TIMEOUT_SECONDS)
+                else:
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=ntfy_message.encode("utf-8"), params={"title": ntfy_title}, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS)
+            elif isinstance(discord_payload, str):
+                response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=discord_payload, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS)
+            else:
+                response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), json=discord_payload, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS)
+            if 200 <= response.status_code <= 299:
+                return 0
+            last_error = response
+            retryable = response.status_code == 429 or 500 <= response.status_code <= 599
+            if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
+                use_ntfy_image = False
+                delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS if response.status_code >= 500 else 0.0
+                debug_print(f"NTFY attachment returned HTTP {response.status_code}. Falling back to a text-only alert")
+                if delay:
+                    sleep_func(delay)
+                continue
+            if not retryable or attempt == WEBHOOK_MAX_ATTEMPTS - 1:
+                print_webhook_error(f"HTTP {response.status_code}: {getattr(response, 'text', '')[:200]}")
+                return 1
+            delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS
+            debug_print(f"Webhook delivery returned HTTP {response.status_code}. Retrying once in {delay:g} seconds")
+            sleep_func(delay)
+        except req.RequestException as exc:
+            last_error = exc
+            if use_ntfy_image and attempt < WEBHOOK_MAX_ATTEMPTS - 1:
+                use_ntfy_image = False
+                debug_print(f"NTFY attachment delivery failed. Falling back to a text-only alert: {sanitize_error_text(exc)}")
+                sleep_func(WEBHOOK_FALLBACK_RETRY_SECONDS)
+                continue
+            if attempt == WEBHOOK_MAX_ATTEMPTS - 1:
+                print_webhook_error(exc)
+                return 1
+            debug_print(f"Webhook delivery failed. Retrying once in {WEBHOOK_FALLBACK_RETRY_SECONDS:g} seconds: {sanitize_error_text(exc)}")
+            sleep_func(WEBHOOK_FALLBACK_RETRY_SECONDS)
+    print_webhook_error(last_error)
+    return 1
+
+
+# Sends one alert through the enabled email and webhook channels
+def send_notification_channels(notification_type: str, subject: str, body: str, body_html: str = "", email_enabled: bool = False, webhook_enabled: Optional[bool] = None, image_url: str = "", email_image_file: str = "", email_image_name: str = "image1") -> Tuple[bool, bool]:
+    email_attempted = bool(email_enabled)
+    webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    if email_attempted:
+        print(f"Sending email notification to {RECEIVER_EMAIL}")
+        if email_image_file:
+            send_email(subject, body, body_html, SMTP_SSL, email_image_file, email_image_name)
+        else:
+            send_email(subject, body, body_html, SMTP_SSL)
+    if webhook_attempted:
+        print("Sending webhook notification")
+        send_webhook(subject, body, notification_type, force=True, image_url=image_url)
+    return email_attempted, webhook_attempted
+
+
+# Sends one error only through notification channels that have not attempted it
+def send_pending_error_notification(subject: str, body: str, body_html: str, email_attempted: bool, webhook_attempted: bool) -> Tuple[bool, bool]:
+    email_sent_now, webhook_sent_now = send_notification_channels("error", subject, body, body_html, email_enabled=ERROR_NOTIFICATION and not email_attempted, webhook_enabled=webhook_event_enabled("error") and not webhook_attempted)
+    return email_attempted or email_sent_now, webhook_attempted or webhook_sent_now
 
 
 # Initializes the CSV file
@@ -4239,6 +4799,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     p_owner_uri = sp_playlist_data.get("sp_playlist_owner_uri", "")
                     p_owner_id = spotify_extract_id_or_name(p_owner_uri) if p_owner_uri else ""
                     p_source = sp_playlist_data.get("sp_playlist_source", "")
+                    p_image_url = sp_playlist_data.get("sp_playlist_image_url", "")
 
                     p_tracks_list = sp_playlist_data.get("sp_playlist_tracks", None)
                     added_at_ts_lowest = 0
@@ -4341,9 +4902,9 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     })
 
                 if list_of_tracks and effective_get_tracks:
-                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "list_of_tracks": list_of_tracks, "collaborators_count": p_collaborators_count, "collaborators": user_id_name_mapping, "owner": p_owner, "owner_uri": p_owner_uri, "unknown_added_by_tracks": unknown_added_by_tracks, "restricted": restricted_playlist, "source": p_source})
+                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "list_of_tracks": list_of_tracks, "collaborators_count": p_collaborators_count, "collaborators": user_id_name_mapping, "owner": p_owner, "owner_uri": p_owner_uri, "unknown_added_by_tracks": unknown_added_by_tracks, "restricted": restricted_playlist, "source": p_source, "image_url": p_image_url})
                 else:
-                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "collaborators_count": p_collaborators_count, "collaborators": {}, "owner": p_owner, "owner_uri": p_owner_uri, "unknown_added_by_tracks": unknown_added_by_tracks, "restricted": restricted_playlist, "source": p_source})
+                    list_of_playlists.append({"uri": p_uri, "name": p_name, "desc": p_descr, "likes": p_likes, "tracks_count": p_tracks, "tracks_count_before_filtering": p_tracks_before_filtering, "url": p_url, "date": p_creation_date, "update_date": p_last_track_date, "collaborators_count": p_collaborators_count, "collaborators": {}, "owner": p_owner, "owner_uri": p_owner_uri, "unknown_added_by_tracks": unknown_added_by_tracks, "restricted": restricted_playlist, "source": p_source, "image_url": p_image_url})
 
                 # Final refresh after successful processing
                 if show_progress:
@@ -4737,8 +5298,8 @@ def get_playlist_details_for_notification(sp_accessToken, playlist_uri):
         }
 
 
-# Prints and saves changed list of followers/followings/playlists (with email notifications)
-def spotify_print_changed_followers_followings_playlists(username, f_list, f_list_old, f_count, f_old_count, f_str, f_str_by_or_from, f_added_str, f_added_csv, f_removed_str, f_removed_csv, f_file, csv_file_name, profile_notification, is_playlist, sp_accessToken=None):
+# Prints and saves changed lists of followers, followings or playlists with enabled notifications
+def spotify_print_changed_followers_followings_playlists(username, f_list, f_list_old, f_count, f_old_count, f_str, f_str_by_or_from, f_added_str, f_added_csv, f_removed_str, f_removed_csv, f_file, csv_file_name, profile_notification, is_playlist, sp_accessToken=None, notification_image_url="", webhook_notification_allowed=None):
     global GLITCH_CACHE
     global PLAYLIST_INFO_CACHE
     global WEB_PLAYLIST_REVISION_CACHE
@@ -5142,21 +5703,24 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
     except Exception as e:
         print(f"* Error: {e}")
 
-    if (f_str == "Followers" or f_str == "Followings") and not FOLLOWERS_FOLLOWINGS_NOTIFICATION:
+    notification_type = "profile" if is_playlist else "followers_followings"
+    is_follower_event = f_str == "Followers" or f_str == "Followings"
+    email_enabled = bool(profile_notification and (not is_follower_event or FOLLOWERS_FOLLOWINGS_NOTIFICATION))
+    webhook_allowed = bool(profile_notification) if webhook_notification_allowed is None else bool(webhook_notification_allowed)
+    webhook_enabled = bool(webhook_allowed and webhook_event_enabled(notification_type))
+    if not email_enabled and not webhook_enabled:
         return False
 
-    if profile_notification:
-        if playlist_membership_only_change:
-            m_subject = f"Spotify user {username} {str(f_str).lower()} have changed! (total remains {f_count})"
-            m_body = f"{f_str} changed for user {username} while the total remained {f_count}\n{removed_f_list_mbody}{list_of_removed_f_list}{added_f_list_mbody}{list_of_added_f_list}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-            m_body_html = f"<html><head></head><body>{escape(f_str)} changed for user <b>{escape(username)}</b> while the total remained <b>{f_count}</b><br>{removed_f_list_mbody_html}{list_of_removed_f_list_html}{added_f_list_mbody_html}{list_of_added_f_list_html}<br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
-        else:
-            m_subject = f"Spotify user {username} {str(f_str).lower()} number has changed! ({f_diff_str}, {f_old_count} -> {f_count})"
-            m_body = f"{f_str} number changed {f_str_by_or_from} user {username} from {f_old_count} to {f_count} ({f_diff_str})\n{removed_f_list_mbody}{list_of_removed_f_list}{added_f_list_mbody}{list_of_added_f_list}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-            m_body_html = f"<html><head></head><body>{escape(f_str)} number changed {escape(f_str_by_or_from)} user <b>{escape(username)}</b> from <b>{f_old_count}</b> to <b>{f_count}</b> (<b>{escape(f_diff_str)}</b>)<br>{removed_f_list_mbody_html}{list_of_removed_f_list_html}{added_f_list_mbody_html}{list_of_added_f_list_html}<br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+    if playlist_membership_only_change:
+        m_subject = f"Spotify user {username} {str(f_str).lower()} have changed! (total remains {f_count})"
+        m_body = f"{f_str} changed for user {username} while the total remained {f_count}\n{removed_f_list_mbody}{list_of_removed_f_list}{added_f_list_mbody}{list_of_added_f_list}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+        m_body_html = f"<html><head></head><body>{escape(f_str)} changed for user <b>{escape(username)}</b> while the total remained <b>{f_count}</b><br>{removed_f_list_mbody_html}{list_of_removed_f_list_html}{added_f_list_mbody_html}{list_of_added_f_list_html}<br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+    else:
+        m_subject = f"Spotify user {username} {str(f_str).lower()} number has changed! ({f_diff_str}, {f_old_count} -> {f_count})"
+        m_body = f"{f_str} number changed {f_str_by_or_from} user {username} from {f_old_count} to {f_count} ({f_diff_str})\n{removed_f_list_mbody}{list_of_removed_f_list}{added_f_list_mbody}{list_of_added_f_list}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
+        m_body_html = f"<html><head></head><body>{escape(f_str)} number changed {escape(f_str_by_or_from)} user <b>{escape(username)}</b> from <b>{f_old_count}</b> to <b>{f_count}</b> (<b>{escape(f_diff_str)}</b>)<br>{removed_f_list_mbody_html}{list_of_removed_f_list_html}{added_f_list_mbody_html}{list_of_added_f_list_html}<br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
 
-        print(f"Sending email notification to {RECEIVER_EMAIL}")
-        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+    send_notification_channels(notification_type, m_subject, m_body, m_body_html, email_enabled=email_enabled, webhook_enabled=webhook_enabled, image_url=notification_image_url)
 
     return False
 
@@ -5210,6 +5774,130 @@ def diff_tracks(list_a, list_b):
 
     set_b = {sig(x) for x in list_b}
     return [x for x in list_a if sig(x) not in set_b]
+
+
+class WebhookConfigurationError(Exception):
+    pass
+
+
+# Returns a writable dotenv destination for private webhook setup
+def resolve_webhook_env_path(env_file=None, cwd=None) -> Path:
+    if env_file is not None and str(env_file).casefold() == "none":
+        raise WebhookConfigurationError("Webhook setup requires a dotenv destination. Replace '--env-file none' with a writable path.")
+    base_directory = Path.cwd() if cwd is None else Path(cwd)
+    destination = base_directory / ".env" if env_file is None else Path(env_file).expanduser()
+    return destination.resolve()
+
+
+# Checks whether a dotenv file already contains one named assignment
+def _dotenv_contains_key(destination, key) -> bool:
+    destination_path = Path(destination)
+    if not destination_path.exists():
+        return False
+    try:
+        lines = destination_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        raise WebhookConfigurationError(f"Could not read private settings file '{destination_path}'. Check that it is a readable UTF-8 file.") from None
+    assignment_pattern = re.compile(rf"^\s*(?:export\s+)?{re.escape(key)}\s*=")
+    return any(assignment_pattern.match(line) for line in lines)
+
+
+# Quotes one secret value for lossless parsing by python-dotenv
+def _format_dotenv_value(value: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError("Dotenv secret values must be strings")
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\r", "\\r").replace("\n", "\\n")
+    return f'"{escaped}"'
+
+
+# Updates allowed secrets in a dotenv file through an atomic replacement
+def update_dotenv_file(destination, updates) -> dict:
+    if not hasattr(updates, "items"):
+        raise TypeError("Dotenv updates must be a mapping")
+    update_items = list(updates.items())
+    for key, value in update_items:
+        if not isinstance(key, str) or not re.fullmatch(r"[A-Z][A-Z0-9_]*", key) or key not in SECRET_KEYS:
+            raise ValueError(f"Unsupported dotenv key: {key!r}")
+        if not isinstance(value, str):
+            raise TypeError(f"Dotenv value for {key} must be a string")
+
+    destination_path = Path(destination).expanduser()
+    destination_path.parent.mkdir(parents=True, exist_ok=True)
+    existing_lines = destination_path.read_text(encoding="utf-8").splitlines() if destination_path.exists() else []
+    update_keys = {key for key, _ in update_items}
+    values_by_key = dict(update_items)
+    seen_keys = set()
+    output_lines = []
+    assignment_pattern = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=")
+    for line in existing_lines:
+        match = assignment_pattern.match(line)
+        key = match.group(1) if match else None
+        if key not in update_keys:
+            output_lines.append(line)
+            continue
+        if key in seen_keys:
+            continue
+        output_lines.append(f"{key}={_format_dotenv_value(values_by_key[key])}")
+        seen_keys.add(key)
+    for key, value in update_items:
+        if key not in seen_keys:
+            output_lines.append(f"{key}={_format_dotenv_value(value)}")
+            seen_keys.add(key)
+    content = "\n".join(output_lines)
+    if output_lines:
+        content += "\n"
+
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="\n", prefix=f".{destination_path.name}.", suffix=".tmp", dir=str(destination_path.parent), delete=False) as temporary_file:
+            temporary_path = Path(temporary_file.name)
+            temporary_file.write(content)
+            temporary_file.flush()
+            os.fsync(temporary_file.fileno())
+        if os.name == "posix":
+            os.chmod(str(temporary_path), 0o600)
+        os.replace(str(temporary_path), str(destination_path))
+        temporary_path = None
+    finally:
+        if temporary_path is not None and temporary_path.exists():
+            temporary_path.unlink()
+    return {"path": str(destination_path), "updated_keys": tuple(key for key, _ in update_items)}
+
+
+# Checks and safely stores one privately entered webhook URL
+def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpass_func=None, config_path=None) -> str:
+    destination = resolve_webhook_env_path(env_file)
+    terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
+    if not terminal_is_interactive:
+        raise WebhookConfigurationError("--set-webhook-url requires an interactive terminal. Run it in a terminal window so the webhook URL stays hidden while you paste it.")
+    prompt = input if input_func is None else input_func
+    if _dotenv_contains_key(destination, "WEBHOOK_URL"):
+        try:
+            confirmed = prompt(f"Replace the saved webhook URL in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+        except (EOFError, KeyboardInterrupt):
+            confirmed = False
+        if not confirmed:
+            raise WebhookConfigurationError("Webhook setup was cancelled. The private settings file was not changed.")
+    hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
+    try:
+        webhook_url = hidden_prompt("Paste the Discord or ntfy webhook URL (input hidden): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        raise WebhookConfigurationError("Webhook setup was cancelled. The private settings file was not changed.") from None
+    if not validate_webhook_url(webhook_url):
+        raise WebhookConfigurationError("That does not look like a complete HTTPS webhook URL. The private settings file was not changed.")
+    try:
+        update_dotenv_file(destination, {"WEBHOOK_URL": webhook_url})
+    except Exception:
+        raise WebhookConfigurationError(f"Could not save the webhook URL in '{destination}'. Check file permissions or choose another path with --env-file.") from None
+    command_parts = ["spotify_profile_monitor", "--send-test-webhook"]
+    if config_path:
+        command_parts.extend(("--config-file", str(config_path)))
+    command_parts.extend(("--env-file", str(destination)))
+    test_command = " ".join(shlex.quote(part) for part in command_parts)
+    print("* Webhook URL looks valid")
+    print(f"* Updated private settings file: {destination}")
+    print(f"* Send a test webhook:\n  {test_command}")
+    return str(destination)
 
 
 # Finds an optional config file
@@ -5269,6 +5957,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         print(f"* Error: {e}")
 
     email_sent = False
+    webhook_sent = False
 
     out = f"Monitoring user {user_uri_id}"
     print(out)
@@ -5585,6 +6274,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
     time.sleep(SPOTIFY_CHECK_INTERVAL)
     email_sent = False
+    webhook_sent = False
     alive_counter = 0
 
     # Primary loop
@@ -5606,6 +6296,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 sp_accessToken = spotify_get_access_token_from_sp_dc(SP_DC_COOKIE)
             sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS, 0)
             email_sent = False
+            webhook_sent = False
             if platform.system() != 'Windows':
                 signal.alarm(0)
         except TimeoutException:
@@ -5634,64 +6325,52 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
             if TOKEN_SOURCE == 'client' and any(k in err for k in client_errs):
                 print(f"* Error: client or refresh token may be invalid or expired!")
-                if ERROR_NOTIFICATION and not email_sent:
+                if notification_channels_pending("error", ERROR_NOTIFICATION, email_sent, webhook_sent):
                     m_subject = f"spotify_profile_monitor: client or refresh token may be invalid or expired! (uri: {user_uri_id})"
                     m_body = f"Client or refresh token may be invalid or expired!\n{e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     m_body_html = f"<html><head></head><body>Client or refresh token may be invalid or expired!<br>{escape(str(e))}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-                    email_sent = True
+                    email_sent, webhook_sent = send_pending_error_notification(m_subject, m_body, m_body_html, email_sent, webhook_sent)
 
             elif TOKEN_SOURCE == 'cookie' and any(k in err for k in cookie_errs):
                 print(f"* Error: sp_dc may be invalid/expired or Spotify has broken sth again!")
-                if ERROR_NOTIFICATION and not email_sent:
+                if notification_channels_pending("error", ERROR_NOTIFICATION, email_sent, webhook_sent):
                     m_subject = f"spotify_profile_monitor: sp_dc may be invalid/expired or Spotify has broken sth again! (uri: {user_uri_id})"
                     m_body = f"sp_dc may be invalid/expired or Spotify has broken sth again!\n{e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     m_body_html = f"<html><head></head><body>sp_dc may be invalid/expired or Spotify has broken sth again!<br>{escape(str(e))}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-                    email_sent = True
+                    email_sent, webhook_sent = send_pending_error_notification(m_subject, m_body, m_body_html, email_sent, webhook_sent)
 
             elif TOKEN_SOURCE == 'oauth_app' and any(k in err for k in oauth_app_errs):
                 print(f"* Error: OAuth-app client_id/client_secret may be invalid or expired!")
 
-                if ERROR_NOTIFICATION and not email_sent:
+                if notification_channels_pending("error", ERROR_NOTIFICATION, email_sent, webhook_sent):
                     m_subject = f"spotify_profile_monitor: OAuth-app client_id/client_secret may be invalid or expired! (uri: {user_uri_id})"
                     m_body = f"OAuth-app client_id/client_secret may be invalid or expired!\n{e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     m_body_html = f"<html><head></head><body>OAuth-app client_id/client_secret may be invalid or expired!<br>{escape(str(e))}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-                    email_sent = True
+                    email_sent, webhook_sent = send_pending_error_notification(m_subject, m_body, m_body_html, email_sent, webhook_sent)
 
             elif TOKEN_SOURCE == 'oauth_user' and any(k in err for k in oauth_user_errs):
                 print(f"* Error: User OAuth token or credentials may be invalid, expired or require re-authorization!")
-                if ERROR_NOTIFICATION and not email_sent:
+                if notification_channels_pending("error", ERROR_NOTIFICATION, email_sent, webhook_sent):
                     m_subject = f"spotify_profile_monitor: user OAuth token or credentials may be invalid, expired or require re-authorization! (uri: {user_uri_id})"
                     m_body = f"User OAuth token or credentials may be invalid, expired or require re-authorization!\n{e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     m_body_html = f"<html><head></head><body>User OAuth token or credentials may be invalid, expired or require re-authorization!<br>{escape(str(e))}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-                    email_sent = True
+                    email_sent, webhook_sent = send_pending_error_notification(m_subject, m_body, m_body_html, email_sent, webhook_sent)
 
             elif 'cannot monitor user' in err:
-                if ERROR_NOTIFICATION and not email_sent:
+                if notification_channels_pending("error", ERROR_NOTIFICATION, email_sent, webhook_sent):
                     m_subject = f"spotify_profile_monitor: token source '{TOKEN_SOURCE}' not supported for monitoring this user! (uri: {user_uri_id})"
                     m_body = f"Token source '{TOKEN_SOURCE}' is not supported for monitoring user '{user_uri_id}'!\n{e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                     m_body_html = f"<html><head></head><body>Token source '{TOKEN_SOURCE}' is not supported for monitoring user '{user_uri_id}'!<br>{escape(str(e))}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-                    email_sent = True
+                    email_sent, webhook_sent = send_pending_error_notification(m_subject, m_body, m_body_html, email_sent, webhook_sent)
 
             elif 'not found' in err or '404' in err:
                 if is_user_removed(sp_accessToken, user_uri_id):
                     print(f"* Error: User '{user_uri_id}' might have removed the account!")
-                    if ERROR_NOTIFICATION and not email_sent:
+                    if notification_channels_pending("error", ERROR_NOTIFICATION, email_sent, webhook_sent):
                         m_subject = f"spotify_profile_monitor: user might have removed the account! (uri: {user_uri_id})"
                         m_body = f"User might have removed the account: {e}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                         m_body_html = f"<html><head></head><body>User might have removed the account: {escape(str(e))}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
-                        print(f"Sending email notification to {RECEIVER_EMAIL}")
-                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
-                        email_sent = True
+                        email_sent, webhook_sent = send_pending_error_notification(m_subject, m_body, m_body_html, email_sent, webhook_sent)
 
             print_cur_ts("Timestamp:\t\t\t")
             time.sleep(SPOTIFY_ERROR_INTERVAL)
@@ -5710,12 +6389,11 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             except Exception as e:
                 print(f"* Error: {e}")
 
-            if PROFILE_NOTIFICATION:
+            if notification_channels_enabled("profile", PROFILE_NOTIFICATION):
                 m_subject = f"Spotify user {username_old} has changed username to {username}"
                 m_body = f"Spotify user '{username_old}' has changed username to '{username}'\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                 m_body_html = f"<html><head></head><body>Spotify user '<b>{escape(username_old)}</b>' has changed username to '<b>{escape(username)}</b>'<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
-                print(f"Sending email notification to {RECEIVER_EMAIL}")
-                send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=image_url)
 
             username_old = username
 
@@ -5761,7 +6439,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 followers_zeroed_counter += 1
                 if followers_zeroed_counter == FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER:
                     print(f"* Spotify API: Followers count dropped from {followers_old_count} to 0 and has been 0 for {followers_zeroed_counter} checks; accepting 0 as the new baseline")
-                    spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, PROFILE_NOTIFICATION, False)
+                    spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, PROFILE_NOTIFICATION, False, notification_image_url=image_url, webhook_notification_allowed=True)
                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                     print_cur_ts("Timestamp:\t\t\t")
                     followers_old_count = followers_count
@@ -5775,7 +6453,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 if followers_old_count == 0 and followers_zeroed_counter >= FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER:
                     print(f"* Spotify API: Followers count recovered to {followers_count}; previously was 0 for {followers_zeroed_counter} checks (old baseline was {followers_old_count})")
 
-                spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, PROFILE_NOTIFICATION, False)
+                spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, PROFILE_NOTIFICATION, False, notification_image_url=image_url, webhook_notification_allowed=True)
                 print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t")
                 followers_old_count = followers_count
@@ -5799,7 +6477,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 followings_zeroed_counter += 1
                 if followings_zeroed_counter == FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER:
                     print(f"* Spotify API: Followings count dropped from {followings_old_count} to 0 and has been 0 for {followings_zeroed_counter} checks; accepting 0 as the new baseline")
-                    spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, PROFILE_NOTIFICATION, False)
+                    spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, PROFILE_NOTIFICATION, False, notification_image_url=image_url, webhook_notification_allowed=True)
                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                     print_cur_ts("Timestamp:\t\t\t")
                     followings_old_count = followings_count
@@ -5813,7 +6491,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 if followings_old_count == 0 and followings_zeroed_counter >= FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER:
                     print(f"* Spotify API: Followings count recovered to {followings_count}; previously was 0 for {followings_zeroed_counter} checks (old baseline was {followings_old_count})")
 
-                spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, PROFILE_NOTIFICATION, False)
+                spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, PROFILE_NOTIFICATION, False, notification_image_url=image_url, webhook_notification_allowed=True)
                 print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t")
                 followings_old_count = followings_count
@@ -5848,12 +6526,11 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 except Exception as e:
                     print(f"* Error: {e}")
 
-                if PROFILE_NOTIFICATION:
+                if notification_channels_enabled("profile", PROFILE_NOTIFICATION):
                     m_subject = f"Spotify user {username} has removed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
                     m_body = f"Spotify user {username} has removed profile picture added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                     m_body_html = f"<html><head></head><body>Spotify user <b>{escape(username)}</b> has removed profile picture added on <b>{escape(get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True))}</b> (after <b>{escape(calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2))}</b>)<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
-                    print(f"Sending email notification to {RECEIVER_EMAIL}")
-                    send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                    send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION)
 
                 print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t")
@@ -5881,13 +6558,11 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     except Exception as e:
                         print(f"* Error: {e}")
 
-                    if PROFILE_NOTIFICATION:
+                    if notification_channels_enabled("profile", PROFILE_NOTIFICATION):
                         m_subject = f"Spotify user {username} has set profile picture ! ({get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)})"
                         m_body = f"Spotify user {username} has set profile picture !\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                         m_body_html = f"<html><head></head><body>Spotify user <b>{username}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(SPOTIFY_CHECK_INTERVAL)}</b> ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}</body></html>"
-                        print(f"Sending email notification to {RECEIVER_EMAIL}")
-
-                        send_email(m_subject, m_body, m_body_html, SMTP_SSL, profile_pic_file, "profile_pic")
+                        send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=image_url, email_image_file=profile_pic_file, email_image_name="profile_pic")
 
                 else:
                     print(f"* Error saving profile picture !\n")
@@ -5921,13 +6596,12 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                         except Exception as e:
                             print(f"* Error while replacing/copying files: {e}")
 
-                        if PROFILE_NOTIFICATION:
+                        if notification_channels_enabled("profile", PROFILE_NOTIFICATION):
                             m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
                             m_subject = f"Spotify user {username} has changed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
                             m_body = f"Spotify user {username} has changed profile picture !\n\nPrevious one added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                             m_body_html = f"<html><head></head><body>Spotify user <b>{username}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(SPOTIFY_CHECK_INTERVAL)}</b> ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}</body></html>"
-                            print(f"Sending email notification to {RECEIVER_EMAIL}")
-                            send_email(m_subject, m_body, m_body_html, SMTP_SSL, profile_pic_file, "profile_pic")
+                            send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=image_url, email_image_file=profile_pic_file, email_image_name="profile_pic")
 
                         print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                         print_cur_ts("Timestamp:\t\t\t")
@@ -5972,6 +6646,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     p_tracks_list = playlist.get("list_of_tracks")
                     p_restricted = bool(playlist.get("restricted", False))
                     p_source = playlist.get("source", "")
+                    p_image_url = playlist.get("image_url", "")
                     for playlist_old in list_of_playlists_old:
                         if "uri" in playlist_old:
                             if playlist_old.get("uri") == p_uri:
@@ -6033,9 +6708,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                     m_subject = f"Spotify user {username} number of likes for playlist '{p_name}' has changed! ({p_likes_diff_str}, {likes_display_old} -> {likes_display_new})"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                     m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>': number of likes changed from <b>{escape(str(likes_display_old))}</b> to <b>{escape(str(likes_display_new))}</b> (<b>{escape(p_likes_diff_str)}</b>)<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
-                                    if PROFILE_NOTIFICATION:
-                                        print(f"Sending email notification to {RECEIVER_EMAIL}")
-                                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                                    send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=p_image_url or image_url)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
 
@@ -6051,9 +6724,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                         m_subject = f"Spotify user {username} playlist '{p_name_old}' name changed to '{p_name}'! [RESTRICTED]"
                                         m_body = f"{p_message}\nMetadata source: profile-view only\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                         m_body_html = f"<html><head></head><body>Playlist '<b>{escape(p_name_old)}</b>': name changed to new name '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>' [<b>RESTRICTED</b>]<br><br>Metadata source: profile-view only<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
-                                        if PROFILE_NOTIFICATION:
-                                            print(f"Sending email notification to {RECEIVER_EMAIL}")
-                                            send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                                        send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=p_image_url or image_url)
                                         print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                         print_cur_ts("Timestamp:\t\t\t")
                                     continue
@@ -6212,9 +6883,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                     m_subject = f"Spotify user {username} number of collaborators for playlist '{p_name}' has changed! ({p_collaborators_diff_str}, {p_collaborators_old} -> {p_collaborators})"
                                     m_body = f"{p_message}\n{p_message_added_collaborators}{p_message_removed_collaborators}Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                     m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>': number of collaborators changed from <b>{p_collaborators_old}</b> to <b>{p_collaborators}</b> (<b>{escape(p_collaborators_diff_str)}</b>)<br>{p_message_added_collaborators_html}{p_message_removed_collaborators_html}<br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
-                                    if PROFILE_NOTIFICATION:
-                                        print(f"Sending email notification to {RECEIVER_EMAIL}")
-                                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                                    send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=p_image_url or image_url)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
 
@@ -6404,9 +7073,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                         m_body_html_p_message += "<br>"
                                     m_body = f"{p_message}\n{p_message_added_tracks}{p_message_removed_tracks}Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                     m_body_html = f"<html><head></head><body>{m_body_html_p_message}{p_message_added_tracks_html}{p_message_removed_tracks_html}Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
-                                    if PROFILE_NOTIFICATION:
-                                        print(f"Sending email notification to {RECEIVER_EMAIL}")
-                                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                                    send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=p_image_url or image_url)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
 
@@ -6422,9 +7089,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                     m_subject = f"Spotify user {username} playlist '{p_name_old}' name changed to '{p_name}'!"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                     m_body_html = f"<html><head></head><body>Playlist '<b>{escape(p_name_old)}</b>': name changed to new name '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>'<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
-                                    if PROFILE_NOTIFICATION:
-                                        print(f"Sending email notification to {RECEIVER_EMAIL}")
-                                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                                    send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=p_image_url or image_url)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
 
@@ -6440,9 +7105,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                     m_subject = f"Spotify user {username} playlist '{p_name}' description has changed !"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                     m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>' description changed from:<br><br>'<i>{escape(p_descr_old)}</i>'<br><br>to:<br><br>'<i>{escape(p_descr)}</i>'<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
-                                    if PROFILE_NOTIFICATION:
-                                        print(f"Sending email notification to {RECEIVER_EMAIL}")
-                                        send_email(m_subject, m_body, m_body_html, SMTP_SSL)
+                                    send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=p_image_url or image_url)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
 
@@ -6528,7 +7191,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     if playlists_zeroed_counter == PLAYLISTS_DISAPPEARED_COUNTER:
                         print(f"* Spotify API: Playlists count dropped from {playlists_old_count} to 0 and has been 0 for {playlists_zeroed_counter} checks; accepting 0 as the new baseline\n")
                         spotify_print_changed_followers_followings_playlists(
-                            username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists to profile", "Added Playlist", "Removed playlists from profile", "Removed Playlist", playlists_file, csv_file_name, PROFILE_NOTIFICATION, True, sp_accessToken)
+                            username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists to profile", "Added Playlist", "Removed playlists from profile", "Removed Playlist", playlists_file, csv_file_name, PROFILE_NOTIFICATION, True, sp_accessToken, image_url, True)
                         print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                         print_cur_ts("Timestamp:\t\t\t")
                         playlists_old_count = playlists_count
@@ -6544,7 +7207,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     if playlists_old_count == 0 and playlists_zeroed_counter >= PLAYLISTS_DISAPPEARED_COUNTER:
                         print(f"* Spotify API: Playlists count recovered to {playlists_count}; previously was 0 for {playlists_zeroed_counter} checks (old baseline was {playlists_old_count})\n")
 
-                    spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists to profile", "Added Playlist", "Removed playlists from profile", "Removed Playlist", playlists_file, csv_file_name, PROFILE_NOTIFICATION, True, sp_accessToken)
+                    spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists to profile", "Added Playlist", "Removed playlists from profile", "Removed Playlist", playlists_file, csv_file_name, PROFILE_NOTIFICATION, True, sp_accessToken, image_url, True)
                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                     print_cur_ts("Timestamp:\t\t\t")
                     playlists_old_count = playlists_count
@@ -6582,8 +7245,31 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         time.sleep(SPOTIFY_CHECK_INTERVAL)
 
 
+# Applies validated one-run webhook command-line overrides to runtime settings
+def apply_webhook_cli_overrides(args: argparse.Namespace, parser: argparse.ArgumentParser) -> None:
+    global WEBHOOK_ENABLED, WEBHOOK_URL, WEBHOOK_PROVIDER, WEBHOOK_PROFILE_NOTIFICATION, WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION, WEBHOOK_ERROR_NOTIFICATION
+    if args.webhook_provider is not None:
+        WEBHOOK_PROVIDER = str(args.webhook_provider)
+    if args.webhook_url is not None:
+        if not validate_webhook_url(args.webhook_url):
+            parser.error("--webhook-url must contain a complete HTTPS link without embedded credentials")
+        WEBHOOK_URL = str(args.webhook_url).strip()
+        WEBHOOK_ENABLED = True
+    if args.webhook_enabled is not None:
+        WEBHOOK_ENABLED = args.webhook_enabled
+    if args.webhook_profile is True:
+        WEBHOOK_ENABLED = True
+        WEBHOOK_PROFILE_NOTIFICATION = True
+    if args.webhook_followers_followings is False:
+        WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
+    if args.webhook_errors is not None:
+        WEBHOOK_ERROR_NOTIFICATION = args.webhook_errors
+        if args.webhook_errors:
+            WEBHOOK_ENABLED = True
+
+
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, ALARM_TIMEOUT, pyotp, CLEAN_OUTPUT, USER_AGENT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TRUNCATE_CHARS
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, ALARM_TIMEOUT, pyotp, CLEAN_OUTPUT, USER_AGENT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TRUNCATE_CHARS, NTFY_IMAGES
     global EXPORT_ALL
 
     if "--generate-config" in sys.argv:
@@ -6614,7 +7300,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="spotify_profile_monitor",
-        description=("Monitor a Spotify user's profile changes including playlists and send customizable email alerts [ https://github.com/misiektoja/spotify_profile_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
+        description=("Monitor a Spotify user's profile changes including playlists and send customizable email or webhook alerts [ https://github.com/misiektoja/spotify_profile_monitor/ ]"), formatter_class=argparse.RawTextHelpFormatter
     )
 
     # Positional
@@ -6654,6 +7340,12 @@ def main():
         dest="env_file",
         metavar="PATH",
         help="Path to optional dotenv file (auto-search if not set, disable with 'none')",
+    )
+    conf.add_argument(
+        "--set-webhook-url",
+        dest="set_webhook_url",
+        action="store_true",
+        help="Save a Discord or ntfy webhook URL through a hidden prompt",
     )
 
     # Token source
@@ -6737,6 +7429,71 @@ def main():
         dest="send_test_email",
         action="store_true",
         help="Send test email to verify SMTP settings"
+    )
+
+    webhook_notify = parser.add_argument_group("Webhook notifications")
+    webhook_toggle = webhook_notify.add_mutually_exclusive_group()
+    webhook_toggle.add_argument(
+        "--webhook",
+        dest="webhook_enabled",
+        action="store_true",
+        default=None,
+        help="Enable the configured webhook alerts"
+    )
+    webhook_toggle.add_argument(
+        "--no-webhook",
+        dest="webhook_enabled",
+        action="store_false",
+        default=None,
+        help="Disable the configured webhook alerts"
+    )
+    webhook_notify.add_argument(
+        "--webhook-url",
+        dest="webhook_url",
+        metavar="URL",
+        type=str,
+        help="Use one Discord webhook or ntfy topic URL for this run (may remain in shell history)"
+    )
+    webhook_notify.add_argument(
+        "--webhook-provider",
+        dest="webhook_provider",
+        choices=("discord", "ntfy"),
+        help="Webhook request format for this run (default: configured provider)"
+    )
+    webhook_notify.add_argument(
+        "--webhook-profile",
+        dest="webhook_profile",
+        action="store_true",
+        default=None,
+        help="Send webhook alerts when the user's profile changes"
+    )
+    webhook_notify.add_argument(
+        "--no-webhook-followers-followings-notify",
+        dest="webhook_followers_followings",
+        action="store_false",
+        default=None,
+        help="Disable webhook alerts about new followers or followings"
+    )
+    webhook_error_toggle = webhook_notify.add_mutually_exclusive_group()
+    webhook_error_toggle.add_argument(
+        "--webhook-errors",
+        dest="webhook_errors",
+        action="store_true",
+        default=None,
+        help="Send webhook alerts when monitoring has a problem"
+    )
+    webhook_error_toggle.add_argument(
+        "--no-webhook-error-notify",
+        dest="webhook_errors",
+        action="store_false",
+        default=None,
+        help="Disable webhook alerts when monitoring has a problem"
+    )
+    webhook_notify.add_argument(
+        "--send-test-webhook",
+        dest="send_test_webhook",
+        action="store_true",
+        help="Send one test webhook without starting monitoring"
     )
 
     # Intervals & timers
@@ -6945,6 +7702,28 @@ def main():
             val = os.getenv(secret)
             if val is not None:
                 globals()[secret] = val
+
+    if args.set_webhook_url:
+        try:
+            run_set_webhook_url(env_file=DOTENV_FILE or None, config_path=cfg_path)
+        except WebhookConfigurationError as exc:
+            print(f"* Error: {sanitize_error_text(exc)}")
+            sys.exit(1)
+        sys.exit(0)
+
+    apply_webhook_cli_overrides(args, parser)
+
+    if NTFY_IMAGES and not NTFY_IMAGES_AVAILABLE:
+        print("* Warning: Pillow is not installed, so ntfy artwork attachments are disabled for this run")
+        NTFY_IMAGES = False
+
+    if args.send_test_webhook:
+        print("* Sending a test webhook ...\n")
+        if send_webhook("Spotify Profile Monitor test", "Your webhook alerts are set up correctly.", "profile", force=True) == 0:
+            print("* Test webhook sent successfully !")
+        else:
+            sys.exit(1)
+        sys.exit(0)
 
     if args.export_for_spotify_monitor:
         if not args.list_tracks_for_playlist and not args.list_liked_tracks:
@@ -7439,6 +8218,7 @@ def main():
 
     print(f"* Spotify polling intervals:\t[check: {display_time(SPOTIFY_CHECK_INTERVAL)}] [error: {display_time(SPOTIFY_ERROR_INTERVAL)}]")
     print(f"* Email notifications:\t\t[profile changes = {PROFILE_NOTIFICATION}] [followers/followings = {FOLLOWERS_FOLLOWINGS_NOTIFICATION}]\n*\t\t\t\t[errors = {ERROR_NOTIFICATION}]")
+    print(f"* Webhook notifications:\t[enabled = {WEBHOOK_ENABLED}] [provider = {normalized_webhook_provider() or 'invalid'}]\n*\t\t\t\t[profile changes = {WEBHOOK_PROFILE_NOTIFICATION}] [followers/followings = {WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION}]\n*\t\t\t\t[errors = {WEBHOOK_ERROR_NOTIFICATION}]")
     print(f"* Token source:\t\t\t{TOKEN_SOURCE}")
     print(f"* Playlist backend:\t\t{spotify_get_playlist_backend_description()}")
     print(f"* Profile pic changes:\t\t{DETECT_CHANGED_PROFILE_PIC}")
