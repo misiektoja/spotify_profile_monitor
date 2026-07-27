@@ -8,3 +8,4 @@ python-dotenv
 spotipy
 wcwidth
 pathvalidate
+Pillow>=10.0
