@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/maintenance-active-brightgreen?style=flat-square" alt="Maintenance" />
 </p>
 
-Powerful Spotify tool for real-time tracking of profile changes, playlist updates, follower growth, collaborators and more - delivered straight to your terminal or inbox.
+Powerful Spotify tool for real-time tracking of profile changes, playlist updates, follower growth, collaborators and more - delivered straight to your terminal, inbox or webhook.
 
 <a id="-quick-install"></a>
 ### 🚀 Quick Install
@@ -43,7 +43,8 @@ pip install spotify_profile_monitor
 - **Global Search**: Instant links to **Spotify, YouTube Music, Apple Music, Tidal, lyrics** and more.
 
 ### 🔔 Smart Interactions
-- **Instant Alerts**: Detailed **Email notifications** for all profile and playlist changes.
+- **Instant Alerts**: Detailed **Email** and **Webhook notifications** for all profile and playlist changes.
+- **Multi-Service Delivery**: Native **Discord** and **ntfy** alerts with independent event controls.
 - **Visual Reports**: Attach changed profile pictures directly to emails.
 - **Terminal Graphics**: Display profile pictures right in your terminal (via `imgcat`).
 
@@ -79,11 +80,13 @@ pip install spotify_profile_monitor
    * [Spotify sha256 (optional)](#spotify-sha256-optional)
    * [Time Zone](#time-zone)
    * [SMTP Settings](#smtp-settings)
+   * [Webhook Settings](#webhook-settings)
    * [Storing Secrets](#storing-secrets)
 5. [Usage](#usage)
    * [Monitoring Mode](#monitoring-mode)
    * [Listing Mode](#listing-mode)
    * [Email Notifications](#email-notifications)
+   * [Webhook Notifications](#webhook-notifications)
    * [CSV Export](#csv-export)
    * [Detection of Changed Profile Pictures](#detection-of-changed-profile-pictures)
    * [Displaying Images in Your Terminal](#displaying-images-in-your-terminal)
@@ -103,7 +106,7 @@ pip install spotify_profile_monitor
 ## Requirements
 
 * Python 3.6 or higher
-* Libraries: `requests`, `python-dateutil`, `urllib3`, `pyotp`, `pytz`, `tzlocal`, `python-dotenv`, [Spotipy](https://github.com/spotipy-dev/spotipy), `wcwidth`
+* Libraries: `requests`, `python-dateutil`, `urllib3`, `pyotp`, `pytz`, `tzlocal`, `python-dotenv`, [Spotipy](https://github.com/spotipy-dev/spotipy), `wcwidth`, `pathvalidate`, `Pillow`
 
 Tested on:
 
@@ -131,7 +134,7 @@ Download the *[spotify_profile_monitor.py](https://raw.githubusercontent.com/mis
 Install dependencies via pip:
 
 ```sh
-pip install requests python-dateutil urllib3 pyotp pytz tzlocal python-dotenv spotipy wcwidth
+pip install requests python-dateutil urllib3 pyotp pytz tzlocal python-dotenv spotipy wcwidth pathvalidate Pillow
 ```
 
 Alternatively, from the downloaded *[requirements.txt](https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/requirements.txt)*:
@@ -509,10 +512,119 @@ Verify your SMTP settings by using `--send-test-email` flag (the tool will try t
 spotify_profile_monitor --send-test-email
 ```
 
+<a id="webhook-settings"></a>
+### Webhook Settings
+
+Spotify Profile Monitor can send profile, follower and error alerts through Discord or the native [ntfy publish API](https://docs.ntfy.sh/publish/). Webhook delivery works with or without email.
+
+`WEBHOOK_PROVIDER` selects the request format. It defaults to `"discord"`. Use `--webhook-provider discord` or `--webhook-provider ntfy` for a one-run override.
+
+#### Discord
+
+To create a private Discord webhook URL:
+
+1. Open the Discord server and choose the channel that should receive alerts.
+2. Click **Edit Channel** then open **Integrations** > **Webhooks**.
+3. Click **New Webhook** then choose a name and click **Copy Webhook URL**.
+4. Save the URL through the hidden prompt:
+
+```sh
+spotify_profile_monitor --set-webhook-url
+```
+
+The command saves `WEBHOOK_URL` in `.env` without putting the private value in shell history. Treat this URL like a password because anyone who has it can post through it.
+
+Keep the default request format in `spotify_profile_monitor.conf`:
+
+```ini
+WEBHOOK_PROVIDER = "discord"
+```
+
+#### ntfy
+
+Choose a hard-to-guess topic and set the provider to `"ntfy"`:
+
+```ini
+WEBHOOK_PROVIDER = "ntfy"
+```
+
+Save its complete HTTPS topic URL through the same hidden prompt:
+
+```sh
+spotify_profile_monitor --set-webhook-url
+```
+
+For ntfy.sh the value looks like `https://ntfy.sh/spotify-profile-monitor-long-random-value`. Self-hosted ntfy servers also require a complete HTTPS topic URL.
+
+Spotify Profile Monitor sends the alert body as a native UTF-8 ntfy message and the alert subject as its title. Query parameters already in the topic URL are preserved.
+
+Profile and playlist artwork is enabled by default for supported ntfy alerts. Disable it in `spotify_profile_monitor.conf` if you prefer text-only messages:
+
+```ini
+NTFY_IMAGES = False
+```
+
+The monitor accepts artwork only from Spotify HTTPS CDN hosts. It limits downloads to 5 MiB and rejects oversized decoded images before preparing each attachment in memory. If image preparation fails the alert is sent as text. If an attachment upload fails the monitor retries once as text. Self-hosted ntfy servers must allow attachments.
+
+Protected ntfy topics can use a Bearer access token stored in `.env`:
+
+```ini
+NTFY_ACCESS_TOKEN="tk_your_ntfy_access_token"
+```
+
+`NTFY_ACCESS_TOKEN` takes precedence over an `Authorization` entry in `WEBHOOK_HEADERS`. Custom headers remain available for other authentication methods and compatible integrations:
+
+```ini
+WEBHOOK_HEADERS = {
+    "X-Webhook-Title": "{title}",
+}
+```
+
+Header values support the same placeholders as `WEBHOOK_TEMPLATE`. Headers are validated before and after placeholder expansion so formatted values cannot add invalid names, non-string values or line breaks.
+
+#### Advanced Discord-format customization
+
+`WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` control the sender name and HTTPS avatar for Discord-format payloads:
+
+```ini
+WEBHOOK_USERNAME = "Spotify Profile Monitor"
+WEBHOOK_AVATAR_URL = "https://example.com/path/avatar.png"
+```
+
+`WEBHOOK_TEMPLATE` controls the Discord-format request body. Supported placeholders are `title`, `description`, `version`, `image_url`, `fields`, `fields_str`, `color`, `timestamp`, `username` and `avatar_url`.
+
+A dictionary or list is sent as JSON. A string template is sent as a raw request body for compatible integrations. Dictionary payloads always replace `allowed_mentions` with `{"parse": []}` so alert text cannot trigger Discord mentions.
+
+`WEBHOOK_TRANSFORMS` applies string methods to shared placeholder values before the template and headers are rendered:
+
+```ini
+WEBHOOK_TRANSFORMS = [
+    ("title", "upper"),
+    ("description", "replace", "**", ""),
+]
+```
+
+The tuple format is `(field_to_target, method_name, *optional_arguments)`. Invalid templates, avatar URLs, transforms or formatted headers fail before a webhook request is attempted.
+
+For automation or one-time testing `--webhook-url URL` overrides the destination without changing `.env`. The URL may remain visible in shell history or process listings:
+
+```sh
+spotify_profile_monitor --webhook-provider ntfy --webhook-url "https://ntfy.sh/your-private-topic" --send-test-webhook
+```
+
+For normal setup use the hidden command then send a test:
+
+```sh
+spotify_profile_monitor --set-webhook-url
+spotify_profile_monitor --send-test-webhook
+```
+
+Email and webhook delivery are independent. A failure in one channel does not stop the other channel.
+
 <a id="storing-secrets"></a>
 ### Storing Secrets
 
-It is recommended to store secrets like `SP_DC_COOKIE`, `SP_APP_CLIENT_ID`, `SP_APP_CLIENT_SECRET`, `SP_USER_CLIENT_ID`, `SP_USER_CLIENT_SECRET`, `REFRESH_TOKEN`, `SP_SHA256` or `SMTP_PASSWORD` as either an environment variable or in a dotenv file.
+It is recommended to store secrets like `SP_DC_COOKIE`, `SP_APP_CLIENT_ID`, `SP_APP_CLIENT_SECRET`, `SP_USER_CLIENT_ID`, `SP_USER_CLIENT_SECRET`, `REFRESH_TOKEN`, `SP_SHA256`, `SMTP_PASSWORD`, `WEBHOOK_URL` or `NTFY_ACCESS_TOKEN` as either an environment variable or in a dotenv file.
 
 Set the needed environment variables using `export` on **Linux/Unix/macOS/WSL** systems:
 
@@ -525,6 +637,8 @@ export SP_USER_CLIENT_SECRET="your_spotify_user_client_secret"
 export REFRESH_TOKEN="your_spotify_app_refresh_token"
 export SP_SHA256="your_spotify_client_sha256"
 export SMTP_PASSWORD="your_smtp_password"
+export WEBHOOK_URL="https://discord.com/api/webhooks/your_id/your_token"
+export NTFY_ACCESS_TOKEN="tk_your_ntfy_access_token"
 ```
 
 On **Windows Command Prompt** use `set` instead of `export` and on **Windows PowerShell** use `$env`.
@@ -540,6 +654,8 @@ SP_USER_CLIENT_SECRET="your_spotify_user_client_secret"
 REFRESH_TOKEN="your_spotify_app_refresh_token"
 SP_SHA256="your_spotify_client_sha256"
 SMTP_PASSWORD="your_smtp_password"
+WEBHOOK_URL="https://discord.com/api/webhooks/your_id/your_token"
+NTFY_ACCESS_TOKEN="tk_your_ntfy_access_token"
 ```
 
 By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it.
@@ -762,6 +878,37 @@ Example email:
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/assets/spotify_profile_monitor_email_notifications.png" alt="spotify_profile_monitor_email_notifications" width="90%"/>
 </p>
+
+<a id="webhook-notifications"></a>
+### Webhook Notifications
+
+Webhook event settings mirror the email controls while remaining independent from SMTP:
+
+| Event | Config setting | CLI override |
+| --- | --- | --- |
+| Profile or playlist change | `WEBHOOK_PROFILE_NOTIFICATION` | `--webhook-profile` |
+| Followers or followings change | `WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION` | Disable with `--no-webhook-followers-followings-notify` |
+| Monitoring error | `WEBHOOK_ERROR_NOTIFICATION` | Enable with `--webhook-errors` or disable with `--no-webhook-error-notify` |
+
+Enable the master switch and the profile event setting in `spotify_profile_monitor.conf`:
+
+```ini
+WEBHOOK_ENABLED = True
+WEBHOOK_PROVIDER = "discord"
+WEBHOOK_PROFILE_NOTIFICATION = True
+WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION = True
+WEBHOOK_ERROR_NOTIFICATION = True
+```
+
+You can also enable profile webhooks for one run:
+
+```sh
+spotify_profile_monitor <spotify_user_uri_id> --webhook-profile
+```
+
+Use `--webhook` or `--no-webhook` to turn all configured webhook alerts on or off for one run. Use `--webhook-provider {discord,ntfy}` to override the configured request format.
+
+The recommended way to save the private destination is `--set-webhook-url`. Use `--webhook-url URL` only when shell history or process visibility is acceptable. See [Webhook Settings](#webhook-settings) for Discord setup, ntfy artwork and advanced payload customization.
 
 <a id="csv-export"></a>
 ### CSV Export
