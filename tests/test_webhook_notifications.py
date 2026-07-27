@@ -98,6 +98,12 @@ def test_webhook_url_validation(url, expected):
     assert monitor.validate_webhook_url(url) is expected
 
 
+@pytest.mark.parametrize("url,expected", [("https://discord.com/api/webhooks/123/token", "discord"), ("https://canary.discord.com/api/v10/webhooks/123/token", "discord"), ("https://ntfy.sh/private-topic", "ntfy"), ("https://ntfy.example.test/private-topic", ""), ("https://example.test/custom-hook", "")])
+# Verifies distinctive Discord and public ntfy URLs select the proper payload provider
+def test_webhook_provider_detection(url, expected):
+    assert monitor.detect_webhook_provider(url) == expected
+
+
 # Verifies private webhook entry requires a TTY and a writable dotenv destination
 def test_set_webhook_url_requires_safe_persistence():
     with pytest.raises(monitor.WebhookConfigurationError, match="interactive terminal"):
@@ -377,6 +383,21 @@ def test_webhook_cli_overrides(monkeypatch):
     assert monitor.WEBHOOK_PROFILE_NOTIFICATION is True
     assert monitor.WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION is False
     assert monitor.WEBHOOK_ERROR_NOTIFICATION is False
+
+
+# Verifies a known ntfy URL corrects a stale configured provider and sends native text
+def test_runtime_provider_detection_corrects_config_mismatch(monkeypatch, capsys):
+    configure_webhook(monkeypatch)
+    args = argparse.Namespace(webhook_provider=None, webhook_url="https://ntfy.sh/private-topic", webhook_enabled=None, webhook_profile=None, webhook_followers_followings=None, webhook_errors=None)
+    monitor.apply_webhook_cli_overrides(args, argparse.ArgumentParser())
+    assert monitor.WEBHOOK_PROVIDER == "ntfy"
+    assert "Using ntfy" in capsys.readouterr().out
+    webhook_post = Mock(return_value=FakeResponse(200))
+    monkeypatch.setattr(monitor.WEBHOOK_SESSION, "post", webhook_post)
+    assert monitor.send_webhook("Spotify title", "Native body", "profile", force=True) == 0
+    request = webhook_post.call_args
+    assert request.kwargs["data"] == b"Native body"
+    assert "json" not in request.kwargs
 
 
 # Verifies generated configuration contains the complete advanced webhook block
