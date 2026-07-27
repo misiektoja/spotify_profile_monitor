@@ -556,7 +556,7 @@ spotify_profile_monitor --set-webhook-url
 
 For ntfy.sh the value looks like `https://ntfy.sh/spotify-profile-monitor-long-random-value`. Self-hosted ntfy servers also require a complete HTTPS topic URL.
 
-Spotify Profile Monitor sends the alert body as a native UTF-8 ntfy message and the alert subject as its title. Query parameters already in the topic URL are preserved.
+Spotify Profile Monitor sends the alert body as a native UTF-8 ntfy message and the alert subject as its title. Query parameters already in the topic URL are preserved. Long ntfy messages are visibly truncated below ntfy's 4 KB boundary so they remain notifications instead of temporary attachments.
 
 Profile and playlist artwork is enabled by default for supported ntfy alerts. Disable it in `spotify_profile_monitor.conf` if you prefer text-only messages:
 
