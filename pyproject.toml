@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "spotify_profile_monitor"
-version = "3.5"
+version = "3.6"
 description = "Track Spotify profile, follower and playlist changes in real time"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -22,6 +22,7 @@ dependencies = [
   "spotipy>=2.24.0",
   "wcwidth>=0.2.7",
   "pathvalidate>=3.2.0",
+  "Pillow>=10.0",
 ]
 classifiers = [
   "Programming Language :: Python :: 3",
