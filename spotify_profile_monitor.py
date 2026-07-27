@@ -1325,6 +1325,13 @@ def normalized_webhook_provider(provider: Any = None) -> str:
     return normalized if normalized in ("discord", "ntfy") else ""
 
 
+# Builds detailed startup notification lines with shared channel captions
+def _startup_notification_summary_lines() -> List[str]:
+    email_line = f"* Notifications (email):\t[profile changes = {PROFILE_NOTIFICATION}] [followers/followings = {FOLLOWERS_FOLLOWINGS_NOTIFICATION}]\n\t\t\t\t[errors = {ERROR_NOTIFICATION}]"
+    webhook_line = f"* Notifications (webhook):\t[enabled = {WEBHOOK_ENABLED}] [provider = {normalized_webhook_provider() or 'invalid'}]\n\t\t\t\t[profile changes = {WEBHOOK_PROFILE_NOTIFICATION}] [followers/followings = {WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION}]\n\t\t\t\t[errors = {WEBHOOK_ERROR_NOTIFICATION}]"
+    return [email_line, webhook_line]
+
+
 # Returns whether one configured webhook alert is enabled independently of email settings
 def webhook_event_enabled(notification_type: str) -> bool:
     settings = {
@@ -8221,8 +8228,8 @@ def main():
         ERROR_NOTIFICATION = False
 
     print(f"* Spotify polling intervals:\t[check: {display_time(SPOTIFY_CHECK_INTERVAL)}] [error: {display_time(SPOTIFY_ERROR_INTERVAL)}]")
-    print(f"* Email notifications:\t\t[profile changes = {PROFILE_NOTIFICATION}] [followers/followings = {FOLLOWERS_FOLLOWINGS_NOTIFICATION}]\n*\t\t\t\t[errors = {ERROR_NOTIFICATION}]")
-    print(f"* Webhook notifications:\t[enabled = {WEBHOOK_ENABLED}] [provider = {normalized_webhook_provider() or 'invalid'}]\n*\t\t\t\t[profile changes = {WEBHOOK_PROFILE_NOTIFICATION}] [followers/followings = {WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION}]\n*\t\t\t\t[errors = {WEBHOOK_ERROR_NOTIFICATION}]")
+    for notification_summary_line in _startup_notification_summary_lines():
+        print(notification_summary_line)
     print(f"* Token source:\t\t\t{TOKEN_SOURCE}")
     print(f"* Playlist backend:\t\t{spotify_get_playlist_backend_description()}")
     print(f"* Profile pic changes:\t\t{DETECT_CHANGED_PROFILE_PIC}")
