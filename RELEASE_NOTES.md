@@ -13,6 +13,7 @@ Version **3.6** adds webhook notifications. Profile, playlist, follower and erro
 - **NEW:** Added native **ntfy topic publishing**, optional Bearer authentication through `NTFY_ACCESS_TOKEN` and profile or playlist artwork attachments. Image preparation failures fall back to text and rejected artwork uploads retry once as text
 - **NEW:** Added advanced Discord-format customization through `WEBHOOK_USERNAME`, `WEBHOOK_AVATAR_URL`, `WEBHOOK_TEMPLATE`, `WEBHOOK_TRANSFORMS` and placeholder-aware `WEBHOOK_HEADERS`
 - **IMPROVE:** Kept email and webhook delivery independent so one failed channel does not block the other. Webhook delivery uses a separate session, bounded timeouts, capped rate-limit delays and one retry for temporary failures
+- **IMPROVE:** Standardized startup notification captions as **Notifications (email)** and **Notifications (webhook)**
 - **IMPROVE:** Added complete HTTPS destination validation, embedded-credential rejection, secret redaction, Discord mention suppression, custom-header validation and Spotify CDN restrictions for ntfy artwork
 - **FIX:** Kept long ntfy messages below its 4 KB attachment boundary, added a visible truncation explanation and preserved complete UTF-8 characters
 
