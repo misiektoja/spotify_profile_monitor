@@ -79,6 +79,19 @@ def configure_webhook(monkeypatch):
     monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", True)
 
 
+# Verifies detailed startup notification rows use the shared channel captions
+def test_startup_notification_summary_captions(monkeypatch):
+    monkeypatch.setattr(monitor, "PROFILE_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "FOLLOWERS_FOLLOWINGS_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", True)
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "ntfy")
+    monkeypatch.setattr(monitor, "WEBHOOK_PROFILE_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", True)
+    assert monitor._startup_notification_summary_lines() == ["* Notifications (email):\t[profile changes = True] [followers/followings = True]\n*\t\t\t\t[errors = True]", "* Notifications (webhook):\t[enabled = True] [provider = ntfy]\n*\t\t\t\t[profile changes = True] [followers/followings = True]\n*\t\t\t\t[errors = True]"]
+
+
 # Verifies webhook URLs require complete HTTPS endpoints without embedded credentials
 @pytest.mark.parametrize("url,expected", [("https://discord.com/api/webhooks/123/token", True), ("https://hooks.example.test/discord/path", True), ("http://discord.com/api/webhooks/123/token", False), ("https://user:password@example.test/hook", False), ("https://example.test", False), ("not-a-url", False), ("", False)])
 def test_webhook_url_validation(url, expected):
