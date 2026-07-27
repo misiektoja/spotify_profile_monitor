@@ -2,6 +2,23 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.6 (TBD)
+
+Version **3.6** adds webhook notifications. Profile, playlist, follower and error alerts can now reach Discord or ntfy independently from email.
+
+**Features and Improvements**:
+
+- **NEW:** Added **Discord and ntfy webhook notifications** for profile changes, playlist updates, follower or following changes and monitoring errors.
+- **NEW:** Added `--set-webhook-url` for private URL storage, `--send-test-webhook` for delivery checks, `--webhook-provider {discord,ntfy}` and `--webhook-url URL` for one-run overrides plus matching master and event flags
+- **NEW:** Added native **ntfy topic publishing**, optional Bearer authentication through `NTFY_ACCESS_TOKEN` and profile or playlist artwork attachments. Image preparation failures fall back to text and rejected artwork uploads retry once as text
+- **NEW:** Added advanced Discord-format customization through `WEBHOOK_USERNAME`, `WEBHOOK_AVATAR_URL`, `WEBHOOK_TEMPLATE`, `WEBHOOK_TRANSFORMS` and placeholder-aware `WEBHOOK_HEADERS`
+- **IMPROVE:** Kept email and webhook delivery independent so one failed channel does not block the other. Webhook delivery uses a separate session, bounded timeouts, capped rate-limit delays and one retry for temporary failures
+- **IMPROVE:** Added complete HTTPS destination validation, embedded-credential rejection, secret redaction, Discord mention suppression, custom-header validation and Spotify CDN restrictions for ntfy artwork
+
+**Dependencies**:
+
+- **NEW:** Added the `Pillow` dependency used to prepare ntfy artwork in memory
+
 # Changes in 3.5 (21 Jul 2026)
 
 Version **3.5** keeps public playlist monitoring working under Spotify's current API restrictions. It adds automatic fallback to Spotify web-player data, removes the extra OAuth app requirement for cookie and client users and improves playlist polling accuracy and efficiency.
