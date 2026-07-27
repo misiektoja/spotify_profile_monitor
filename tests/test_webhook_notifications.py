@@ -198,6 +198,16 @@ def test_successful_ntfy_webhook_uses_native_topic_api(monkeypatch):
     assert "json" not in request.kwargs
 
 
+# Verifies long ntfy messages stay below the server attachment boundary with a visible truncation marker
+def test_ntfy_message_stays_below_attachment_boundary():
+    title, message = monitor.build_ntfy_webhook_message("Spotify title", ("a" * monitor.NTFY_MESSAGE_LIMIT_BYTES) + "\U0001f3b5")
+    assert title == "Spotify title"
+    assert message.endswith(monitor.NTFY_TRUNCATION_SUFFIX)
+    assert len(message.encode("utf-8")) <= monitor.NTFY_MESSAGE_LIMIT_BYTES
+    assert len(message.encode("utf-8")) < 4096
+    assert "\ufffd" not in message
+
+
 # Verifies a private ntfy token overrides custom authentication headers
 def test_ntfy_access_token_uses_bearer_authentication(monkeypatch):
     configure_webhook(monkeypatch)
