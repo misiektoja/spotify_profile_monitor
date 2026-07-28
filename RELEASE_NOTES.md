@@ -18,6 +18,7 @@ Version **3.6** adds independent **Discord and ntfy webhook notifications** for 
 **Bug fixes**:
 
 - **BUGFIX:** Kept long ntfy messages below its 4 KB attachment boundary, added a visible truncation explanation and preserved complete UTF-8 characters
+- **BUGFIX:** Made `SIGHUP` clear cached Spotify authentication after credential rotation and redetect Discord or ntfy when the private webhook destination changes
 
 # Changes in 3.5 (21 Jul 2026)
 
