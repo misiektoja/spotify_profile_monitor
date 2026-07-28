@@ -44,7 +44,8 @@ TOKEN_SOURCE = "cookie"
 # - Log in to Spotify Web Player and follow the manual cookie extraction guide:
 #   https://github.com/misiektoja/spotify_profile_monitor#manual-cookie-extraction
 # - Provide the SP_DC_COOKIE secret using one of the following methods:
-#   - Add it to a ".env" file for persistent use (recommended)
+#   - Recommended and most secure for manual entry: run --set-sp-dc to use a hidden prompt, validate the cookie and save it to ".env"
+#   - Add it directly to a ".env" file for persistent use
 #   - Set it as an environment variable (for example export SP_DC_COOKIE=...)
 #   - Pass it at runtime with -u / --spotify-dc-cookie (not recommended because command-line secrets may be exposed)
 #   - Fallback: hard-code it in the code or config file (not recommended)
@@ -862,7 +863,7 @@ from email.utils import parsedate_to_datetime
 from io import BytesIO
 from pathlib import Path
 import secrets
-from typing import Any, Callable, List, Optional, Sequence, Tuple, cast
+from typing import Any, Callable, List, Optional, Sequence, Tuple, Type, cast
 from email.utils import parsedate_to_datetime
 
 import urllib3
@@ -5857,6 +5858,10 @@ class WebhookConfigurationError(Exception):
     pass
 
 
+class SpDcConfigurationError(Exception):
+    pass
+
+
 # Returns a writable dotenv destination for private webhook setup
 def resolve_webhook_env_path(env_file=None, cwd=None) -> Path:
     if env_file is not None and str(env_file).casefold() == "none":
@@ -5866,15 +5871,24 @@ def resolve_webhook_env_path(env_file=None, cwd=None) -> Path:
     return destination.resolve()
 
 
+# Returns a writable dotenv destination for private Spotify cookie setup
+def resolve_sp_dc_env_path(env_file=None, cwd=None) -> Path:
+    if env_file is not None and str(env_file).casefold() == "none":
+        raise SpDcConfigurationError("Private Spotify cookie setup requires a dotenv destination. Replace '--env-file none' with a writable path.")
+    base_directory = Path.cwd() if cwd is None else Path(cwd)
+    destination = base_directory / ".env" if env_file is None else Path(env_file).expanduser()
+    return destination.resolve()
+
+
 # Checks whether a dotenv file already contains one named assignment
-def _dotenv_contains_key(destination, key) -> bool:
+def _dotenv_contains_key(destination, key, error_type: Type[Exception] = WebhookConfigurationError) -> bool:
     destination_path = Path(destination)
     if not destination_path.exists():
         return False
     try:
         lines = destination_path.read_text(encoding="utf-8").splitlines()
     except (OSError, UnicodeError):
-        raise WebhookConfigurationError(f"Could not read private settings file '{destination_path}'. Check that it is a readable UTF-8 file.") from None
+        raise error_type(f"Could not read private settings file '{destination_path}'. Check that it is a readable UTF-8 file.") from None
     assignment_pattern = re.compile(rf"^\s*(?:export\s+)?{re.escape(key)}\s*=")
     return any(assignment_pattern.match(line) for line in lines)
 
@@ -5939,6 +5953,78 @@ def update_dotenv_file(destination, updates) -> dict:
         if temporary_path is not None and temporary_path.exists():
             temporary_path.unlink()
     return {"path": str(destination_path), "updated_keys": tuple(key for key, _ in update_items)}
+
+
+# Identifies network-shaped Spotify authentication failures without returning raw exception text
+def _looks_like_network_failure(error) -> bool:
+    if isinstance(error, req.RequestException):
+        return True
+    error_text = str(error).lower()
+    return any(term in error_text for term in ("connection", "connectivity", "timeout", "timed out", "name resolution", "dns", "proxy", "ssl", "500", "502", "503", "504"))
+
+
+# Validates one sp_dc cookie through token acquisition and an authenticated Spotify request
+def validate_sp_dc_cookie(sp_dc) -> bool:
+    global TOKEN_SOURCE, USER_AGENT, DEBUG_MODE
+    if not isinstance(sp_dc, str) or not sp_dc:
+        raise SpDcConfigurationError("No nonempty sp_dc cookie was entered.")
+
+    previous_token_source = TOKEN_SOURCE
+    previous_user_agent = USER_AGENT
+    previous_debug_mode = DEBUG_MODE
+    TOKEN_SOURCE = "cookie"
+    DEBUG_MODE = False
+    if not USER_AGENT:
+        USER_AGENT = get_random_user_agent()
+    try:
+        try:
+            token_data = refresh_access_token_from_sp_dc(sp_dc)
+        except Exception as exc:
+            if _looks_like_network_failure(exc):
+                raise SpDcConfigurationError("A network or connectivity failure prevented Spotify cookie validation. The private settings file was not changed.") from None
+            raise SpDcConfigurationError("The entered sp_dc cookie is invalid or expired. The private settings file was not changed.") from None
+
+        access_token = token_data.get("access_token") if isinstance(token_data, dict) else None
+        client_id = token_data.get("client_id", "") if isinstance(token_data, dict) else ""
+        if not isinstance(access_token, str) or not access_token or not check_token_validity(access_token, client_id, USER_AGENT):
+            raise SpDcConfigurationError("Spotify authentication rejected the entered sp_dc cookie. The private settings file was not changed.")
+    finally:
+        TOKEN_SOURCE = previous_token_source
+        USER_AGENT = previous_user_agent
+        DEBUG_MODE = previous_debug_mode
+    return True
+
+
+# Validates and atomically stores one privately entered sp_dc cookie
+def run_set_sp_dc(env_file=None, interactive=None, input_func=None, getpass_func=None) -> str:
+    destination = resolve_sp_dc_env_path(env_file)
+    terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
+    if not terminal_is_interactive:
+        raise SpDcConfigurationError("--set-sp-dc requires an interactive terminal. Run it in a terminal window so the cookie stays hidden while you paste it.")
+    prompt = input if input_func is None else input_func
+    if _dotenv_contains_key(destination, "SP_DC_COOKIE", SpDcConfigurationError):
+        try:
+            confirmed = prompt(f"Replace SP_DC_COOKIE in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+        except (EOFError, KeyboardInterrupt):
+            confirmed = False
+        if not confirmed:
+            raise SpDcConfigurationError("Spotify cookie setup was cancelled. The private settings file was not changed.")
+    hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
+    try:
+        sp_dc = hidden_prompt("Enter sp_dc privately (input hidden): ").strip()
+    except (EOFError, KeyboardInterrupt):
+        raise SpDcConfigurationError("Spotify cookie setup was cancelled. The private settings file was not changed.") from None
+    if not sp_dc:
+        raise SpDcConfigurationError("No nonempty sp_dc cookie was entered. The private settings file was not changed.")
+    print("* Validating the entered Spotify cookie before changing the private settings file ...")
+    validate_sp_dc_cookie(sp_dc)
+    try:
+        update_dotenv_file(destination, {"SP_DC_COOKIE": sp_dc})
+    except Exception:
+        raise SpDcConfigurationError(f"Could not save SP_DC_COOKIE in '{destination}'. Check file permissions or choose another path with --env-file.") from None
+    print("* SP_DC_COOKIE validation succeeded")
+    print(f"* Updated private settings file: {destination}")
+    return str(destination)
 
 
 # Checks and safely stores one privately entered webhook URL
@@ -7425,6 +7511,12 @@ def main():
         help="Path to optional dotenv file (auto-search if not set, disable with 'none')",
     )
     conf.add_argument(
+        "--set-sp-dc",
+        dest="set_sp_dc",
+        action="store_true",
+        help="Privately validate and save SP_DC_COOKIE through a hidden prompt",
+    )
+    conf.add_argument(
         "--set-webhook-url",
         dest="set_webhook_url",
         action="store_true",
@@ -7785,6 +7877,14 @@ def main():
             val = os.getenv(secret)
             if val is not None:
                 globals()[secret] = val
+
+    if args.set_sp_dc:
+        try:
+            run_set_sp_dc(env_file=DOTENV_FILE or None)
+        except SpDcConfigurationError as exc:
+            print(f"* Error: {sanitize_error_text(exc)}")
+            sys.exit(1)
+        sys.exit(0)
 
     if args.set_webhook_url:
         try:
