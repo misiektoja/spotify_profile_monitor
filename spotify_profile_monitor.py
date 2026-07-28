@@ -2016,12 +2016,15 @@ def decrease_check_signal_handler(sig, frame):
 # from login & client token requests body files
 def reload_secrets_signal_handler(sig, frame):
     global DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL
+    global SP_CACHED_ACCESS_TOKEN, SP_CACHED_REFRESH_TOKEN, SP_ACCESS_TOKEN_EXPIRES_AT, SP_CACHED_CLIENT_ID, SP_CACHED_OAUTH_APP_TOKEN, SP_CACHED_CLIENT_TOKEN, SP_CLIENT_TOKEN_EXPIRES_AT, WEBHOOK_PROVIDER
 
     sig_name = signal.Signals(sig).name
 
     print(f"* Signal {sig_name} received\n")
 
     suffix = "\n" if TOKEN_SOURCE == 'client' else ""
+    auth_values_before = (SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, REFRESH_TOKEN, DEVICE_ID, SYSTEM_ID, USER_URI_ID)
+    webhook_url_changed = False
 
     # Disable autoscan if DOTENV_FILE set to none
     if DOTENV_FILE and DOTENV_FILE.lower() == 'none':
@@ -2048,6 +2051,8 @@ def reload_secrets_signal_handler(sig, frame):
             val = os.getenv(secret)
             if val is not None and val != old_val:
                 globals()[secret] = val
+                if secret == "WEBHOOK_URL":
+                    webhook_url_changed = True
                 print(f"* Reloaded {secret} from {env_path}{suffix}")
 
     if TOKEN_SOURCE == 'client':
@@ -2086,6 +2091,22 @@ def reload_secrets_signal_handler(sig, frame):
                     print(" - Client model:\t", CLIENT_MODEL, "\n")
             else:
                 print(f"* Error: Protobuf file ({CLIENTTOKEN_REQUEST_BODY_FILE}) does not exist")
+
+    auth_values_after = (SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, REFRESH_TOKEN, DEVICE_ID, SYSTEM_ID, USER_URI_ID)
+    if auth_values_after != auth_values_before:
+        SP_CACHED_ACCESS_TOKEN = None
+        SP_CACHED_REFRESH_TOKEN = None
+        SP_ACCESS_TOKEN_EXPIRES_AT = 0
+        SP_CACHED_CLIENT_ID = ""
+        SP_CACHED_OAUTH_APP_TOKEN = None
+        SP_CACHED_CLIENT_TOKEN = None
+        SP_CLIENT_TOKEN_EXPIRES_AT = 0
+        print(f"* Cleared cached Spotify authentication after secret reload{suffix}")
+    if webhook_url_changed:
+        detected_provider = detect_webhook_provider(WEBHOOK_URL)
+        if detected_provider and detected_provider != normalized_webhook_provider():
+            WEBHOOK_PROVIDER = detected_provider
+            print(f"* Updated webhook provider to {detected_provider}{suffix}")
 
     print_cur_ts("Timestamp:\t\t\t")
 
