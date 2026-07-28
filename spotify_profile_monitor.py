@@ -818,6 +818,7 @@ if sys.version_info < (3, 6):
 
 import time
 import string
+import textwrap
 import json
 import os
 from datetime import datetime, timezone, timedelta
@@ -1345,7 +1346,7 @@ def detect_webhook_provider(url: Any) -> str:
 # Returns enabled email notification category names in display order
 def _startup_email_notification_categories() -> List[str]:
     settings = (
-        (PROFILE_NOTIFICATION, "profile changes"),
+        (PROFILE_NOTIFICATION, "profile"),
         (PROFILE_NOTIFICATION and FOLLOWERS_FOLLOWINGS_NOTIFICATION, "followers/followings"),
         (ERROR_NOTIFICATION, "errors"),
     )
@@ -1355,20 +1356,25 @@ def _startup_email_notification_categories() -> List[str]:
 # Returns enabled webhook notification category names in display order
 def _startup_webhook_notification_categories() -> List[str]:
     settings = (
-        (WEBHOOK_PROFILE_NOTIFICATION, "profile changes"),
+        (WEBHOOK_PROFILE_NOTIFICATION, "profile"),
         (WEBHOOK_PROFILE_NOTIFICATION and WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION, "followers/followings"),
         (WEBHOOK_ERROR_NOTIFICATION, "errors"),
     )
     return [label for enabled, label in settings if WEBHOOK_ENABLED and enabled]
 
 
+# Formats one notification row with unstarred continuation lines when needed
+def _format_startup_notification_line(label: str, categories: List[str]) -> str:
+    prefix = f"* {label:<30}"
+    state = "On (" + ", ".join(categories) + ")" if categories else "Off"
+    return textwrap.fill(state, width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False)
+
+
 # Builds compact startup notification lines for both delivery channels
 def _startup_notification_summary_lines() -> List[str]:
     enabled_email = _startup_email_notification_categories()
     enabled_webhook = _startup_webhook_notification_categories()
-    email_state = "On (" + ", ".join(enabled_email) + ")" if enabled_email else "Off"
-    webhook_state = "On (" + ", ".join(enabled_webhook) + ")" if enabled_webhook else "Off"
-    return [f"* {('Notifications (email):'):<30}{email_state}", f"* {('Notifications (webhook):'):<30}{webhook_state}"]
+    return [_format_startup_notification_line("Notifications (email):", enabled_email), _format_startup_notification_line("Notifications (webhook):", enabled_webhook)]
 
 
 # Returns whether one configured webhook alert is enabled independently of email settings
