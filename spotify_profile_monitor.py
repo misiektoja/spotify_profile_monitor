@@ -1342,11 +1342,33 @@ def detect_webhook_provider(url: Any) -> str:
     return "discord" if discord_host and discord_path else ""
 
 
-# Builds detailed startup notification lines with shared channel captions
+# Returns enabled email notification category names in display order
+def _startup_email_notification_categories() -> List[str]:
+    settings = (
+        (PROFILE_NOTIFICATION, "profile changes"),
+        (PROFILE_NOTIFICATION and FOLLOWERS_FOLLOWINGS_NOTIFICATION, "followers/followings"),
+        (ERROR_NOTIFICATION, "errors"),
+    )
+    return [label for enabled, label in settings if enabled]
+
+
+# Returns enabled webhook notification category names in display order
+def _startup_webhook_notification_categories() -> List[str]:
+    settings = (
+        (WEBHOOK_PROFILE_NOTIFICATION, "profile changes"),
+        (WEBHOOK_PROFILE_NOTIFICATION and WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION, "followers/followings"),
+        (WEBHOOK_ERROR_NOTIFICATION, "errors"),
+    )
+    return [label for enabled, label in settings if WEBHOOK_ENABLED and enabled]
+
+
+# Builds compact startup notification lines for both delivery channels
 def _startup_notification_summary_lines() -> List[str]:
-    email_line = f"* Notifications (email):\t[profile changes = {PROFILE_NOTIFICATION}] [followers/followings = {FOLLOWERS_FOLLOWINGS_NOTIFICATION}]\n\t\t\t\t[errors = {ERROR_NOTIFICATION}]"
-    webhook_line = f"* Notifications (webhook):\t[enabled = {WEBHOOK_ENABLED}] [provider = {normalized_webhook_provider() or 'invalid'}]\n\t\t\t\t[profile changes = {WEBHOOK_PROFILE_NOTIFICATION}] [followers/followings = {WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION}]\n\t\t\t\t[errors = {WEBHOOK_ERROR_NOTIFICATION}]"
-    return [email_line, webhook_line]
+    enabled_email = _startup_email_notification_categories()
+    enabled_webhook = _startup_webhook_notification_categories()
+    email_state = "On (" + ", ".join(enabled_email) + ")" if enabled_email else "Off"
+    webhook_state = "On (" + ", ".join(enabled_webhook) + ")" if enabled_webhook else "Off"
+    return [f"* {('Notifications (email):'):<30}{email_state}", f"* {('Notifications (webhook):'):<30}{webhook_state}"]
 
 
 # Returns whether one configured webhook alert is enabled independently of email settings
