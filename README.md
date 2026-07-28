@@ -165,13 +165,13 @@ You need two values:
 1. The raw Spotify user ID for the person you want to monitor. Follow the [user ID instructions](#how-to-get-a-friends-user-uri-id) to copy a profile link. Use the part after `/user/` and before `?` if the link contains one.
 2. The `sp_dc` login cookie from the Spotify account used for monitoring. Follow the [manual cookie extraction steps](#manual-cookie-extraction) and treat this value like a password.
 
-Create a plain text file named `.env` in the directory where you will run Spotify Profile Monitor. Add your cookie to it:
+Save the cookie through the hidden prompt:
 
-```ini
-SP_DC_COOKIE="your_sp_dc_cookie_value"
+```sh
+spotify_profile_monitor --set-sp-dc
 ```
 
-Do not share this file or commit it to a repository.
+The command validates the cookie with Spotify before saving `SP_DC_COOKIE` to `.env`. The value is not displayed or placed in shell history. Do not share the generated `.env` file or commit it to a repository.
 
 Start monitoring profile and playlist changes:
 
@@ -301,13 +301,20 @@ Follow these steps:
 3. In Firefox, open **Storage** > **Cookies** > `https://open.spotify.com`.
 4. In Chrome, Brave or Chromium, open **Application** > **Storage** > **Cookies** > `https://open.spotify.com`.
 5. Find the cookie named `sp_dc` and copy only its **Value**. Do not copy the cookie name or the complete table row.
-6. Save it as `SP_DC_COOKIE` in `.env` as shown in [Quick Start](#quick-start).
+6. Run the private entry command then paste the copied value at its hidden prompt:
+
+```sh
+spotify_profile_monitor --set-sp-dc
+```
+
+The command validates the cookie before atomically saving it as `SP_DC_COOKIE` in `.env`. To use another dotenv path, add `--env-file PATH`.
 
 As an alternative, [Cookie-Editor by cgagnier](https://cookie-editor.com/) can display the `sp_dc` value. Only use a browser extension that you trust because browser extensions can access sensitive login cookies.
 
 You can provide `SP_DC_COOKIE` in these ways:
 
-* Add `SP_DC_COOKIE="your_sp_dc_cookie_value"` to a [dotenv file](#storing-secrets) for persistent use. This is recommended.
+* Run `spotify_profile_monitor --set-sp-dc` to enter it privately, validate it with Spotify then save it to a [dotenv file](#storing-secrets). This is recommended.
+* Add `SP_DC_COOKIE="your_sp_dc_cookie_value"` directly to a dotenv file for persistent use.
 * Set it as an [environment variable](#storing-secrets), for example `export SP_DC_COOKIE="your_sp_dc_cookie_value"`.
 * Pass it for one run with `-u` or `--spotify-dc-cookie`. This is not recommended because the value may appear in shell history or process listings.
 * Store it in the configuration file or source code as a last resort. This is not recommended because it is easier to expose or commit accidentally.
@@ -624,7 +631,7 @@ Email and webhook delivery are independent. A failure in one channel does not st
 <a id="storing-secrets"></a>
 ### Storing Secrets
 
-It is recommended to store secrets like `SP_DC_COOKIE`, `SP_APP_CLIENT_ID`, `SP_APP_CLIENT_SECRET`, `SP_USER_CLIENT_ID`, `SP_USER_CLIENT_SECRET`, `REFRESH_TOKEN`, `SP_SHA256`, `SMTP_PASSWORD`, `WEBHOOK_URL` or `NTFY_ACCESS_TOKEN` as either an environment variable or in a dotenv file.
+It is recommended to store secrets like `SP_DC_COOKIE`, `SP_APP_CLIENT_ID`, `SP_APP_CLIENT_SECRET`, `SP_USER_CLIENT_ID`, `SP_USER_CLIENT_SECRET`, `REFRESH_TOKEN`, `SP_SHA256`, `SMTP_PASSWORD`, `WEBHOOK_URL` or `NTFY_ACCESS_TOKEN` as either an environment variable or in a dotenv file. For `SP_DC_COOKIE`, prefer `spotify_profile_monitor --set-sp-dc` so the value is entered through a hidden prompt and validated before it is saved.
 
 Set the needed environment variables using `export` on **Linux/Unix/macOS/WSL** systems:
 
