@@ -13,7 +13,7 @@ Version **3.6** adds independent **Discord and ntfy webhook notifications** for 
 - **NEW:** Added **customizable Discord-format payloads** with validated templates, transforms and headers plus mention suppression
 - **NEW:** Added **native ntfy topic delivery** with protected-topic authentication, profile or playlist artwork and automatic text fallback, using Pillow for bounded in-memory image preparation
 - **IMPROVE:** Added **bounded webhook delivery**, automatic provider correction and strict destination validation while keeping email and webhook delivery independent
-- **IMPROVE:** Added compact **email and webhook category rollups** to the startup summary, showing only effective notification types on one line per channel
+- **IMPROVE:** Added compact **email and webhook category rollups** to the startup summary with short labels and unstarred continuation lines when needed
 
 **Bug fixes**:
 
