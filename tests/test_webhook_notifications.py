@@ -79,17 +79,30 @@ def configure_webhook(monkeypatch):
     monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", True)
 
 
-# Verifies detailed startup notification rows use the shared channel captions
-def test_startup_notification_summary_captions(monkeypatch):
+# Verifies startup email and webhook summaries use compact single-line category rollups
+def test_startup_notification_summaries_use_compact_rollups(monkeypatch):
     monkeypatch.setattr(monitor, "PROFILE_NOTIFICATION", True)
     monkeypatch.setattr(monitor, "FOLLOWERS_FOLLOWINGS_NOTIFICATION", True)
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
     monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", True)
-    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "ntfy")
     monkeypatch.setattr(monitor, "WEBHOOK_PROFILE_NOTIFICATION", True)
     monkeypatch.setattr(monitor, "WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION", True)
     monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", True)
-    assert monitor._startup_notification_summary_lines() == ["* Notifications (email):\t[profile changes = True] [followers/followings = True]\n*\t\t\t\t[errors = True]", "* Notifications (webhook):\t[enabled = True] [provider = ntfy]\n*\t\t\t\t[profile changes = True] [followers/followings = True]\n*\t\t\t\t[errors = True]"]
+    expected_email = "* Notifications (email):        On (profile changes, followers/followings, errors)"
+    expected_webhook = "* Notifications (webhook):      On (profile changes, followers/followings, errors)"
+    assert monitor._startup_notification_summary_lines() == [expected_email, expected_webhook]
+
+
+# Verifies disabled master and parent switches hide ineffective notification categories
+def test_startup_notification_summaries_respect_master_switches(monkeypatch):
+    monkeypatch.setattr(monitor, "PROFILE_NOTIFICATION", False)
+    monkeypatch.setattr(monitor, "FOLLOWERS_FOLLOWINGS_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", False)
+    monkeypatch.setattr(monitor, "WEBHOOK_PROFILE_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", True)
+    assert monitor._startup_notification_summary_lines() == ["* Notifications (email):        On (errors)", "* Notifications (webhook):      Off"]
 
 
 # Verifies webhook URLs require complete HTTPS endpoints without embedded credentials
