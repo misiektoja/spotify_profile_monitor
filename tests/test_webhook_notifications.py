@@ -111,6 +111,37 @@ def test_webhook_url_validation(url, expected):
     assert monitor.validate_webhook_url(url) is expected
 
 
+# Verifies SIGHUP adopts rotated client credentials, clears auth caches and redetects ntfy
+def test_sighup_reload_clears_auth_caches_and_updates_webhook_provider(monkeypatch):
+    replacements = {"REFRESH_TOKEN": "new-refresh-token", "WEBHOOK_URL": "https://ntfy.sh/new-private-topic"}
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "test.env")
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor, "TOKEN_SOURCE", "client")
+    monkeypatch.setattr(monitor, "LOGIN_REQUEST_BODY_FILE", "")
+    monkeypatch.setattr(monitor, "CLIENTTOKEN_REQUEST_BODY_FILE", "")
+    monkeypatch.setattr(monitor, "REFRESH_TOKEN", "old-refresh-token")
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", "https://discord.com/api/webhooks/123/old-token")
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(monitor, "SP_CACHED_ACCESS_TOKEN", "cached-access")
+    monkeypatch.setattr(monitor, "SP_CACHED_REFRESH_TOKEN", "cached-refresh")
+    monkeypatch.setattr(monitor, "SP_ACCESS_TOKEN_EXPIRES_AT", 999)
+    monkeypatch.setattr(monitor, "SP_CACHED_CLIENT_ID", "cached-client-id")
+    monkeypatch.setattr(monitor, "SP_CACHED_OAUTH_APP_TOKEN", "cached-oauth")
+    monkeypatch.setattr(monitor, "SP_CACHED_CLIENT_TOKEN", "cached-client-token")
+    monkeypatch.setattr(monitor, "SP_CLIENT_TOKEN_EXPIRES_AT", 999)
+    with patch("dotenv.load_dotenv"), patch.object(monitor.os, "getenv", side_effect=replacements.get):
+        monitor.reload_secrets_signal_handler(monitor.signal.SIGHUP, None)
+    assert monitor.REFRESH_TOKEN == "new-refresh-token"
+    assert monitor.WEBHOOK_PROVIDER == "ntfy"
+    assert monitor.SP_CACHED_ACCESS_TOKEN is None
+    assert monitor.SP_CACHED_REFRESH_TOKEN is None
+    assert monitor.SP_ACCESS_TOKEN_EXPIRES_AT == 0
+    assert monitor.SP_CACHED_CLIENT_ID == ""
+    assert monitor.SP_CACHED_OAUTH_APP_TOKEN is None
+    assert monitor.SP_CACHED_CLIENT_TOKEN is None
+    assert monitor.SP_CLIENT_TOKEN_EXPIRES_AT == 0
+
+
 @pytest.mark.parametrize("url,expected", [("https://discord.com/api/webhooks/123/token", "discord"), ("https://canary.discord.com/api/v10/webhooks/123/token", "discord"), ("https://ntfy.sh/private-topic", "ntfy"), ("https://ntfy.example.test/private-topic", ""), ("https://example.test/custom-hook", "")])
 # Verifies distinctive Discord and public ntfy URLs select the proper payload provider
 def test_webhook_provider_detection(url, expected):
