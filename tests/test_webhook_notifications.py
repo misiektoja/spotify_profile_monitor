@@ -88,8 +88,8 @@ def test_startup_notification_summaries_use_compact_rollups(monkeypatch):
     monkeypatch.setattr(monitor, "WEBHOOK_PROFILE_NOTIFICATION", True)
     monkeypatch.setattr(monitor, "WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION", True)
     monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", True)
-    expected_email = "* Notifications (email):        On (profile changes, followers/followings, errors)"
-    expected_webhook = "* Notifications (webhook):      On (profile changes, followers/followings, errors)"
+    expected_email = "* Notifications (email):        On (profile, followers/followings, errors)"
+    expected_webhook = "* Notifications (webhook):      On (profile, followers/followings, errors)"
     assert monitor._startup_notification_summary_lines() == [expected_email, expected_webhook]
 
 
