@@ -65,12 +65,15 @@ class WebPlaylistBackendTests(unittest.TestCase):
         self.assertNotIn("Create a new app", oauth_app_section)
         self.assertIn("#   - Create a new app", monitor.CONFIG_BLOCK.split("# The section below is used when the token source is set to 'oauth_user'", 1)[1])
 
-    # Verifies generated config recommends private dotenv storage for the cookie
+    # Verifies generated config recommends hidden cookie entry while retaining alternate methods
     def test_generated_config_recommends_safe_cookie_storage(self):
         cookie_section = monitor.CONFIG_BLOCK.split("# The section below is used when the token source is set to 'cookie'", 1)[1].split("# The optional section below enables the legacy Client Credentials OAuth path", 1)[0]
         self.assertIn("#manual-cookie-extraction", cookie_section)
-        self.assertIn('Add it to a ".env" file for persistent use (recommended)', cookie_section)
+        self.assertIn("run --set-sp-dc to use a hidden prompt", cookie_section)
+        self.assertIn('Add it directly to a ".env" file for persistent use', cookie_section)
+        self.assertIn("Set it as an environment variable", cookie_section)
         self.assertIn("command-line secrets may be exposed", cookie_section)
+        self.assertIn("hard-code it in the code or config file", cookie_section)
 
     # Verifies anonymous token retrieval skips the authenticated validity probe
     def test_anonymous_token_skips_authenticated_validity_probe(self):
