@@ -213,6 +213,8 @@ spotify_profile_monitor --generate-config spotify_profile_monitor.conf
 
 Edit the `spotify_profile_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 
+Set `TARGET_USER_URI_ID` to a raw Spotify user ID, a `spotify:user:` URI or a complete profile URL to run without a positional target. A positional target overrides the configured value.
+
 **New in v3.5:** Public playlists use an automatic backend which supports restricted Spotify Development Mode apps. OAuth app credentials are no longer required with the `cookie` or `client` token source. New users should not create a Spotify app solely for this tool.
 
 **New in v2.9:** The configuration file includes options to enable/disable music service URLs (Apple Music, YouTube Music, Amazon Music, Deezer, Tidal) and lyrics service URLs (Genius, AZLyrics, Tekstowo.pl, Musixmatch, Lyrics.com) in console and email outputs.
@@ -456,9 +458,7 @@ The easiest way is via the Spotify desktop or mobile client:
 
 You'll get a URL like: [https://open.spotify.com/user/spotify_user_uri_id?si=tracking_id](https://open.spotify.com/user/spotify_user_uri_id?si=tracking_id)
 
-Extract the part between `/user/` and `?si=` - in this case: `spotify_user_uri_id`
-
-Use that as the user URI ID (`spotify_user_uri_id`) in the tool.
+Pass that profile URL directly to the tool. Raw IDs and Spotify user URIs such as `spotify:user:spotify_user_uri_id` are also accepted.
 
 Alternatively you can use the built-in functionality to search for usernames (`-s` flag) to get the user URI ID:
 
@@ -687,10 +687,18 @@ As a fallback, you can also store secrets in the configuration file or source co
 <a id="monitoring-mode"></a>
 ### Monitoring Mode
 
-To monitor specific user for all profile changes (including playlists), just type [Spotify user URI ID](#how-to-get-a-friends-user-uri-id) as a command-line argument (`spotify_user_uri_id` in the example below):
+To monitor a specific user for all profile changes including playlists, pass a raw Spotify user ID, a `spotify:user:` URI or a complete profile URL:
 
 ```sh
-spotify_profile_monitor <spotify_user_uri_id>
+spotify_profile_monitor spotify_user_uri_id
+spotify_profile_monitor "spotify:user:spotify_user_uri_id"
+spotify_profile_monitor "https://open.spotify.com/user/spotify_user_uri_id?si=tracking_id"
+```
+
+You can also save any of these forms as `TARGET_USER_URI_ID` in `spotify_profile_monitor.conf`. A positional target takes precedence. With a saved target no positional value is needed:
+
+```sh
+spotify_profile_monitor --config-file spotify_profile_monitor.conf
 ```
 
 If you use the default method to obtain a Spotify access token (`cookie`) and have not set `SP_DC_COOKIE` secret, you can use `-u` flag:
