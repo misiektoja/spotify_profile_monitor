@@ -18,7 +18,7 @@ python-dotenv (optional)
 spotipy
 wcwidth (optional, needed by TRUNCATE_CHARS feature)
 pathvalidate (optional, needed by --export-all-playlists)
-Pillow (needed for ntfy artwork attachments)
+Pillow (needed for email and ntfy artwork attachments)
 """
 
 VERSION = "3.6"
@@ -896,11 +896,13 @@ WEBHOOK_EMBED_TITLE_LIMIT = 256
 WEBHOOK_EMBED_DESCRIPTION_LIMIT = 4096
 NTFY_MESSAGE_LIMIT_BYTES = 4095
 NTFY_TRUNCATION_SUFFIX = "\n\n[Notification truncated to fit ntfy's 4 KB message limit]"
-NTFY_IMAGE_DOWNLOAD_LIMIT_BYTES = 5 * 1024 * 1024
-NTFY_IMAGE_DOWNLOAD_CHUNK_BYTES = 64 * 1024
-NTFY_IMAGE_PIXEL_LIMIT = 25_000_000
+NOTIFICATION_IMAGE_DOWNLOAD_LIMIT_BYTES = 5 * 1024 * 1024
+NOTIFICATION_IMAGE_DOWNLOAD_CHUNK_BYTES = 64 * 1024
+NOTIFICATION_IMAGE_PIXEL_LIMIT = 25_000_000
 NTFY_IMAGE_FILENAME = "spotify-profile.jpg"
-NTFY_IMAGE_ALLOWED_HOST_SUFFIXES = ("scdn.co", "spotifycdn.com")
+NOTIFICATION_IMAGE_ALLOWED_HOST_SUFFIXES = ("scdn.co", "spotifycdn.com")
+EMAIL_ARTWORK_CONTENT_ID = "spotify_artwork"
+EMAIL_ARTWORK_MAX_DIMENSIONS = (320, 320)
 
 PILImage: Any = None
 try:
@@ -908,7 +910,7 @@ try:
     PILImage = PILImageModule
 except ImportError:
     pass
-NTFY_IMAGES_AVAILABLE = PILImage is not None
+NOTIFICATION_IMAGES_AVAILABLE = PILImage is not None
 
 
 class CappedRetry(Retry):
@@ -1243,7 +1245,7 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
 
 
 # Sends email notification
-def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1", smtp_timeout=15):
+def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1", smtp_timeout=15, image_bytes=None):
     fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
     email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
 
@@ -1286,24 +1288,30 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
         else:
             smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=smtp_timeout)
         smtpObj.login(SMTP_USER, SMTP_PASSWORD)
-        email_msg = MIMEMultipart('alternative')
+        image_data = image_bytes
+        if image_file:
+            with open(image_file, 'rb') as fp:
+                image_data = fp.read()
+        email_msg = MIMEMultipart('related' if image_data else 'alternative')
         email_msg["From"] = SENDER_EMAIL
         email_msg["To"] = RECEIVER_EMAIL
         email_msg["Subject"] = str(Header(subject, 'utf-8'))
+        content_msg = MIMEMultipart('alternative') if image_data else email_msg
+        if image_data:
+            email_msg.attach(content_msg)
 
         if body:
             part1 = MIMEText(body, 'plain')
             part1 = MIMEText(body.encode('utf-8'), 'plain', _charset='utf-8')
-            email_msg.attach(part1)
+            content_msg.attach(part1)
 
         if body_html:
             part2 = MIMEText(body_html, 'html')
             part2 = MIMEText(body_html.encode('utf-8'), 'html', _charset='utf-8')
-            email_msg.attach(part2)
+            content_msg.attach(part2)
 
-        if image_file:
-            with open(image_file, 'rb') as fp:
-                img_part = MIMEImage(fp.read())
+        if image_data:
+            img_part = MIMEImage(image_data)
             img_part.add_header('Content-ID', f'<{image_name}>')
             email_msg.attach(img_part)
 
@@ -1603,39 +1611,91 @@ def spotify_image_url_is_allowed(image_url: str) -> bool:
     except ValueError:
         return False
     hostname = parsed_url.hostname.casefold() if parsed_url.hostname else ""
-    return parsed_url.scheme.casefold() == "https" and any(hostname == suffix or hostname.endswith(f".{suffix}") for suffix in NTFY_IMAGE_ALLOWED_HOST_SUFFIXES)
+    return parsed_url.scheme.casefold() == "https" and any(hostname == suffix or hostname.endswith(f".{suffix}") for suffix in NOTIFICATION_IMAGE_ALLOWED_HOST_SUFFIXES)
 
 
-# Builds one bounded in-memory JPEG for an ntfy attachment
-def build_ntfy_image(image_url: str = "") -> Optional[bytes]:
-    if not NTFY_IMAGES or not image_url or not NTFY_IMAGES_AVAILABLE:
+# Downloads one bounded image from a trusted Spotify CDN host
+def download_spotify_notification_image(image_url: str = "") -> Optional[bytes]:
+    if not image_url or not NOTIFICATION_IMAGES_AVAILABLE:
         return None
     try:
         if not spotify_image_url_is_allowed(image_url):
-            raise ValueError("ntfy image URL must use a Spotify HTTPS CDN host")
-        debug_print(f"NTFY downloading image from {image_url}")
+            raise ValueError("artwork image URL must use a Spotify HTTPS CDN host")
+        debug_print(f"Downloading notification artwork from {image_url}")
         response = WEBHOOK_SESSION.get(image_url, headers={"User-Agent": f"SpotifyProfileMonitor/{VERSION}"}, timeout=WEBHOOK_TIMEOUT_SECONDS, verify=VERIFY_SSL, stream=True, allow_redirects=False)
         with response:
             response.raise_for_status()
             content_type = str((response.headers or {}).get("Content-Type", "")).split(";", 1)[0].strip().casefold()
             if content_type and not content_type.startswith("image/"):
-                raise ValueError(f"ntfy image response has unsupported content type {content_type}")
+                raise ValueError(f"artwork response has unsupported content type {content_type}")
             content_length = (response.headers or {}).get("Content-Length")
-            if content_length is not None and int(content_length) > NTFY_IMAGE_DOWNLOAD_LIMIT_BYTES:
-                raise ValueError(f"ntfy image exceeds {NTFY_IMAGE_DOWNLOAD_LIMIT_BYTES} bytes")
+            if content_length is not None and int(content_length) > NOTIFICATION_IMAGE_DOWNLOAD_LIMIT_BYTES:
+                raise ValueError(f"artwork image exceeds {NOTIFICATION_IMAGE_DOWNLOAD_LIMIT_BYTES} bytes")
             image_bytes = bytearray()
-            for chunk in response.iter_content(chunk_size=NTFY_IMAGE_DOWNLOAD_CHUNK_BYTES):
+            for chunk in response.iter_content(chunk_size=NOTIFICATION_IMAGE_DOWNLOAD_CHUNK_BYTES):
                 if not chunk:
                     continue
                 image_bytes.extend(chunk)
-                if len(image_bytes) > NTFY_IMAGE_DOWNLOAD_LIMIT_BYTES:
-                    raise ValueError(f"ntfy image exceeds {NTFY_IMAGE_DOWNLOAD_LIMIT_BYTES} bytes")
+                if len(image_bytes) > NOTIFICATION_IMAGE_DOWNLOAD_LIMIT_BYTES:
+                    raise ValueError(f"artwork image exceeds {NOTIFICATION_IMAGE_DOWNLOAD_LIMIT_BYTES} bytes")
         if not image_bytes:
-            raise ValueError("ntfy image response was empty")
+            raise ValueError("artwork response was empty")
+        return bytes(image_bytes)
+    except Exception as error:
+        debug_print(f"Artwork download failed, sending without it: {sanitize_error_text(error)}")
+        return None
+
+
+# Builds one bounded JPEG for an inline email artwork attachment
+def build_email_artwork(image_url: str = "") -> Optional[bytes]:
+    image_bytes = download_spotify_notification_image(image_url)
+    if image_bytes is None:
+        return None
+    try:
         image_module = cast(Any, PILImage)
-        with image_module.open(BytesIO(bytes(image_bytes))) as original_img:
-            if original_img.width * original_img.height > NTFY_IMAGE_PIXEL_LIMIT:
-                raise ValueError(f"ntfy image exceeds {NTFY_IMAGE_PIXEL_LIMIT} pixels")
+        with image_module.open(BytesIO(image_bytes)) as original_img:
+            if original_img.width * original_img.height > NOTIFICATION_IMAGE_PIXEL_LIMIT:
+                raise ValueError(f"artwork image exceeds {NOTIFICATION_IMAGE_PIXEL_LIMIT} pixels")
+            original_img.load()
+            resized_img = original_img.convert("RGB")
+        try:
+            resized_img.thumbnail(EMAIL_ARTWORK_MAX_DIMENSIONS, image_module.Resampling.LANCZOS)
+            output = BytesIO()
+            resized_img.save(output, format="JPEG", quality=85, optimize=True)
+            return output.getvalue()
+        finally:
+            resized_img.close()
+    except Exception as error:
+        debug_print(f"Email artwork preparation failed, sending text only: {sanitize_error_text(error)}")
+        return None
+
+
+# Adds one inline artwork reference before the closing HTML body tag
+def add_email_artwork_html(body_html: str, image_name: str = EMAIL_ARTWORK_CONTENT_ID) -> str:
+    artwork_html = f'<br><br><img src="cid:{escape(image_name)}" alt="Spotify artwork" style="max-width: {EMAIL_ARTWORK_MAX_DIMENSIONS[0]}px; height: auto;">'
+    closing_body_index = body_html.casefold().rfind("</body>")
+    if closing_body_index >= 0:
+        return body_html[:closing_body_index] + artwork_html + body_html[closing_body_index:]
+    return body_html + artwork_html
+
+
+# Selects playlist artwork before album artwork and profile artwork
+def select_notification_image_url(playlist_image_url: str = "", album_image_url: str = "", profile_image_url: str = "") -> str:
+    return str(playlist_image_url or album_image_url or profile_image_url or "")
+
+
+# Builds one bounded in-memory JPEG for an ntfy attachment
+def build_ntfy_image(image_url: str = "") -> Optional[bytes]:
+    if not NTFY_IMAGES or not image_url or not NOTIFICATION_IMAGES_AVAILABLE:
+        return None
+    image_bytes = download_spotify_notification_image(image_url)
+    if image_bytes is None:
+        return None
+    try:
+        image_module = cast(Any, PILImage)
+        with image_module.open(BytesIO(image_bytes)) as original_img:
+            if original_img.width * original_img.height > NOTIFICATION_IMAGE_PIXEL_LIMIT:
+                raise ValueError(f"ntfy image exceeds {NOTIFICATION_IMAGE_PIXEL_LIMIT} pixels")
             original_img.load()
             debug_print(f"NTFY original image dimensions: {original_img.size}")
             resized_img = original_img.convert("RGB")
@@ -1741,13 +1801,19 @@ def send_webhook(title: str, description: str, notification_type: str = "profile
 
 
 # Sends one alert through the enabled email and webhook channels
-def send_notification_channels(notification_type: str, subject: str, body: str, body_html: str = "", email_enabled: bool = False, webhook_enabled: Optional[bool] = None, image_url: str = "", email_image_file: str = "", email_image_name: str = "image1") -> Tuple[bool, bool]:
+def send_notification_channels(notification_type: str, subject: str, body: str, body_html: str = "", email_enabled: bool = False, webhook_enabled: Optional[bool] = None, image_url: str = "", email_image_file: str = "", email_image_name: str = "image1", email_image_url: str = "") -> Tuple[bool, bool]:
     email_attempted = bool(email_enabled)
     webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
     if email_attempted:
         print(f"Sending email notification to {RECEIVER_EMAIL}")
         if email_image_file:
             send_email(subject, body, body_html, SMTP_SSL, email_image_file, email_image_name)
+        elif email_image_url:
+            email_artwork = build_email_artwork(email_image_url)
+            if email_artwork:
+                send_email(subject, body, add_email_artwork_html(body_html), SMTP_SSL, image_name=EMAIL_ARTWORK_CONTENT_ID, image_bytes=email_artwork)
+            else:
+                send_email(subject, body, body_html, SMTP_SSL)
         else:
             send_email(subject, body, body_html, SMTP_SSL)
     if webhook_attempted:
@@ -3487,9 +3553,13 @@ def spotify_normalize_web_playlist_item(item):
             artists.append({"name": profile.get("name", "") if isinstance(profile, dict) else "", "uri": artist.get("uri", "")})
 
     duration_data = track_data.get("trackDuration") or {}
+    album_data = track_data.get("albumOfTrack") or {}
+    cover_art = album_data.get("coverArt") or {} if isinstance(album_data, dict) else {}
+    album_image_sources = cover_art.get("sources") or [] if isinstance(cover_art, dict) else []
+    album_image_url = album_image_sources[0].get("url", "") if album_image_sources and isinstance(album_image_sources[0], dict) else ""
     normalized_track = None
     if track_data:
-        normalized_track = {"artists": artists, "duration_ms": duration_data.get("totalMilliseconds") if isinstance(duration_data, dict) else None, "name": track_data.get("name", ""), "uri": track_data.get("uri", "")}
+        normalized_track = {"album": {"images": [{"url": album_image_url}]} if album_image_url else {"images": []}, "artists": artists, "duration_ms": duration_data.get("totalMilliseconds") if isinstance(duration_data, dict) else None, "name": track_data.get("name", ""), "uri": track_data.get("uri", "")}
 
     return {"added_at": added_at_data.get("isoString") if isinstance(added_at_data, dict) else None, "added_by": {"display_name": added_by_data.get("name", "") if isinstance(added_by_data, dict) else "", "id": added_by_id, "uri": added_by_uri}, "track": normalized_track}
 
@@ -3767,7 +3837,7 @@ def _spotify_get_playlist_info_api(access_token, playlist_uri, get_tracks, oauth
 
     if get_tracks:
         url1 = f"https://api.spotify.com/v1/playlists/{playlist_id}?fields=name,description,owner,followers,external_urls,tracks.total,collaborative,images"
-        url2 = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks?fields=next,total,items(added_at,track(name,uri,duration_ms),added_by),items(track(artists(name,uri)))"
+        url2 = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks?fields=next,total,items(added_at,track(name,uri,duration_ms,album(images)),added_by),items(track(artists(name,uri)))"
     else:
         url1 = f"https://api.spotify.com/v1/playlists/{playlist_id}?fields=name,description,owner,followers,external_urls,tracks.total,images"
         url2 = f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks?fields=next,total,items(added_at)"
@@ -4896,6 +4966,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                         for index, track in enumerate(p_tracks_list or []):
                             added_at = track.get("added_at")
                             p_artist = p_track = added_by_name = added_by_id = track_uri = ""
+                            album_image_url = ""
                             track_duration = 0
 
                             if effective_get_tracks:
@@ -4904,6 +4975,8 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                 p_artist = track_info["artists"][0]["name"]
                                 p_track = track_info["name"]
                                 duration_ms = track_info["duration_ms"]
+                                album_images = (track_info.get("album") or {}).get("images") or []
+                                album_image_url = album_images[0].get("url", "") if album_images and isinstance(album_images[0], dict) else ""
 
                                 track_duration = int(str(duration_ms)[0:-3])
                                 duration_sum += int(duration_ms) // 1000  # Convert to seconds
@@ -4953,7 +5026,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                         added_at_ts_highest = added_at_dt_ts
 
                             if effective_get_tracks and added_at and p_artist and p_track:
-                                list_of_tracks.append({"artist": p_artist, "track": p_track, "duration": track_duration, "added_at": added_at_dt, "uri": track_uri, "added_by": added_by_name, "added_by_id": added_by_id})
+                                list_of_tracks.append({"artist": p_artist, "track": p_track, "duration": track_duration, "added_at": added_at_dt, "uri": track_uri, "added_by": added_by_name, "added_by_id": added_by_id, "album_image_url": album_image_url})
 
                 except Exception as e:
                     debug_print(f"playlist loop: unexpected build error for uri={p_uri}: {e}")
@@ -5424,6 +5497,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
     list_of_removed_f_list_html = ""
     added_f_list_mbody_html = ""
     removed_f_list_mbody_html = ""
+    playlist_notification_image_url = ""
 
     if playlist_membership_only_change:
         print(f"* {f_str} changed for user {username} while the total remained {f_count}\n")
@@ -5440,6 +5514,8 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
 
                     uri = f_dict["uri"]
                     current_meta = next((p for p in (f_list or []) if isinstance(p, dict) and p.get("uri") == uri), {})
+                    if not playlist_notification_image_url:
+                        playlist_notification_image_url = current_meta.get("image_url", "")
                     cached = PLAYLIST_INFO_CACHE.get(uri)
                     cached_status = cached.get("status") if cached else ""
                     is_restricted = cached_status == "restricted"
@@ -5558,6 +5634,8 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
 
                     uri = f_dict["uri"]
                     old_meta = next((p for p in (f_list_old or []) if isinstance(p, dict) and p.get("uri") == uri), {})
+                    if not playlist_notification_image_url:
+                        playlist_notification_image_url = old_meta.get("image_url", "")
 
                     if uri in GLITCH_CACHE:
                         print(f"- Skipping playlist {spotify_format_playlist_reference(uri)} due to recent glitch")
@@ -5806,7 +5884,8 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
         m_body = f"{f_str} number changed {f_str_by_or_from} user {username} from {f_old_count} to {f_count} ({f_diff_str})\n{removed_f_list_mbody}{list_of_removed_f_list}{added_f_list_mbody}{list_of_added_f_list}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
         m_body_html = f"<html><head></head><body>{escape(f_str)} number changed {escape(f_str_by_or_from)} user <b>{escape(username)}</b> from <b>{f_old_count}</b> to <b>{f_count}</b> (<b>{escape(f_diff_str)}</b>)<br>{removed_f_list_mbody_html}{list_of_removed_f_list_html}{added_f_list_mbody_html}{list_of_added_f_list_html}<br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
 
-    send_notification_channels(notification_type, m_subject, m_body, m_body_html, email_enabled=email_enabled, webhook_enabled=webhook_enabled, image_url=notification_image_url)
+    selected_notification_image_url = select_notification_image_url(playlist_notification_image_url, profile_image_url=notification_image_url)
+    send_notification_channels(notification_type, m_subject, m_body, m_body_html, email_enabled=email_enabled, webhook_enabled=webhook_enabled, image_url=selected_notification_image_url, email_image_url=playlist_notification_image_url if is_playlist else "")
 
     return False
 
@@ -6936,7 +7015,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                     m_subject = f"Spotify user {username} number of likes for playlist '{p_name}' has changed! ({p_likes_diff_str}, {likes_display_old} -> {likes_display_new})"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                     m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>': number of likes changed from <b>{escape(str(likes_display_old))}</b> to <b>{escape(str(likes_display_new))}</b> (<b>{escape(p_likes_diff_str)}</b>)<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
-                                    send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=p_image_url or image_url)
+                                    send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=select_notification_image_url(p_image_url, profile_image_url=image_url), email_image_url=p_image_url)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
 
@@ -6952,7 +7031,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                         m_subject = f"Spotify user {username} playlist '{p_name_old}' name changed to '{p_name}'! [RESTRICTED]"
                                         m_body = f"{p_message}\nMetadata source: profile-view only\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                         m_body_html = f"<html><head></head><body>Playlist '<b>{escape(p_name_old)}</b>': name changed to new name '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>' [<b>RESTRICTED</b>]<br><br>Metadata source: profile-view only<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
-                                        send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=p_image_url or image_url)
+                                        send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=select_notification_image_url(p_image_url, profile_image_url=image_url), email_image_url=p_image_url)
                                         print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                         print_cur_ts("Timestamp:\t\t\t")
                                     continue
@@ -7111,7 +7190,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                     m_subject = f"Spotify user {username} number of collaborators for playlist '{p_name}' has changed! ({p_collaborators_diff_str}, {p_collaborators_old} -> {p_collaborators})"
                                     m_body = f"{p_message}\n{p_message_added_collaborators}{p_message_removed_collaborators}Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                     m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>': number of collaborators changed from <b>{p_collaborators_old}</b> to <b>{p_collaborators}</b> (<b>{escape(p_collaborators_diff_str)}</b>)<br>{p_message_added_collaborators_html}{p_message_removed_collaborators_html}<br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
-                                    send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=p_image_url or image_url)
+                                    send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=select_notification_image_url(p_image_url, profile_image_url=image_url), email_image_url=p_image_url)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
 
@@ -7159,6 +7238,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                                         removed_tracks = diff_tracks(p_tracks_list_old, p_tracks_list)
                                         added_tracks = diff_tracks(p_tracks_list, p_tracks_list_old)
+                                        album_notification_image_url = next((track.get("album_image_url", "") for track in added_tracks + removed_tracks if track.get("album_image_url")), "")
                                         p_message_added_tracks = ""
                                         p_message_removed_tracks = ""
                                         p_message_added_tracks_html = ""
@@ -7301,7 +7381,9 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                         m_body_html_p_message += "<br>"
                                     m_body = f"{p_message}\n{p_message_added_tracks}{p_message_removed_tracks}Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                     m_body_html = f"<html><head></head><body>{m_body_html_p_message}{p_message_added_tracks_html}{p_message_removed_tracks_html}Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
-                                    send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=p_image_url or image_url)
+                                    selected_track_image_url = select_notification_image_url(p_image_url, album_notification_image_url, image_url)
+                                    selected_track_email_image_url = select_notification_image_url(p_image_url, album_notification_image_url)
+                                    send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=selected_track_image_url, email_image_url=selected_track_email_image_url)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
 
@@ -7317,7 +7399,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                     m_subject = f"Spotify user {username} playlist '{p_name_old}' name changed to '{p_name}'!"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                     m_body_html = f"<html><head></head><body>Playlist '<b>{escape(p_name_old)}</b>': name changed to new name '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>'<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
-                                    send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=p_image_url or image_url)
+                                    send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=select_notification_image_url(p_image_url, profile_image_url=image_url), email_image_url=p_image_url)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
 
@@ -7333,7 +7415,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                     m_subject = f"Spotify user {username} playlist '{p_name}' description has changed !"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                                     m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>' description changed from:<br><br>'<i>{escape(p_descr_old)}</i>'<br><br>to:<br><br>'<i>{escape(p_descr)}</i>'<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
-                                    send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=p_image_url or image_url)
+                                    send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=select_notification_image_url(p_image_url, profile_image_url=image_url), email_image_url=p_image_url)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
 
@@ -7969,8 +8051,8 @@ def main():
 
     apply_webhook_cli_overrides(args, parser)
 
-    if NTFY_IMAGES and not NTFY_IMAGES_AVAILABLE:
-        print("* Warning: Pillow is not installed, so ntfy artwork attachments are disabled for this run")
+    if NTFY_IMAGES and not NOTIFICATION_IMAGES_AVAILABLE:
+        print("* Warning: Pillow is not installed, so email and ntfy artwork attachments are disabled for this run")
         NTFY_IMAGES = False
 
     if args.send_test_webhook:
