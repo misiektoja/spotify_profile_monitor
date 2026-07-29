@@ -45,7 +45,7 @@ pip install spotify_profile_monitor
 ### 🔔 Smart Interactions
 - **Instant Alerts**: Detailed **Email** and **Webhook notifications** for all profile and playlist changes.
 - **Multi-Service Delivery**: Native **Discord** and **ntfy** alerts with independent event controls.
-- **Visual Reports**: Attach changed profile pictures directly to emails.
+- **Visual Reports**: Attach changed profile pictures plus playlist or album artwork directly to emails.
 - **Terminal Graphics**: Display profile pictures right in your terminal (via `imgcat`).
 
 ### ⚙️ Power Features
@@ -887,6 +887,8 @@ spotify_profile_monitor <spotify_user_uri_id> -e
 ```
 
 Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-settings)).
+
+Playlist change emails include inline artwork when Spotify provides it. Track-change alerts prefer playlist artwork when both playlist and album images are available, then fall back to album artwork when the playlist has no image. Artwork is accepted only from Spotify HTTPS CDN hosts and is resized to fit within 320 x 320 pixels. Download or image preparation failures do not block the email. Dedicated profile-picture events continue to attach the saved profile picture.
 
 Example email:
 
