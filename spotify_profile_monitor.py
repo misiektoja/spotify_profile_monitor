@@ -4077,7 +4077,7 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
         response.raise_for_status()
         return response.json()
 
-    def _trim(items: list[dict], keys=("image_url", "is_following")) -> list[dict]:
+    def _trim(items: list[dict], keys=("is_following",)) -> list[dict]:
         if isinstance(items, list):
             for d in items:
                 for k in keys:
@@ -4165,7 +4165,7 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
                     json_response = _rq(url_me_playlists)
                     raw_playlist_data_from_api = json_response.get("items")
                     current_list_to_process = raw_playlist_data_from_api if isinstance(raw_playlist_data_from_api, list) else []
-                    out["sp_user_public_playlists_uris"].extend({"uri": p.get("uri"), "owner_uri": p.get("owner", {}).get("uri")} for p in current_list_to_process if isinstance(p, dict) and (GET_ALL_PLAYLISTS or p.get("owner", {}).get("uri") == f"spotify:user:{user_uri_id}"))
+                    out["sp_user_public_playlists_uris"].extend({"image_url": (p.get("images") or [{}])[0].get("url", ""), "uri": p.get("uri"), "owner_uri": p.get("owner", {}).get("uri")} for p in current_list_to_process if isinstance(p, dict) and (GET_ALL_PLAYLISTS or p.get("owner", {}).get("uri") == f"spotify:user:{user_uri_id}"))
                     url_me_playlists = json_response.get("next")
                 out["sp_user_public_playlists_count"] = len(out["sp_user_public_playlists_uris"])
 
@@ -4190,7 +4190,7 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
                         json_response = _rq(url2_pl)
                         raw_playlist_data_from_api = json_response.get("items")
                         current_list_to_process = raw_playlist_data_from_api if isinstance(raw_playlist_data_from_api, list) else []
-                        out["sp_user_public_playlists_uris"].extend({"uri": p.get("uri"), "owner_uri": p.get("owner", {}).get("uri")} for p in current_list_to_process if isinstance(p, dict) and (GET_ALL_PLAYLISTS or p.get("owner", {}).get("uri") == f"spotify:user:{user_uri_id}"))
+                        out["sp_user_public_playlists_uris"].extend({"image_url": (p.get("images") or [{}])[0].get("url", ""), "uri": p.get("uri"), "owner_uri": p.get("owner", {}).get("uri")} for p in current_list_to_process if isinstance(p, dict) and (GET_ALL_PLAYLISTS or p.get("owner", {}).get("uri") == f"spotify:user:{user_uri_id}"))
                         url2_pl = json_response.get("next")
                     out["sp_user_public_playlists_count"] = len(out["sp_user_public_playlists_uris"])
 
@@ -4884,7 +4884,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                             "sp_playlist_tracks": [],
                             "sp_playlist_owner": fallback_owner,
                             "sp_playlist_owner_uri": fallback_owner_uri,
-                            "sp_playlist_image_url": "",
+                            "sp_playlist_image_url": playlist.get("image_url", "") or cached_entry.get("image_url", ""),
                             "sp_playlist_restricted": True
                         }
 
@@ -4897,7 +4897,8 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                             "name": sp_playlist_data.get("sp_playlist_name", ""),
                             "owner": sp_playlist_data.get("sp_playlist_owner", ""),
                             "owner_uri": sp_playlist_data.get("sp_playlist_owner_uri", ""),
-                            "followers_count": sp_playlist_data.get("sp_playlist_followers_count")
+                            "followers_count": sp_playlist_data.get("sp_playlist_followers_count"),
+                            "image_url": sp_playlist_data.get("sp_playlist_image_url", "")
                         })
                     else:
                         try:
@@ -4906,7 +4907,8 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                 "status": "ok",
                                 "timestamp": time.time(),
                                 "name": sp_playlist_data.get("sp_playlist_name", ""),
-                                "followers_count": sp_playlist_data.get("sp_playlist_followers_count")
+                                "followers_count": sp_playlist_data.get("sp_playlist_followers_count"),
+                                "image_url": sp_playlist_data.get("sp_playlist_image_url", "") or playlist.get("image_url", "")
                             }
                         except PlaylistRestrictedError:
                             debug_print(f"playlist loop: uri={p_uri} marked restricted (404)")
@@ -4919,6 +4921,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                 "owner": sp_playlist_data.get("sp_playlist_owner", ""),
                                 "owner_uri": sp_playlist_data.get("sp_playlist_owner_uri", ""),
                                 "followers_count": sp_playlist_data.get("sp_playlist_followers_count"),
+                                "image_url": sp_playlist_data.get("sp_playlist_image_url", ""),
                                 "error": "playlist endpoint returned 404 (restricted)"
                             }
                             # print(f"\n* Playlist {spotify_format_playlist_reference(p_uri)} is restricted, tracking metadata only")
@@ -4955,7 +4958,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     p_owner_uri = sp_playlist_data.get("sp_playlist_owner_uri", "")
                     p_owner_id = spotify_extract_id_or_name(p_owner_uri) if p_owner_uri else ""
                     p_source = sp_playlist_data.get("sp_playlist_source", "")
-                    p_image_url = sp_playlist_data.get("sp_playlist_image_url", "")
+                    p_image_url = sp_playlist_data.get("sp_playlist_image_url", "") or playlist.get("image_url", "") or cached_entry.get("image_url", "")
 
                     p_tracks_list = sp_playlist_data.get("sp_playlist_tracks", None)
                     added_at_ts_lowest = 0
@@ -5057,7 +5060,8 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                         "creation_date_ts": added_at_ts_lowest if added_at_ts_lowest > 0 else None,
                         "update_date_ts": added_at_ts_highest if added_at_ts_highest > 0 else None,
                         "creation_date": p_creation_date,
-                        "update_date": p_last_track_date
+                        "update_date": p_last_track_date,
+                        "image_url": p_image_url
                     })
 
                 if list_of_tracks and effective_get_tracks:
@@ -6967,6 +6971,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                 p_collaborators_list_old = playlist_old.get("collaborators")
                                 p_restricted_old = bool(playlist_old.get("restricted", False))
                                 p_source_old = playlist_old.get("source", "")
+                                p_image_url = str(p_image_url or playlist_old.get("image_url", "") or "")
                                 restricted_pair = p_restricted or p_restricted_old
                                 # When the backend that produced this snapshot differs from the previous one, the two
                                 # sources can legitimately disagree on the filtered track set (for example a different
