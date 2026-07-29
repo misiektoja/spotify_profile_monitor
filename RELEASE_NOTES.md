@@ -4,12 +4,13 @@ This is a high-level summary of the most important changes.
 
 # Changes in 3.6 (TBD)
 
-Version **3.6** adds safer private setup for Spotify authentication and independent **Discord and ntfy webhook notifications** for profile, playlist, follower and monitoring alerts with customizable delivery.
+Version **3.6** adds **safer private setup** for Spotify authentication, support for **Spotify monitoring targets in different formats** and independent **Discord and ntfy webhook notifications** for profile, playlist, follower and monitoring alerts with customizable delivery.
 
 **Features and improvements**:
 
-- **NEW:** Added private **`sp_dc` entry** with `--set-sp-dc`. The cookie is entered through a hidden prompt, validated with Spotify and saved to a dotenv file only after validation. Existing dotenv, environment, command-line and config-file options remain available
 - **NEW:** Added independent **Discord and ntfy webhook notifications** with per-event controls for profile changes, playlist updates, follower or following changes and monitoring errors
+- **IMPROVE:** Added support for accepting monitoring targets as **raw Spotify user IDs, `spotify:user:` URIs or profile URLs** and added `TARGET_USER_URI_ID` for config-only startup. Positional targets continue to take precedence
+- **NEW:** Added private **`sp_dc` entry** with `--set-sp-dc`. The cookie is entered through a hidden prompt, validated with Spotify and saved to a dotenv file only after validation. Existing dotenv, environment, command-line and config-file options remain available
 - **NEW:** Added private **webhook URL setup** with `--set-webhook-url`, one-run provider and URL overrides plus `--send-test-webhook` for delivery checks
 - **NEW:** Added **customizable Discord-format payloads** with validated templates, transforms and headers plus mention suppression
 - **NEW:** Added **native ntfy topic delivery** with protected-topic authentication, profile or playlist artwork and automatic text fallback, using Pillow for bounded in-memory image preparation
