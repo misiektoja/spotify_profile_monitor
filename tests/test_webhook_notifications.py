@@ -1,5 +1,7 @@
 import argparse
 import tempfile
+from email import message_from_string
+from email.message import Message
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import Mock, mock_open, patch
@@ -306,6 +308,21 @@ def test_ntfy_image_is_bounded_and_built_in_memory(monkeypatch):
     assert image_get.call_args.kwargs["stream"] is True
 
 
+# Verifies email artwork is downloaded with bounds and resized in memory
+def test_email_artwork_is_bounded_and_built_in_memory(monkeypatch):
+    source = BytesIO()
+    Image.new("RGB", (640, 320), (12, 34, 56)).save(source, format="PNG")
+    image_get = Mock(return_value=FakeDownloadResponse(source.getvalue()))
+    monkeypatch.setattr(monitor.WEBHOOK_SESSION, "get", image_get)
+    result = monitor.build_email_artwork("https://i.scdn.co/image/album.png")
+    assert isinstance(result, bytes)
+    with Image.open(BytesIO(result)) as output:
+        assert output.format == "JPEG"
+        assert output.size == (320, 160)
+    assert image_get.call_args.kwargs["allow_redirects"] is False
+    assert image_get.call_args.kwargs["stream"] is True
+
+
 # Verifies image downloads cannot target arbitrary hosts
 def test_ntfy_image_rejects_non_spotify_hosts(monkeypatch):
     image_get = Mock(side_effect=AssertionError("untrusted image host contacted"))
@@ -352,6 +369,20 @@ def test_ntfy_image_upload_failure_falls_back_to_text(monkeypatch, first_result,
     assert sleeps == expected_sleeps
 
 
+# Verifies playlist artwork takes priority over album and profile artwork
+def test_notification_image_selection_prioritizes_playlist_artwork():
+    assert monitor.select_notification_image_url("playlist.jpg", "album.jpg", "profile.jpg") == "playlist.jpg"
+    assert monitor.select_notification_image_url("", "album.jpg", "profile.jpg") == "album.jpg"
+    assert monitor.select_notification_image_url("", "", "profile.jpg") == "profile.jpg"
+
+
+# Verifies web-player track normalization preserves album artwork for notification fallback
+def test_web_playlist_track_normalization_preserves_album_artwork():
+    item = {"itemV2": {"data": {"albumOfTrack": {"coverArt": {"sources": [{"url": "https://i.scdn.co/image/album.jpg"}]}}, "artists": {"items": [{"profile": {"name": "Artist"}}]}, "name": "Track", "trackDuration": {"totalMilliseconds": 180000}, "uri": "spotify:track:track1"}}}
+    normalized = monitor.spotify_normalize_web_playlist_item(item)
+    assert normalized["track"]["album"]["images"][0]["url"] == "https://i.scdn.co/image/album.jpg"
+
+
 # Verifies rate-limit retries use a bounded server delay
 def test_rate_limit_retry_is_bounded(monkeypatch):
     configure_webhook(monkeypatch)
@@ -383,6 +414,66 @@ def test_notification_channels_are_independent(monkeypatch):
     assert monitor.send_notification_channels("profile", "Title", "Body", email_enabled=True) == (True, True)
     email.assert_called_once()
     webhook.assert_called_once()
+
+
+# Verifies playlist artwork is embedded in the HTML email as an inline attachment
+def test_notification_channels_embed_email_artwork(monkeypatch):
+    email = Mock(return_value=0)
+    monkeypatch.setattr(monitor, "send_email", email)
+    monkeypatch.setattr(monitor, "build_email_artwork", Mock(return_value=b"jpeg-data"))
+    body_html = "<html><head></head><body>Playlist changed</body></html>"
+    assert monitor.send_notification_channels("profile", "Title", "Body", body_html, email_enabled=True, webhook_enabled=False, email_image_url="https://i.scdn.co/image/playlist.jpg") == (True, False)
+    request = email.call_args
+    assert f'cid:{monitor.EMAIL_ARTWORK_CONTENT_ID}' in request.args[2]
+    assert request.kwargs["image_name"] == monitor.EMAIL_ARTWORK_CONTENT_ID
+    assert request.kwargs["image_bytes"] == b"jpeg-data"
+
+
+# Verifies inline artwork uses a related MIME container around text alternatives
+def test_send_email_builds_related_inline_artwork_message(monkeypatch):
+    source = BytesIO()
+    Image.new("RGB", (16, 16), (12, 34, 56)).save(source, format="JPEG")
+    smtp = Mock()
+    monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(monitor, "SMTP_PORT", 587)
+    monkeypatch.setattr(monitor, "SMTP_USER", "sender")
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "password")
+    monkeypatch.setattr(monitor, "SENDER_EMAIL", "sender@example.com")
+    monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "receiver@example.com")
+    monkeypatch.setattr(monitor.smtplib, "SMTP", Mock(return_value=smtp))
+    assert monitor.send_email("Title", "Body", '<html><body><img src="cid:spotify_artwork"></body></html>', False, image_name="spotify_artwork", image_bytes=source.getvalue()) == 0
+    message = message_from_string(smtp.sendmail.call_args.args[2])
+    payload = message.get_payload()
+    assert isinstance(payload, list)
+    assert isinstance(payload[0], Message)
+    assert isinstance(payload[1], Message)
+    assert message.get_content_type() == "multipart/related"
+    assert payload[0].get_content_type() == "multipart/alternative"
+    assert payload[1]["Content-ID"] == "<spotify_artwork>"
+
+
+# Verifies the dedicated profile-picture file remains the preferred email attachment
+def test_notification_channels_preserve_profile_picture_attachment(monkeypatch):
+    email = Mock(return_value=0)
+    monkeypatch.setattr(monitor, "send_email", email)
+    monkeypatch.setattr(monitor, "build_email_artwork", Mock(side_effect=AssertionError("remote artwork attempted")))
+    assert monitor.send_notification_channels("profile", "Title", "Body", "<html><body>Profile picture changed</body></html>", email_enabled=True, webhook_enabled=False, email_image_file="profile.jpg", email_image_name="profile_pic", email_image_url="https://i.scdn.co/image/profile.jpg") == (True, False)
+    email.assert_called_once_with("Title", "Body", "<html><body>Profile picture changed</body></html>", monitor.SMTP_SSL, "profile.jpg", "profile_pic")
+
+
+# Verifies playlist membership emails select the changed playlist artwork
+def test_playlist_membership_email_uses_playlist_artwork(monkeypatch):
+    playlist_uri = "spotify:playlist:playlist123"
+    playlist_image_url = "https://i.scdn.co/image/playlist.jpg"
+    current = [{"image_url": playlist_image_url, "name": "Playlist", "owner_uri": "spotify:user:owner", "uri": playlist_uri}]
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor, "PLAYLIST_INFO_CACHE", {playlist_uri: {"followers_count": 3, "name": "Playlist", "status": "ok", "timestamp": monitor.time.time()}})
+    notification = Mock(return_value=(True, False))
+    monkeypatch.setattr(monitor, "send_notification_channels", notification)
+    with patch("builtins.open", mock_open()), patch("builtins.print"):
+        monitor.spotify_print_changed_followers_followings_playlists("user", current, [], 1, 0, "Playlists", "for", "Added playlists to profile", "Added Playlist", "Removed playlists from profile", "Removed Playlist", "state.json", None, True, True)
+    assert notification.call_args.kwargs["image_url"] == playlist_image_url
+    assert notification.call_args.kwargs["email_image_url"] == playlist_image_url
 
 
 # Verifies a follower event can use webhook delivery while email is disabled
