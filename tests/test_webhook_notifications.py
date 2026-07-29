@@ -383,6 +383,35 @@ def test_web_playlist_track_normalization_preserves_album_artwork():
     assert normalized["track"]["album"]["images"][0]["url"] == "https://i.scdn.co/image/album.jpg"
 
 
+# Verifies cookie profile data preserves playlist artwork for notification fallback
+def test_cookie_user_info_preserves_playlist_artwork(monkeypatch):
+    playlist_image_url = "https://i.scdn.co/image/playlist.jpg"
+    response = Mock(status_code=200)
+    response.json.return_value = {"followers_count": 1, "following_count": 2, "image_url": "https://i.scdn.co/image/profile.jpg", "name": "User", "public_playlists": [{"image_url": playlist_image_url, "is_following": False, "owner_uri": "spotify:user:user", "uri": "spotify:playlist:playlist123"}]}
+    monkeypatch.setattr(monitor, "TOKEN_SOURCE", "cookie")
+    monkeypatch.setattr(monitor, "GET_ALL_PLAYLISTS", True)
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor.SESSION, "get", Mock(return_value=response))
+    result = monitor.spotify_get_user_info("token", "user", True, 0)
+    assert result["sp_user_public_playlists_uris"][0]["image_url"] == playlist_image_url
+    assert "is_following" not in result["sp_user_public_playlists_uris"][0]
+
+
+# Verifies playlist processing falls back to profile-provided artwork
+def test_playlist_processing_uses_profile_artwork_fallback(monkeypatch):
+    playlist_uri = "spotify:playlist:playlist123"
+    playlist_image_url = "https://i.scdn.co/image/playlist.jpg"
+    profile_playlist = {"image_url": playlist_image_url, "owner_uri": "spotify:user:user", "uri": playlist_uri}
+    detailed_playlist = {"sp_playlist_description": "", "sp_playlist_followers_count": 3, "sp_playlist_image_url": "", "sp_playlist_name": "Playlist", "sp_playlist_owner": "User", "sp_playlist_owner_uri": "spotify:user:user", "sp_playlist_source": "web", "sp_playlist_tracks": [], "sp_playlist_tracks_count": 0, "sp_playlist_tracks_count_before_filtering": 0}
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor, "PLAYLIST_INFO_CACHE", {})
+    monkeypatch.setattr(monitor, "spotify_get_playlist_info", Mock(return_value=detailed_playlist))
+    result, error = monitor.spotify_process_public_playlists("token", [profile_playlist], True, show_progress=False)
+    assert error is False
+    assert result[0]["image_url"] == playlist_image_url
+    assert monitor.PLAYLIST_INFO_CACHE[playlist_uri]["image_url"] == playlist_image_url
+
+
 # Verifies rate-limit retries use a bounded server delay
 def test_rate_limit_retry_is_bounded(monkeypatch):
     configure_webhook(monkeypatch)
