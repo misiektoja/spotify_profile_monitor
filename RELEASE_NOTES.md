@@ -4,7 +4,7 @@ This is a high-level summary of the most important changes.
 
 # Changes in 3.6 (TBD)
 
-Version **3.6** adds **safer private setup** for Spotify authentication, support for **Spotify monitoring targets in different formats** and independent **Discord and ntfy webhook notifications** for profile, playlist, follower and monitoring alerts with customizable delivery.
+Version **3.6** adds **safer private setup** for Spotify authentication, support for **Spotify monitoring targets in different formats** and independent **Discord and ntfy webhook notifications** for profile, playlist, follower and monitoring alerts with customizable delivery. Email notifications now include inline playlist or album artwork for relevant changes.
 
 **Features and improvements**:
 
@@ -15,6 +15,7 @@ Version **3.6** adds **safer private setup** for Spotify authentication, support
 - **NEW:** Added **customizable Discord-format payloads** with validated templates, transforms and headers plus mention suppression
 - **NEW:** Added **native ntfy topic delivery** with protected-topic authentication, profile or playlist artwork and automatic text fallback, using Pillow for bounded in-memory image preparation
 - **IMPROVE:** Added **bounded webhook delivery**, automatic provider correction and strict destination validation while keeping email and webhook delivery independent
+- **IMPROVE:** Added **inline artwork to playlist email notifications**, preferring playlist artwork over album artwork when both are available and preserving text-only delivery if image preparation fails
 - **IMPROVE:** Added compact **email and webhook category rollups** to the startup summary with short labels and unstarred continuation lines when needed
 
 **Bug fixes**:
