@@ -36,6 +36,10 @@ CONFIG_BLOCK = """
 #   client     - uses captured credentials from the Spotify desktop client and a Protobuf-based login flow (for advanced users)
 TOKEN_SOURCE = "cookie"
 
+# Spotify user to monitor by raw ID, Spotify user URI or Spotify profile URL
+# A positional command-line target overrides this value
+TARGET_USER_URI_ID = ""
+
 # ---------------------------------------------------------------------
 
 # The section below is used when the token source is set to 'cookie'
@@ -618,6 +622,7 @@ APP_VERSION = ""
 # Default dummy values so linters shut up
 # Do not change values below - modify them in the configuration section or config file instead
 TOKEN_SOURCE = ""
+TARGET_USER_URI_ID = ""
 SP_DC_COOKIE = ""
 SP_APP_CLIENT_ID = ""
 SP_APP_CLIENT_SECRET = ""
@@ -722,6 +727,9 @@ exec(CONFIG_BLOCK, globals())
 
 # Default name for the optional config file
 DEFAULT_CONFIG_FILENAME = "spotify_profile_monitor.conf"
+
+# Error text shared by all rejected Spotify target forms
+TARGET_INPUT_ERROR = "Invalid Spotify target. Use a raw user ID, spotify:user:USER_ID or https://open.spotify.com/user/USER_ID."
 
 # List of secret keys to load from env/config
 SECRET_KEYS = ("SP_DC_COOKIE", "SP_APP_CLIENT_ID", "SP_APP_CLIENT_SECRET", "SP_USER_CLIENT_ID", "SP_USER_CLIENT_SECRET", "REFRESH_TOKEN", "SP_SHA256", "SMTP_PASSWORD", "WEBHOOK_URL", "NTFY_ACCESS_TOKEN")
@@ -848,7 +856,7 @@ except ImportError:
     get_localzone = None
 import platform
 import html
-from urllib.parse import quote_plus, quote, urljoin, urlparse, urlsplit
+from urllib.parse import quote_plus, quote, unquote, urljoin, urlparse, urlsplit
 import re
 import ipaddress
 from itertools import zip_longest
@@ -6101,6 +6109,63 @@ def resolve_executable(path):
     raise FileNotFoundError(f"Could not find executable '{path}'")
 
 
+# Normalizes a raw Spotify user ID, user URI or profile URL into one user ID
+def normalize_spotify_user_id(value):
+    if not isinstance(value, str):
+        raise ValueError(TARGET_INPUT_ERROR)
+
+    target = value.strip()
+    if not target or any(character.isspace() or ord(character) < 32 or 127 <= ord(character) <= 159 for character in target):
+        raise ValueError(TARGET_INPUT_ERROR)
+
+    encoded_user_id = target
+    if target.lower().startswith("spotify:"):
+        parts = target.split(":")
+        if len(parts) != 3 or parts[0].lower() != "spotify" or parts[1].lower() != "user":
+            raise ValueError(TARGET_INPUT_ERROR)
+        encoded_user_id = parts[2]
+    elif "://" in target or target.lower().startswith(("http:", "https:")):
+        try:
+            parsed = urlsplit(target)
+            parsed_port = parsed.port
+        except ValueError as exc:
+            raise ValueError(TARGET_INPUT_ERROR) from exc
+        if parsed.scheme.lower() not in ("http", "https") or parsed.hostname is None or parsed.hostname.lower() != "open.spotify.com":
+            raise ValueError(TARGET_INPUT_ERROR)
+        if parsed.username is not None or parsed.password is not None or parsed_port is not None or parsed.fragment:
+            raise ValueError(TARGET_INPUT_ERROR)
+        path_parts = parsed.path.split("/")
+        if path_parts and path_parts[-1] == "":
+            path_parts = path_parts[:-1]
+        if len(path_parts) != 3 or path_parts[0] != "" or path_parts[1].lower() != "user":
+            raise ValueError(TARGET_INPUT_ERROR)
+        encoded_user_id = path_parts[2]
+    elif any(character in target for character in (":", "?", "#")):
+        raise ValueError(TARGET_INPUT_ERROR)
+
+    if re.search(r"%(?![0-9A-Fa-f]{2})", encoded_user_id):
+        raise ValueError(TARGET_INPUT_ERROR)
+    try:
+        user_id = unquote(encoded_user_id, encoding="utf-8", errors="strict")
+    except UnicodeDecodeError as exc:
+        raise ValueError(TARGET_INPUT_ERROR) from exc
+
+    if not user_id or user_id in (".", "..") or any(character in user_id for character in ("/", "\\", "?", "#")):
+        raise ValueError(TARGET_INPUT_ERROR)
+    if any(character.isspace() or ord(character) < 32 or 127 <= ord(character) <= 159 for character in user_id):
+        raise ValueError(TARGET_INPUT_ERROR)
+    return user_id
+
+
+# Resolves CLI and configured targets with CLI precedence then normalizes the selected value
+def resolve_target_user_id(cli_value, configured_value):
+    if cli_value is not None:
+        return normalize_spotify_user_id(cli_value)
+    if configured_value is None or configured_value == "":
+        return None
+    return normalize_spotify_user_id(configured_value)
+
+
 # Monitors profile changes of the specified Spotify user URI ID
 def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     global SP_CACHED_ACCESS_TOKEN, SP_CACHED_OAUTH_APP_TOKEN
@@ -7436,9 +7501,9 @@ def apply_webhook_cli_overrides(args: argparse.Namespace, parser: argparse.Argum
             WEBHOOK_PROVIDER = detected_provider
             print(f"* Warning: Configured webhook provider did not match the URL. Using {detected_provider}.")
 
-
+# Parses configuration and command-line options then runs the selected operation
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, ALARM_TIMEOUT, pyotp, CLEAN_OUTPUT, USER_AGENT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TRUNCATE_CHARS, NTFY_IMAGES
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, ALARM_TIMEOUT, pyotp, CLEAN_OUTPUT, USER_AGENT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TARGET_USER_URI_ID, TRUNCATE_CHARS, NTFY_IMAGES
     global EXPORT_ALL
 
     if "--generate-config" in sys.argv:
@@ -7477,7 +7542,7 @@ def main():
         "user_id",
         nargs="?",
         metavar="SPOTIFY_USER_URI_ID",
-        help="Spotify user URI ID",
+        help="Spotify user ID, spotify:user URI or open.spotify.com profile URL",
         type=str
     )
 
@@ -7816,10 +7881,6 @@ def main():
 
     args = parser.parse_args()
 
-    if len(sys.argv) == 1:
-        parser.print_help(sys.stderr)
-        sys.exit(1)
-
     if args.config_file:
         CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
 
@@ -7838,6 +7899,18 @@ def main():
             sys.exit(1)
         else:
             debug_print(f"Loaded configuration from: {cfg_path}")
+
+    target_free_mode = any((args.set_sp_dc, args.set_webhook_url, args.send_test_email, args.send_test_webhook, args.list_tracks_for_playlist, args.list_liked_tracks, args.search_username, args.login_request_body_file, args.clienttoken_request_body_file))
+    try:
+        if args.user_id is not None or not target_free_mode:
+            args.user_id = resolve_target_user_id(args.user_id, TARGET_USER_URI_ID)
+    except ValueError as exc:
+        print(f"* Error: {exc}")
+        sys.exit(1)
+
+    if not args.user_id and not target_free_mode:
+        print("* Error: Spotify target is required. Provide a raw user ID, spotify:user URI or profile URL or set TARGET_USER_URI_ID.")
+        sys.exit(1)
 
     if args.debug_mode is not None:
         DEBUG_MODE = args.debug_mode
