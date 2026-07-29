@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 3.6 (TBD)
+# Changes in 3.6 (30 Jul 2026)
 
 Version **3.6** adds **safer private setup** for Spotify authentication, support for **Spotify monitoring targets in different formats** and independent **Discord and ntfy webhook notifications** for profile, playlist, follower and monitoring alerts with customizable delivery. Email notifications now include inline playlist or album artwork for relevant changes.
 
