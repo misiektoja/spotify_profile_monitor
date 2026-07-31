@@ -8,7 +8,7 @@ Version **3.7** adds independent control over artwork in email notifications.
 
 **Features and improvements**:
 
-- **NEW:** Added an independent **`EMAIL_IMAGES` setting** to disable profile, playlist and album artwork while keeping email notifications enabled
+- **NEW:** Added an independent **`EMAIL_IMAGES` setting**, disabled by default, to opt into playlist and album artwork without affecting profile-picture detection or its dedicated email attachments
 
 # Changes in 3.6 (30 Jul 2026)
 
