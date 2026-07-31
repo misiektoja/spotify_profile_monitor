@@ -2,6 +2,14 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.7 (TBD)
+
+Version **3.7** adds independent control over artwork in email notifications.
+
+**Features and improvements**:
+
+- **NEW:** Added an independent **`EMAIL_IMAGES` setting** to disable profile, playlist and album artwork while keeping email notifications enabled
+
 # Changes in 3.6 (30 Jul 2026)
 
 Version **3.6** adds **safer private setup** for Spotify authentication, support for **Spotify monitoring targets in different formats** and independent **Discord and ntfy webhook notifications** for profile, playlist, follower and monitoring alerts with customizable delivery. Email notifications now include inline playlist or album artwork for relevant changes.
