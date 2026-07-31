@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.6
+v3.7
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -21,7 +21,7 @@ pathvalidate (optional, needed by --export-all-playlists)
 Pillow (needed for email and ntfy artwork attachments)
 """
 
-VERSION = "3.6"
+VERSION = "3.7"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -102,6 +102,10 @@ RECEIVER_EMAIL = "your_receiver_email"
 # Whether to send an email when the user's profile changes
 # Can also be enabled via the -p flag
 PROFILE_NOTIFICATION = False
+
+# Whether to attach profile, playlist or album artwork to email notifications
+# Image preparation failures fall back to text-only email
+EMAIL_IMAGES = True
 
 # Whether to send an email when followers or followings change
 # Only applies if PROFILE_NOTIFICATION / -p is enabled
@@ -656,6 +660,7 @@ SMTP_SSL = False
 SENDER_EMAIL = ""
 RECEIVER_EMAIL = ""
 PROFILE_NOTIFICATION = False
+EMAIL_IMAGES = False
 FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
 ERROR_NOTIFICATION = False
 WEBHOOK_ENABLED = False
@@ -1806,9 +1811,9 @@ def send_notification_channels(notification_type: str, subject: str, body: str, 
     webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
     if email_attempted:
         print(f"Sending email notification to {RECEIVER_EMAIL}")
-        if email_image_file:
+        if EMAIL_IMAGES and email_image_file:
             send_email(subject, body, body_html, SMTP_SSL, email_image_file, email_image_name)
-        elif email_image_url:
+        elif EMAIL_IMAGES and email_image_url:
             email_artwork = build_email_artwork(email_image_url)
             if email_artwork:
                 send_email(subject, body, add_email_artwork_html(body_html), SMTP_SSL, image_name=EMAIL_ARTWORK_CONTENT_ID, image_bytes=email_artwork)
@@ -6854,7 +6859,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), pytz.timezone(LOCAL_TIMEZONE))
                     print(f"* User profile picture saved to '{profile_pic_file}'")
                     print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)\n")
-                    m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
+                    m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">' if EMAIL_IMAGES else ""
 
                     try:
                         if imgcat_exe:
@@ -6908,7 +6913,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                             print(f"* Error while replacing/copying files: {e}")
 
                         if notification_channels_enabled("profile", PROFILE_NOTIFICATION):
-                            m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
+                            m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">' if EMAIL_IMAGES else ""
                             m_subject = f"Spotify user {username} has changed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
                             m_body = f"Spotify user {username} has changed profile picture !\n\nPrevious one added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                             m_body_html = f"<html><head></head><body>Spotify user <b>{username}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(SPOTIFY_CHECK_INTERVAL)}</b> ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}</body></html>"
@@ -7590,7 +7595,7 @@ def apply_webhook_cli_overrides(args: argparse.Namespace, parser: argparse.Argum
 
 # Parses configuration and command-line options then runs the selected operation
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, ALARM_TIMEOUT, pyotp, CLEAN_OUTPUT, USER_AGENT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TARGET_USER_URI_ID, TRUNCATE_CHARS, NTFY_IMAGES
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, EMAIL_IMAGES, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, ALARM_TIMEOUT, pyotp, CLEAN_OUTPUT, USER_AGENT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TARGET_USER_URI_ID, TRUNCATE_CHARS, NTFY_IMAGES
     global EXPORT_ALL
 
     if "--generate-config" in sys.argv:
@@ -8056,8 +8061,9 @@ def main():
 
     apply_webhook_cli_overrides(args, parser)
 
-    if NTFY_IMAGES and not NOTIFICATION_IMAGES_AVAILABLE:
+    if (EMAIL_IMAGES or NTFY_IMAGES) and not NOTIFICATION_IMAGES_AVAILABLE:
         print("* Warning: Pillow is not installed, so email and ntfy artwork attachments are disabled for this run")
+        EMAIL_IMAGES = False
         NTFY_IMAGES = False
 
     if args.send_test_webhook:
