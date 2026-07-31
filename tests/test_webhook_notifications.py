@@ -448,6 +448,7 @@ def test_notification_channels_are_independent(monkeypatch):
 # Verifies playlist artwork is embedded in the HTML email as an inline attachment
 def test_notification_channels_embed_email_artwork(monkeypatch):
     email = Mock(return_value=0)
+    monkeypatch.setattr(monitor, "EMAIL_IMAGES", True)
     monkeypatch.setattr(monitor, "send_email", email)
     monkeypatch.setattr(monitor, "build_email_artwork", Mock(return_value=b"jpeg-data"))
     body_html = "<html><head></head><body>Playlist changed</body></html>"
@@ -474,14 +475,14 @@ def test_email_images_setting_disables_remote_artwork_only(monkeypatch):
     assert webhook.call_args.kwargs["image_url"] == image_url
 
 
-# Verifies disabling email artwork also omits profile-picture file attachments
-def test_email_images_setting_disables_profile_picture_attachment(monkeypatch):
+# Verifies disabling playlist artwork preserves profile-picture file attachments
+def test_email_images_setting_preserves_profile_picture_attachment(monkeypatch):
     email = Mock(return_value=0)
     monkeypatch.setattr(monitor, "EMAIL_IMAGES", False)
     monkeypatch.setattr(monitor, "send_email", email)
     body_html = "<html><body>Profile picture changed</body></html>"
     assert monitor.send_notification_channels("profile", "Title", "Body", body_html, email_enabled=True, webhook_enabled=False, email_image_file="profile.jpg", email_image_name="profile_pic") == (True, False)
-    email.assert_called_once_with("Title", "Body", body_html, monitor.SMTP_SSL)
+    email.assert_called_once_with("Title", "Body", body_html, monitor.SMTP_SSL, "profile.jpg", "profile_pic")
 
 
 # Verifies inline artwork uses a related MIME container around text alternatives
@@ -603,4 +604,5 @@ def test_generated_config_includes_webhook_settings():
     assert namespace["WEBHOOK_TRANSFORMS"] == []
     assert namespace["NTFY_ACCESS_TOKEN"] == ""
     assert namespace["NTFY_IMAGES"] is True
-    assert namespace["EMAIL_IMAGES"] is True
+    assert namespace["EMAIL_IMAGES"] is False
+    assert namespace["DETECT_CHANGED_PROFILE_PIC"] is True
