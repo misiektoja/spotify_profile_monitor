@@ -890,11 +890,13 @@ Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-sett
 
 Playlist change emails include inline artwork when Spotify provides it. Track-change alerts prefer playlist artwork when both playlist and album images are available, then fall back to album artwork when the playlist has no image. Artwork is accepted only from Spotify HTTPS CDN hosts and is resized to fit within 320 x 320 pixels. Download or image preparation failures do not block the email. Dedicated profile-picture events continue to attach the saved profile picture.
 
-Email artwork is enabled by default. To keep email notifications text-only, including dedicated profile-picture events:
+Playlist and album artwork are disabled by default. To include them in email notifications:
 
 ```ini
-EMAIL_IMAGES = False
+EMAIL_IMAGES = True
 ```
+
+This setting does not control dedicated profile-picture events. Profile-picture detection, downloads and email attachments remain enabled by default through `DETECT_CHANGED_PROFILE_PIC = True`. Set that option to `False` or use `-j` to disable the profile-picture feature.
 
 Example email:
 
