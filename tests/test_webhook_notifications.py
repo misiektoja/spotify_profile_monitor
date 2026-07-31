@@ -458,6 +458,32 @@ def test_notification_channels_embed_email_artwork(monkeypatch):
     assert request.kwargs["image_bytes"] == b"jpeg-data"
 
 
+# Verifies email artwork can be disabled without affecting webhook artwork
+def test_email_images_setting_disables_remote_artwork_only(monkeypatch):
+    configure_webhook(monkeypatch)
+    email = Mock(return_value=0)
+    webhook = Mock(return_value=0)
+    monkeypatch.setattr(monitor, "EMAIL_IMAGES", False)
+    monkeypatch.setattr(monitor, "send_email", email)
+    monkeypatch.setattr(monitor, "send_webhook", webhook)
+    monkeypatch.setattr(monitor, "build_email_artwork", Mock(side_effect=AssertionError("email artwork attempted")))
+    body_html = "<html><body>Playlist changed</body></html>"
+    image_url = "https://i.scdn.co/image/playlist.jpg"
+    assert monitor.send_notification_channels("profile", "Title", "Body", body_html, email_enabled=True, image_url=image_url, email_image_url=image_url) == (True, True)
+    email.assert_called_once_with("Title", "Body", body_html, monitor.SMTP_SSL)
+    assert webhook.call_args.kwargs["image_url"] == image_url
+
+
+# Verifies disabling email artwork also omits profile-picture file attachments
+def test_email_images_setting_disables_profile_picture_attachment(monkeypatch):
+    email = Mock(return_value=0)
+    monkeypatch.setattr(monitor, "EMAIL_IMAGES", False)
+    monkeypatch.setattr(monitor, "send_email", email)
+    body_html = "<html><body>Profile picture changed</body></html>"
+    assert monitor.send_notification_channels("profile", "Title", "Body", body_html, email_enabled=True, webhook_enabled=False, email_image_file="profile.jpg", email_image_name="profile_pic") == (True, False)
+    email.assert_called_once_with("Title", "Body", body_html, monitor.SMTP_SSL)
+
+
 # Verifies inline artwork uses a related MIME container around text alternatives
 def test_send_email_builds_related_inline_artwork_message(monkeypatch):
     source = BytesIO()
@@ -577,3 +603,4 @@ def test_generated_config_includes_webhook_settings():
     assert namespace["WEBHOOK_TRANSFORMS"] == []
     assert namespace["NTFY_ACCESS_TOKEN"] == ""
     assert namespace["NTFY_IMAGES"] is True
+    assert namespace["EMAIL_IMAGES"] is True
