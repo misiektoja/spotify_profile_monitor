@@ -103,9 +103,9 @@ RECEIVER_EMAIL = "your_receiver_email"
 # Can also be enabled via the -p flag
 PROFILE_NOTIFICATION = False
 
-# Whether to attach profile, playlist or album artwork to email notifications
+# Whether to attach playlist or album artwork to email notifications
 # Image preparation failures fall back to text-only email
-EMAIL_IMAGES = True
+EMAIL_IMAGES = False
 
 # Whether to send an email when followers or followings change
 # Only applies if PROFILE_NOTIFICATION / -p is enabled
@@ -1811,7 +1811,7 @@ def send_notification_channels(notification_type: str, subject: str, body: str, 
     webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
     if email_attempted:
         print(f"Sending email notification to {RECEIVER_EMAIL}")
-        if EMAIL_IMAGES and email_image_file:
+        if email_image_file:
             send_email(subject, body, body_html, SMTP_SSL, email_image_file, email_image_name)
         elif EMAIL_IMAGES and email_image_url:
             email_artwork = build_email_artwork(email_image_url)
@@ -6859,7 +6859,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     profile_pic_mdate_dt = datetime.fromtimestamp(int(os.path.getmtime(profile_pic_file)), pytz.timezone(LOCAL_TIMEZONE))
                     print(f"* User profile picture saved to '{profile_pic_file}'")
                     print(f"* Profile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)\n")
-                    m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">' if EMAIL_IMAGES else ""
+                    m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
 
                     try:
                         if imgcat_exe:
@@ -6913,7 +6913,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                             print(f"* Error while replacing/copying files: {e}")
 
                         if notification_channels_enabled("profile", PROFILE_NOTIFICATION):
-                            m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">' if EMAIL_IMAGES else ""
+                            m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
                             m_subject = f"Spotify user {username} has changed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
                             m_body = f"Spotify user {username} has changed profile picture !\n\nPrevious one added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
                             m_body_html = f"<html><head></head><body>Spotify user <b>{username}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(SPOTIFY_CHECK_INTERVAL)}</b> ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}</body></html>"
