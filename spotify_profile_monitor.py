@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.7
+v3.6.1
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -21,7 +21,7 @@ pathvalidate (optional, needed by --export-all-playlists)
 Pillow (needed for email and ntfy artwork attachments)
 """
 
-VERSION = "3.7"
+VERSION = "3.6.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -4955,7 +4955,14 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     p_name = sp_playlist_data.get("sp_playlist_name", "")
                     current_playlist_name = p_name  # Update tracked name
                     p_descr = html.unescape(sp_playlist_data.get("sp_playlist_description", ""))
-                    p_likes = sp_playlist_data.get("sp_playlist_followers_count")
+                    p_likes = _safe_profile_followers_count(sp_playlist_data.get("sp_playlist_followers_count"))
+                    if p_likes is None:
+                        profile_likes = _safe_profile_followers_count(playlist.get("followers_count"))
+                        cached_likes = _safe_profile_followers_count(cached_entry.get("followers_count"))
+                        p_likes = profile_likes if profile_likes is not None else cached_likes
+                        if p_likes is not None:
+                            fallback_source = "profile metadata" if profile_likes is not None else "cached baseline"
+                            debug_print(f"playlist loop: uri={p_uri} detailed followers count unavailable, using {fallback_source} value {p_likes}")
                     p_tracks = sp_playlist_data.get("sp_playlist_tracks_count", 0)
                     p_tracks_before_filtering = sp_playlist_data.get("sp_playlist_tracks_count_before_filtering", 0)
                     p_url = spotify_convert_uri_to_url(p_uri)
@@ -5109,11 +5116,20 @@ def merge_playlist_snapshots(previous_snapshots, successful_snapshots, accepted_
             continue
 
         if playlist_uri in successful_by_uri:
-            merged_snapshots.append(successful_by_uri[playlist_uri])
+            successful_snapshot = successful_by_uri[playlist_uri]
+            previous_snapshot = previous_by_uri.get(playlist_uri)
+            if successful_snapshot.get("likes") is None and previous_snapshot is not None and previous_snapshot.get("likes") is not None:
+                successful_snapshot = {**successful_snapshot, "likes": previous_snapshot["likes"]}
+            merged_snapshots.append(successful_snapshot)
         elif playlist_uri in previous_by_uri:
             merged_snapshots.append(previous_by_uri[playlist_uri])
 
     return merged_snapshots
+
+
+# Reports whether two available playlist like counts differ
+def playlist_likes_changed(previous_likes, current_likes):
+    return previous_likes is not None and current_likes is not None and previous_likes != current_likes
 
 
 # Extracts playlist URI values for order-independent membership comparisons
@@ -6989,27 +7005,15 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                 likes_display_old = p_likes_old if p_likes_old is not None else "n/a"
                                 likes_display_new = p_likes if p_likes is not None else "n/a"
 
-                                # Number of likes changed or became available / unavailable
-                                likes_value_changed = p_likes is not None and p_likes_old is not None and p_likes != p_likes_old
-                                likes_became_available = p_likes is not None and p_likes_old is None
-                                likes_became_unavailable = p_likes is None and p_likes_old is not None
-
-                                if likes_value_changed or likes_became_available or likes_became_unavailable:
+                                # Number of likes changed while both snapshots contain numeric values
+                                if playlist_likes_changed(p_likes_old, p_likes) and p_likes_old is not None and p_likes is not None:
                                     try:
-                                        p_likes_diff_str = ""
-                                        if likes_value_changed and p_likes is not None and p_likes_old is not None:
-                                            p_likes_diff = p_likes - p_likes_old
-                                            if p_likes_diff > 0:
-                                                p_likes_diff_str = "+" + str(p_likes_diff)
-                                            else:
-                                                p_likes_diff_str = str(p_likes_diff)
-                                            p_message = f"* Playlist '{p_name}': number of likes changed from {p_likes_old} to {p_likes} ({p_likes_diff_str})\n* Playlist URL: {p_url}\n"
-                                        elif likes_became_available:
-                                            p_likes_diff_str = "n/a -> " + str(p_likes)
-                                            p_message = f"* Playlist '{p_name}': number of likes became available ({likes_display_old} -> {likes_display_new})\n* Playlist URL: {p_url}\n"
+                                        p_likes_diff = p_likes - p_likes_old
+                                        if p_likes_diff > 0:
+                                            p_likes_diff_str = "+" + str(p_likes_diff)
                                         else:
-                                            p_likes_diff_str = str(p_likes_old) + " -> n/a"
-                                            p_message = f"* Playlist '{p_name}': number of likes became unavailable ({likes_display_old} -> {likes_display_new})\n* Playlist URL: {p_url}\n"
+                                            p_likes_diff_str = str(p_likes_diff)
+                                        p_message = f"* Playlist '{p_name}': number of likes changed from {p_likes_old} to {p_likes} ({p_likes_diff_str})\n* Playlist URL: {p_url}\n"
                                         print(p_message)
                                     except Exception as e:
                                         print(f"* Error while processing likes for playlist {spotify_format_playlist_reference(p_uri)}, skipping for now" + (f": {e}" if e else ""))
