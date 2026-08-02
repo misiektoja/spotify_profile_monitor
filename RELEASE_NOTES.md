@@ -2,13 +2,17 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 3.7 (TBD)
+# Changes in 3.6.1 (TBD)
 
-Version **3.7** adds independent control over artwork in email notifications.
+Version **3.6.1** adds independent control over artwork in email notifications and improves playlist monitoring reliability.
 
 **Features and improvements**:
 
 - **NEW:** Added an independent **`EMAIL_IMAGES` setting**, disabled by default, to opt into playlist and album artwork without affecting profile-picture detection or its dedicated email attachments
+
+**Bug fixes**:
+
+- **BUGFIX:** Prevented temporary missing playlist like counts from producing `n/a` availability alerts. Current profile metadata and the last cached numeric value now act as fallbacks, while unavailable snapshots retain the last numeric baseline
 
 # Changes in 3.6 (30 Jul 2026)
 
