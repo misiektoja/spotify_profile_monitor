@@ -99,6 +99,46 @@ class PlaylistSnapshotBaselineTests(unittest.TestCase):
         self.assertEqual([snapshot["uri"] for snapshot in merged], [playlist_b_uri, playlist_a_uri])
         self.assertEqual([snapshot["tracks_count"] for snapshot in merged], [131, 81])
 
+    # Retains the last numeric like count when a successful snapshot omits it
+    def test_missing_likes_retains_previous_numeric_baseline(self):
+        playlist_uri = "spotify:playlist:a"
+        previous = [{"likes": 4, "tracks_count": 81, "uri": playlist_uri}]
+        successful = [{"likes": None, "tracks_count": 81, "uri": playlist_uri}]
+        current = [{"uri": playlist_uri}]
+
+        merged = monitor.merge_playlist_snapshots(previous, successful, current)
+
+        self.assertEqual(merged[0]["likes"], 4)
+        self.assertIsNone(successful[0]["likes"])
+
+    # Uses current profile metadata when detailed playlist metadata omits likes
+    def test_missing_detailed_likes_uses_current_profile_count(self):
+        playlist_uri = "spotify:playlist:a"
+        current = [{"followers_count": 4, "name": "Playlist A", "owner_name": "Owner", "owner_uri": "spotify:user:owner", "uri": playlist_uri}]
+        playlist_data = {"sp_playlist_description": "", "sp_playlist_followers_count": None, "sp_playlist_name": "Playlist A", "sp_playlist_owner": "Owner", "sp_playlist_owner_uri": "spotify:user:owner", "sp_playlist_tracks": [], "sp_playlist_tracks_count": 0, "sp_playlist_tracks_count_before_filtering": 0}
+        cache = {playlist_uri: {"followers_count": 3, "status": "ok", "timestamp": monitor.time.time()}}
+
+        with patch.object(monitor, "PLAYLIST_INFO_CACHE", cache), patch.object(monitor, "spotify_get_playlist_info", return_value=playlist_data), patch("builtins.print"):
+            successful, error_while_processing = monitor.spotify_process_public_playlists("token", current, True, show_progress=False)
+
+        self.assertFalse(error_while_processing)
+        self.assertEqual(successful[0]["likes"], 4)
+        self.assertEqual(cache[playlist_uri]["followers_count"], 4)
+
+    # Uses the cached baseline when both detailed and profile metadata omit likes
+    def test_missing_all_current_likes_uses_cached_count(self):
+        playlist_uri = "spotify:playlist:a"
+        current = [{"name": "Playlist A", "owner_name": "Owner", "owner_uri": "spotify:user:owner", "uri": playlist_uri}]
+        playlist_data = {"sp_playlist_description": "", "sp_playlist_followers_count": None, "sp_playlist_name": "Playlist A", "sp_playlist_owner": "Owner", "sp_playlist_owner_uri": "spotify:user:owner", "sp_playlist_tracks": [], "sp_playlist_tracks_count": 0, "sp_playlist_tracks_count_before_filtering": 0}
+        cache = {playlist_uri: {"followers_count": 4, "status": "ok", "timestamp": monitor.time.time()}}
+
+        with patch.object(monitor, "PLAYLIST_INFO_CACHE", cache), patch.object(monitor, "spotify_get_playlist_info", return_value=playlist_data), patch("builtins.print"):
+            successful, error_while_processing = monitor.spotify_process_public_playlists("token", current, True, show_progress=False)
+
+        self.assertFalse(error_while_processing)
+        self.assertEqual(successful[0]["likes"], 4)
+        self.assertEqual(cache[playlist_uri]["followers_count"], 4)
+
     # Carries partial processor output into the merge without discarding a failed neighbor
     def test_processor_partial_failure_preserves_per_playlist_state(self):
         playlist_a_uri = "spotify:playlist:a"
@@ -180,6 +220,21 @@ class PlaylistMembershipChangeTests(unittest.TestCase):
         self.assertIn("playlists number has changed! (+1, 1 -> 2)", subject)
         self.assertIn("Playlists number changed for user user from 1 to 2 (+1)", body)
         self.assertNotIn("total remained", body)
+
+
+# Verifies unavailable playlist like counts do not produce false changes
+class PlaylistLikesChangeTests(unittest.TestCase):
+    # Detects a real numeric playlist like count change
+    def test_numeric_likes_change_is_detected(self):
+        self.assertTrue(monitor.playlist_likes_changed(4, 5))
+
+    # Ignores a temporarily unavailable current playlist like count
+    def test_likes_becoming_unavailable_is_ignored(self):
+        self.assertFalse(monitor.playlist_likes_changed(4, None))
+
+    # Ignores availability recovery without a numeric comparison baseline
+    def test_likes_becoming_available_is_ignored(self):
+        self.assertFalse(monitor.playlist_likes_changed(None, 4))
 
 
 if __name__ == "__main__":
