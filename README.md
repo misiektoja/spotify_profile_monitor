@@ -16,6 +16,10 @@ Powerful Spotify tool for real-time tracking of profile changes, playlist update
 ### 🚀 Quick Install & Run
 ```sh
 pip install spotify_profile_monitor
+```
+
+Run setup wizard:
+```sh
 spotify_profile_monitor --setup
 ```
 
@@ -104,13 +108,13 @@ spotify_profile_monitor --setup
 
 * Python 3.9 or higher
 * Libraries: `requests`, `python-dateutil`, `urllib3`, `pyotp`, `pytz`, `tzlocal`, `python-dotenv`, [Spotipy](https://github.com/spotipy-dev/spotipy), `wcwidth`, `pathvalidate`, `Pillow`
-* Optional for Chrome, Brave or Chromium cookie import: `pycookiecheat`
+* Optional for Chrome, Brave or Chromium cookie import: [pycookiecheat](https://github.com/n8henrie/pycookiecheat)
 
 Tested on:
 
-* **macOS**: Ventura, Sonoma, Sequoia, Tahoe
-* **Linux**: Raspberry Pi OS (Bullseye, Bookworm, Trixie), Ubuntu 24/25, Rocky Linux 8.x/9.x, Kali Linux 2024/2025
-* **Windows**: 10, 11
+* **macOS**: Tahoe, Sequoia, Sonoma, Ventura
+* **Linux**: Raspberry Pi OS (Trixie, Bookworm, Bullseye), Ubuntu 24/25, Rocky Linux 8.x/9.x, Kali Linux 2026/2025/2024
+* **Windows**: 11, 10
 
 It should work on other versions of macOS, Linux, Unix and Windows as well.
 
