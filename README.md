@@ -768,7 +768,7 @@ The tool runs until interrupted (`Ctrl+C`). Use `tmux` or `screen` for persisten
 
 You can monitor multiple Spotify users by running multiple copies of the script.
 
-The tool automatically saves its output to `spotify_profile_monitor_<user_uri_id/file_suffix>.log` file. The log file name can be changed via `SP_LOGFILE` configuration option and its suffix via `FILE_SUFFIX` / `-y` flag. Logging can be disabled completely via `DISABLE_LOGGING` / `-d` flag.
+The tool automatically saves its output to `spotify_profile_monitor_<user_uri_id/file_suffix>.log` file. The log file name can be changed via `SP_LOGFILE` configuration option and its suffix via `FILE_SUFFIX` / `-y` flag. Logging can be disabled completely via `DISABLE_LOGGING` / `-d` flag. Saved logs remain UTF-8, but separator-only lines use ASCII hyphens for compatibility across viewers.
 
 The tool also saves the list of followings, followers and playlists to these files:
 - `spotify_profile_<user_uri_id/file_suffix>_followings.json`
