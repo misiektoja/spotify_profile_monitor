@@ -63,8 +63,18 @@ def test_target_normalization_rejects_unsafe_forms():
         "https://open.spotify.com/user/%ZZ",
     ]
     for target in rejected:
-        with pytest.raises(ValueError, match="raw user ID"):
+        with pytest.raises(ValueError, match="Invalid Spotify target"):
             monitor.normalize_spotify_user_id(target)
+
+
+# Verifies CLI guidance names a generic target and documents every accepted form
+def test_cli_help_describes_every_supported_target_form():
+    result = run_cli(["--help"])
+    assert result.returncode == 0, result.stderr
+    assert "SPOTIFY_TARGET" in result.stdout
+    assert "<spotify_target>" in result.stdout
+    assert "profile URL, spotify:user URI or user ID" in result.stdout
+    assert "SPOTIFY_USER_URI_ID" not in result.stdout
 
 
 # Verifies a positional target overrides the configured target
