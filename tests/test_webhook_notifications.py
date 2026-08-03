@@ -422,7 +422,7 @@ def test_rate_limit_retry_is_bounded(monkeypatch):
     assert sleeps == [monitor.WEBHOOK_MAX_RETRY_AFTER_SECONDS]
 
 
-# Verifies webhook failures redact the configured destination
+# Verifies normal webhook failures omit the private destination and technical detail
 def test_webhook_failure_redacts_private_url(monkeypatch, capsys):
     configure_webhook(monkeypatch)
     secret = monitor.WEBHOOK_URL
@@ -430,7 +430,8 @@ def test_webhook_failure_redacts_private_url(monkeypatch, capsys):
     assert monitor.send_webhook("Title", "Body", "profile") == 1
     output = capsys.readouterr().out
     assert secret not in output
-    assert "<redacted>" in output
+    assert "Technical detail:" not in output
+    assert "To fix:" in output
 
 
 # Verifies email and webhook delivery remain independent
