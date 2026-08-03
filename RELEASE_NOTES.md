@@ -4,11 +4,12 @@ This is a high-level summary of the most important changes.
 
 # Changes in 3.6.1 (TBD)
 
-Version **3.6.1** adds independent control over artwork in email notifications and improves playlist monitoring reliability.
+Version **3.6.1** adds independent control over artwork in email notifications, improves playlist monitoring reliability and makes log separators more portable.
 
 **Features and improvements**:
 
 - **NEW:** Added an independent **`EMAIL_IMAGES` setting**, disabled by default, to opt into playlist and album artwork without affecting profile-picture detection or its dedicated email attachments
+- **IMPROVE:** Kept Unicode separators in terminal output while writing separator-only log lines with ASCII hyphens for compatibility without changing UTF-8 logging for other content
 
 **Bug fixes**:
 
