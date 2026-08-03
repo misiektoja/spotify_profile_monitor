@@ -2,18 +2,24 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 3.6.1 (TBD)
+# Changes in 3.7 (TBD)
 
-Version **3.6.1** adds independent control over artwork in email notifications and improves playlist monitoring reliability while making log separators configurable and portable.
+Version **3.7** focuses on making Spotify Profile Monitor easier to set up, safer to configure and easier to troubleshoot. It adds **guided onboarding**, **Spotify login cookie import from Firefox and Chromium-based browsers** and a **Doctor self-check** while improving terminal output, configuration recovery and email artwork controls.
 
 **Features and improvements**:
 
-- **NEW:** Added an independent **`EMAIL_IMAGES` setting**, disabled by default, to opt into playlist and album artwork without affecting profile-picture detection or its dedicated email attachments
-- **IMPROVE:** Added `ASCII_LOG_SEPARATORS` with `"Auto"`, `"On"` and `"Off"` modes. The default uses ASCII separator-only log lines on Windows while terminal separators stay Unicode and all log content stays UTF-8
+- **NEW:** Added an **interactive setup wizard** for first-time setup. Run `--setup` or launch the tool without arguments and accept the prompt. The wizard collects the monitoring target, polling interval, Spotify authentication, email and webhook settings plus config and dotenv destinations.
+- **NEW:** Added **browser-based `sp_dc` cookie import** from **Firefox, Chrome, Brave and Chromium** with profile selection. Firefox needs no extra dependency and works on macOS, Linux and Windows. Chromium-based import is optional on macOS and Linux through the `browser` extra, while Windows users are guided to Firefox. The cookie is validated with Spotify before `SP_DC_COOKIE` is updated
+- **NEW:** Added a **`--doctor` self-check** for Python and required dependencies, configuration and secrets, output destinations, Spotify authentication, the metadata backend, connectivity, an optional target and notifications. Interactive runs offer separate email and webhook delivery tests only after confirmation. Failures include a clear **`To fix:` next step** while technical detail remains available through `--debug`
+- **IMPROVE:** Made **configuration generation and replacement safer**. New content is validated before an atomic write, existing files receive timestamped backups and replacement requires confirmation or `--force`. Generated configuration keeps secret placeholders instead of copying loaded secrets. Follow-up commands preserve the active Python interpreter and custom config or dotenv paths
+- **IMPROVE:** Added a friendlier **terminal experience** with a pure ASCII profile banner, a short no-arguments welcome, a concise startup summary and install-aware examples in `--help`. Use `--verbose` for the complete non-secret summary plus occasional operational details or `--debug` for sanitized request flow and internal troubleshooting detail
+- **IMPROVE:** Added **`ASCII_LOG_SEPARATORS`** with `"Auto"`, `"On"` and `"Off"` modes. The default uses ASCII separator-only log lines on Windows while terminal separators stay Unicode and all log content stays UTF-8
+- **NEW:** Added an independent **`EMAIL_IMAGES` setting**, disabled by default, to enable playlist and album artwork in email notifications without affecting profile-picture detection or its dedicated attachments
+- **CONFIG CHANGE:** Updated support to **Python 3.9 through 3.14** and aligned the package metadata and classifiers with the runtime requirements
 
 **Bug fixes**:
 
-- **BUGFIX:** Prevented temporary missing playlist like counts from producing `n/a` availability alerts. Current profile metadata and the last cached numeric value now act as fallbacks, while unavailable snapshots retain the last numeric baseline
+- **BUGFIX:** Prevented **temporarily missing playlist like counts** from producing false `n/a` availability changes. Current profile metadata and the last cached numeric value act as fallbacks while unavailable snapshots retain the previous numeric baseline
 
 # Changes in 3.6 (30 Jul 2026)
 
