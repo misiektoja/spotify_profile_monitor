@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 import subprocess
 import sys
 from unittest.mock import Mock
@@ -17,11 +18,13 @@ def test_runtime_url_builders_use_global_bases(monkeypatch):
     assert monitor.spotify_convert_uri_to_url("spotify:user:target") == "https://web.example/user/target?si=1"
 
 
-# Verifies project guide globals share one repository base
-def test_guide_urls_share_project_base():
+# Verifies project guide globals use the repository base and match explicit README anchors
+def test_guide_urls_match_readme_anchors():
     guide_names = ("QUICK_START_GUIDE_URL", "INSTALLATION_GUIDE_URL", "CONFIG_GUIDE_URL", "COOKIE_GUIDE_URL", "MANUAL_COOKIE_GUIDE_URL", "CLIENT_GUIDE_URL", "TARGET_GUIDE_URL", "SMTP_GUIDE_URL", "WEBHOOK_GUIDE_URL", "SECRETS_GUIDE_URL", "INTERVALS_GUIDE_URL", "DOCTOR_GUIDE_URL", "OAUTH_GUIDE_URL", "OAUTH_USER_GUIDE_URL", "BROWSER_COOKIE_GUIDE_URL", "SETUP_GUIDE_URL")
+    readme_anchors = set(re.findall(r'<a\s+id=["\x27]([^"\x27]+)', (Path(__file__).parents[1] / "README.md").read_text(encoding="utf-8")))
 
     assert all(getattr(monitor, name).startswith(monitor.PROJECT_URL + "#") for name in guide_names)
+    assert all(getattr(monitor, name).partition("#")[2] in readme_anchors for name in guide_names)
 
 
 # Verifies failed config execution cannot mutate scalar or mutable existing values
