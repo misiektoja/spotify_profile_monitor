@@ -2,6 +2,25 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.7 (04 Aug 2026)
+
+Version **3.7** focuses on making Spotify Profile Monitor easier to set up, safer to configure and easier to troubleshoot. It adds **guided onboarding**, **Spotify login cookie import from Firefox and Chromium-based browsers** and a **Doctor self-check** while improving terminal output, configuration recovery and email artwork controls.
+
+**Features and improvements**:
+
+- **NEW:** **Guided first-run setup** - Run `--setup` or accept the no-arguments prompt to configure the monitoring target, polling interval, Spotify authentication, email and webhook notifications plus config and dotenv destinations
+- **NEW:** **Browser cookie import** - Import an `sp_dc` cookie from Firefox, Chrome, Brave or Chromium with profile selection and Spotify validation before `SP_DC_COOKIE` is updated. Firefox needs no extra dependency and works on macOS, Linux and Windows. Chromium-based import uses the optional `browser` extra on macOS and Linux while Windows users are guided to Firefox
+- **NEW:** **Doctor self-check** - `--doctor` checks Python dependencies, configuration, secrets, output destinations, Spotify authentication, the metadata backend, connectivity, an optional target and notifications. Interactive runs offer separate email and webhook tests only after confirmation. Failures show a `To fix:` action while `--debug` retains technical detail
+- **IMPROVE:** **Recoverable configuration writes** - New content is validated before an atomic write, existing files receive timestamped backups and replacement requires confirmation or `--force`. Generated configuration keeps secret placeholders while follow-up commands preserve the active interpreter and custom config or dotenv paths
+- **IMPROVE:** **Focused terminal output** - A pure ASCII profile banner, short no-arguments welcome, concise startup summary and install-aware `--help` examples keep routine output approachable. Use `--verbose` for the complete non-secret summary or `--debug` for sanitized request flow and internal troubleshooting detail
+- **IMPROVE:** **Portable log separators** - The new `ASCII_LOG_SEPARATORS` setting controls whether separator-only lines saved to log files use ASCII hyphens. `"Auto"` enables them on Windows by default, `"On"` enables them on every operating system and `"Off"` preserves Unicode separators. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.
+- **NEW:** **Independent email artwork** - `EMAIL_IMAGES` is disabled by default and enables playlist plus album artwork in email notifications without changing profile-picture detection or its dedicated attachments
+- **CONFIG CHANGE:** **Supported Python versions** - Runtime support and package metadata now cover Python 3.9 through 3.14
+
+**Bug fixes**:
+
+- **BUGFIX:** **Stable playlist like counts** - Temporarily missing values no longer produce false `n/a` availability changes. Current profile metadata and the last cached numeric value act as fallbacks while unavailable snapshots retain the previous numeric baseline
+
 # Changes in 3.6 (30 Jul 2026)
 
 Version **3.6** adds **safer private setup** for Spotify authentication, support for **Spotify monitoring targets in different formats** and independent **Discord and ntfy webhook notifications** for profile, playlist, follower and monitoring alerts with customizable delivery. Email notifications now include inline playlist or album artwork for relevant changes.
