@@ -2,6 +2,24 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.7.1 (TBD)
+
+Version **3.7.1** is a maintenance release that restores **Python 3.9 support**, makes **config-file polling and connectivity settings take effect**, hardens **profile-picture emails and the anti-hang watchdog** and clarifies **ntfy webhook customization**.
+
+**Features and improvements**:
+
+- **IMPROVE:** **Clearer ntfy webhook customization** - Documentation and the generated configuration now state that `WEBHOOK_TEMPLATE`, `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` apply only to Discord and are ignored by ntfy, which needs no template. Customize ntfy delivery through `WEBHOOK_HEADERS` such as `X-Priority` or `X-Tags`
+- **IMPROVE:** **Documented playlist export location** - The `--export-all-playlists` documentation now explains that files are written to the current working directory and that a name collision appends to an existing file, so exports are best run from a dedicated empty directory
+
+**Bug fixes**:
+
+- **BUGFIX:** **Python 3.9 startup restored** - The tool again starts on Python 3.9, the documented minimum runtime. A newer type-annotation syntax prevented the module from loading on 3.9
+- **BUGFIX:** **Config-file check interval honored** - Setting `SPOTIFY_CHECK_INTERVAL` in the config file now correctly scales the `LIVENESS_CHECK_INTERVAL` cadence and the playlist metadata cache lifetime, not only when `-c` / `--check-interval` is passed on the command line
+- **BUGFIX:** **Connectivity check respects configuration** - The startup internet check now honors `VERIFY_SSL`, `CHECK_INTERNET_URL` and `CHECK_INTERNET_TIMEOUT` from the config file or dotenv and `VERIFY_SSL = False` suppresses insecure-request warnings as intended
+- **BUGFIX:** **Hardened profile-picture emails** - The monitored account's display name is now HTML-escaped in profile-picture email notifications, matching every other notification. A crafted display name can no longer inject markup into the email body
+- **BUGFIX:** **Reliable anti-hang watchdog** - The main-loop watchdog that guards against a wedged network call is no longer disabled by the per-request timers it wraps. Nested request alarms now restore the enclosing deadline, and the watchdog timeout is sized above a single request so it no longer pre-empts legitimate slow requests
+- **BUGFIX:** **Shell-free image preview** - Displaying profile or playlist artwork through `IMGCAT_PATH` now launches the viewer with an argument list instead of a shell command string, so a file suffix, target or viewer path containing spaces or shell characters is passed through literally. The blank lines printed around the preview also stay on the terminal and no longer leak into the log file
+
 # Changes in 3.7 (04 Aug 2026)
 
 Version **3.7** focuses on making Spotify Profile Monitor easier to set up, safer to configure and easier to troubleshoot. It adds **guided onboarding**, **Spotify login cookie import from Firefox and Chromium-based browsers** and a **Doctor self-check** while improving terminal output, configuration recovery and email artwork controls.
