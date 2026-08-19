@@ -4,7 +4,7 @@ This is a high-level summary of the most important changes.
 
 # Changes in 3.7.1 (TBD)
 
-Version **3.7.1** is a maintenance release that restores **Python 3.9 support**, makes **config-file polling and connectivity settings take effect**, hardens **profile-picture emails and the anti-hang watchdog** and clarifies **ntfy webhook customization**.
+Version **3.7.1** is a maintenance release that restores **Python 3.9 support**, makes **config-file polling and connectivity settings take effect**, hardens **profile-picture emails and the anti-hang watchdog** and clarifies **ntfy webhook customization**. Spotify-supplied names and descriptions can no longer drive your terminal, carry a formula into an exported CSV or break out of a link in an email notification.
 
 **Features and improvements**:
 
@@ -19,6 +19,9 @@ Version **3.7.1** is a maintenance release that restores **Python 3.9 support**,
 - **BUGFIX:** **Hardened profile-picture emails** - The monitored account's display name is now HTML-escaped in profile-picture email notifications, matching every other notification. A crafted display name can no longer inject markup into the email body
 - **BUGFIX:** **Reliable anti-hang watchdog** - The main-loop watchdog that guards against a wedged network call is no longer disabled by the per-request timers it wraps. Nested request alarms now restore the enclosing deadline, and the watchdog timeout is sized above a single request so it no longer pre-empts legitimate slow requests
 - **BUGFIX:** **Shell-free image preview** - Displaying profile or playlist artwork through `IMGCAT_PATH` now launches the viewer with an argument list instead of a shell command string, so a file suffix, target or viewer path containing spaces or shell characters is passed through literally. The blank lines printed around the preview also stay on the terminal and no longer leak into the log file
+- **BUGFIX:** **Terminal-safe Spotify text** - Display names, playlist names, track names, collaborator names and descriptions are stripped of terminal control sequences before anything reaches the console, the playlist progress bar or the log file. A crafted name can no longer clear your screen, retitle your terminal window, hide text or overwrite a line you already read, and the same protection now applies when running with `--disable-logging`. Tabs, line breaks and normal layout are unchanged
+- **BUGFIX:** **Spreadsheet-safe CSV export** - Spotify text starting with `=`, `+`, `-`, `@`, a tab or a carriage return is written with a leading apostrophe, so opening a `-b` change log or an `--export-all-playlists` file cannot execute a formula a monitored account placed in a playlist, track or artist name. Timestamps and numeric values are written unchanged
+- **BUGFIX:** **Escaped notification links** - Every link address in HTML email notifications is now attribute-escaped, matching the link text that already was. A Spotify identifier containing a quote character can no longer break out of an `href` and inject markup into the message
 
 # Changes in 3.7 (04 Aug 2026)
 
