@@ -1151,6 +1151,18 @@ def normalize_log_separators(message):
     return re.sub(r"(?m)^─+$", lambda match: match.group(0).replace("─", "-"), message)
 
 
+# Every control character is dropped, keeping only tab and newline. A carriage return would let Spotify-supplied
+# text overwrite an already printed line, and the inline progress bars that use one write to the terminal directly
+TERMINAL_CONTROL_RE = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+
+
+# Removes terminal control sequences that Spotify-supplied text could use to drive the terminal or the log file
+def sanitize_terminal_text(message):
+    if not isinstance(message, str) or not message:
+        return message
+    return TERMINAL_CONTROL_RE.sub("", message)
+
+
 # Logger class to output messages to stdout and log file
 class Logger(object):
     def __init__(self, filename):
@@ -1158,6 +1170,7 @@ class Logger(object):
         self.logfile = open(filename, "a", buffering=1, encoding="utf-8")
 
     def write(self, message):
+        message = sanitize_terminal_text(message)
         # Expand tabs for file output (stdout remains untouched)
         self.logfile.write(normalize_log_separators(message.expandtabs(8)))
         if (TRUNCATE_CHARS):
@@ -1168,6 +1181,7 @@ class Logger(object):
 
     # Writes one message to the terminal without duplicating it in the log
     def terminal_only(self, message):
+        message = sanitize_terminal_text(message)
         if TRUNCATE_CHARS:
             message = truncate_string_per_line(message, TRUNCATE_CHARS)
         self.terminal.write(message)
@@ -1175,13 +1189,39 @@ class Logger(object):
 
     # Writes one message to the complete log without showing it in the terminal
     def log_only(self, message):
-        self.logfile.write(normalize_log_separators(message.expandtabs(8)))
+        self.logfile.write(normalize_log_separators(sanitize_terminal_text(message).expandtabs(8)))
         self.logfile.flush()
 
     # Flushes both output destinations
     def flush(self):
         self.terminal.flush()
         self.logfile.flush()
+
+
+# Sanitizing stdout wrapper used when file logging is disabled, mirroring the Logger interface
+class TerminalStream(object):
+    def __init__(self, stream):
+        self.terminal = stream
+
+    def write(self, message):
+        self.terminal.write(sanitize_terminal_text(message))
+        self.terminal.flush()
+
+    # Writes one message to the terminal, matching the Logger interface
+    def terminal_only(self, message):
+        self.write(message)
+
+    # Discards log-only output since no log file exists in this mode, matching the Logger interface
+    def log_only(self, message):
+        return
+
+    # Flushes the wrapped terminal
+    def flush(self):
+        self.terminal.flush()
+
+    # Forwards every remaining stream attribute (isatty, buffer, encoding, fileno) to the wrapped terminal
+    def __getattr__(self, name):
+        return getattr(self.terminal, name)
 
 
 # Class used to generate timeout exceptions
@@ -2102,9 +2142,14 @@ def build_email_artwork(image_url: str = "") -> Optional[bytes]:
         return None
 
 
+# Escapes one value for safe interpolation into a quoted HTML attribute such as href or src
+def escape_html_attr(value) -> str:
+    return escape(str(value or ""), quote=True)
+
+
 # Adds one inline artwork reference before the closing HTML body tag
 def add_email_artwork_html(body_html: str, image_name: str = EMAIL_ARTWORK_CONTENT_ID) -> str:
-    artwork_html = f'<br><br><img src="cid:{escape(image_name)}" alt="Spotify artwork" style="max-width: {EMAIL_ARTWORK_MAX_DIMENSIONS[0]}px; height: auto;">'
+    artwork_html = f'<br><br><img src="cid:{escape_html_attr(image_name)}" alt="Spotify artwork" style="max-width: {EMAIL_ARTWORK_MAX_DIMENSIONS[0]}px; height: auto;">'
     closing_body_index = body_html.casefold().rfind("</body>")
     if closing_body_index >= 0:
         return body_html[:closing_body_index] + artwork_html + body_html[closing_body_index:]
@@ -2259,6 +2304,11 @@ def send_pending_error_notification(subject: str, body: str, body_html: str, ema
     return email_attempted or email_sent_now, webhook_attempted or webhook_sent_now
 
 
+# Prefixes one CSV value so spreadsheet software cannot evaluate Spotify-supplied text as a formula
+def escape_csv_formula(value):
+    return f"'{value}" if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r") else value
+
+
 # Initializes the CSV file
 def init_csv_file(csv_file_name, format_type=1):
     try:
@@ -2283,7 +2333,7 @@ def write_csv_entry(csv_file_name, timestamp, object_type, object_name, old, new
 
         with open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8") as csv_file:
             csvwriter = csv.DictWriter(csv_file, fieldnames=csv_fields, quoting=csv.QUOTE_NONNUMERIC)
-            csvwriter.writerow(csv_row)
+            csvwriter.writerow({key: escape_csv_formula(value) for key, value in csv_row.items()})
 
     except Exception as e:
         raise RuntimeError(f"Failed to write to CSV file '{csv_file_name}': {e}")
@@ -2677,15 +2727,15 @@ def format_lyrics_urls_email_html(genius_url, azlyrics_url, tekstowo_url, musixm
     escaped_artist = escape(artist)
     escaped_track = escape(track)
     if ENABLE_GENIUS_LYRICS_URL:
-        lines.append(f'Genius lyrics URL: <a href="{genius_url}">{escaped_artist} - {escaped_track}</a>')
+        lines.append(f'Genius lyrics URL: <a href="{escape_html_attr(genius_url)}">{escaped_artist} - {escaped_track}</a>')
     if ENABLE_AZLYRICS_URL:
-        lines.append(f'AZLyrics URL: <a href="{azlyrics_url}">{escaped_artist} - {escaped_track}</a>')
+        lines.append(f'AZLyrics URL: <a href="{escape_html_attr(azlyrics_url)}">{escaped_artist} - {escaped_track}</a>')
     if ENABLE_TEKSTOWO_URL:
-        lines.append(f'Tekstowo.pl URL: <a href="{tekstowo_url}">{escaped_artist} - {escaped_track}</a>')
+        lines.append(f'Tekstowo.pl URL: <a href="{escape_html_attr(tekstowo_url)}">{escaped_artist} - {escaped_track}</a>')
     if ENABLE_MUSIXMATCH_URL:
-        lines.append(f'Musixmatch URL: <a href="{musixmatch_url}">{escaped_artist} - {escaped_track}</a>')
+        lines.append(f'Musixmatch URL: <a href="{escape_html_attr(musixmatch_url)}">{escaped_artist} - {escaped_track}</a>')
     if ENABLE_LYRICS_COM_URL:
-        lines.append(f'Lyrics.com URL: <a href="{lyrics_com_url}">{escaped_artist} - {escaped_track}</a>')
+        lines.append(f'Lyrics.com URL: <a href="{escape_html_attr(lyrics_com_url)}">{escaped_artist} - {escaped_track}</a>')
     return "<br>".join(lines) if lines else ""
 
 
@@ -2727,15 +2777,15 @@ def format_music_urls_email_html(apple_music_url, youtube_music_url, amazon_musi
     escaped_artist = escape(artist)
     escaped_track = escape(track)
     if ENABLE_APPLE_MUSIC_URL:
-        lines.append(f'Apple Music URL: <a href="{apple_music_url}">{escaped_artist} - {escaped_track}</a>')
+        lines.append(f'Apple Music URL: <a href="{escape_html_attr(apple_music_url)}">{escaped_artist} - {escaped_track}</a>')
     if ENABLE_YOUTUBE_MUSIC_URL:
-        lines.append(f'YouTube Music URL: <a href="{youtube_music_url}">{escaped_artist} - {escaped_track}</a>')
+        lines.append(f'YouTube Music URL: <a href="{escape_html_attr(youtube_music_url)}">{escaped_artist} - {escaped_track}</a>')
     if ENABLE_AMAZON_MUSIC_URL:
-        lines.append(f'Amazon Music URL: <a href="{amazon_music_url}">{escaped_artist} - {escaped_track}</a>')
+        lines.append(f'Amazon Music URL: <a href="{escape_html_attr(amazon_music_url)}">{escaped_artist} - {escaped_track}</a>')
     if ENABLE_DEEZER_URL:
-        lines.append(f'Deezer URL: <a href="{deezer_url}">{escaped_artist} - {escaped_track}</a>')
+        lines.append(f'Deezer URL: <a href="{escape_html_attr(deezer_url)}">{escaped_artist} - {escaped_track}</a>')
     if ENABLE_TIDAL_URL:
-        lines.append(f'Tidal URL: <a href="{tidal_url}">{escaped_artist} - {escaped_track}</a>')
+        lines.append(f'Tidal URL: <a href="{escape_html_attr(tidal_url)}">{escaped_artist} - {escaped_track}</a>')
     return "<br>".join(lines) if lines else ""
 
 
@@ -5138,7 +5188,8 @@ def _display_progress(current, total, playlist_name: str = "", bar_length: int =
     percent_str = f"{percent * 100:.1f}%"
     counter_str = f"({current}/{total})"
 
-    display_name = playlist_name or ""
+    # Sanitized here because this bar writes to the terminal and the log file directly, bypassing Logger.write
+    display_name = sanitize_terminal_text(playlist_name or "")
     prefix = "Playlists"
 
     def compute_base_length(include_prefix: bool) -> int:
@@ -5985,7 +6036,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                         followers_str = restricted_followers if restricted_followers is not None else "n/a"
                         console_output = f"- {p_name} [ {p_url} ] [ RESTRICTED ]\n  Likes: {followers_str}\n  Metadata source: profile-view only"
                         email_output = f"- {p_name} [ {p_url} ] [ RESTRICTED ]\n  Likes: {followers_str}\n  Metadata source: profile-view only"
-                        html_output = f"- <a href=\"{p_url}\">{escape(p_name)}</a> [ <b>RESTRICTED</b> ]<br>&nbsp;&nbsp;Likes: <b>{escape(str(followers_str))}</b><br>&nbsp;&nbsp;Metadata source: profile-view only"
+                        html_output = f"- <a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a> [ <b>RESTRICTED</b> ]<br>&nbsp;&nbsp;Likes: <b>{escape(str(followers_str))}</b><br>&nbsp;&nbsp;Metadata source: profile-view only"
                     else:
                         # Get playlist details
                         playlist_details = None
@@ -5998,7 +6049,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                         # Format console output
                         console_output = f"- {p_name} [ {p_url} ]"
                         email_output = f"- {p_name} [ {p_url} ]"
-                        html_output = f"- <a href=\"{p_url}\">{escape(p_name)}</a>"
+                        html_output = f"- <a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a>"
                         console_output += f"\n  Likes: {current_likes_str}"
                         email_output += f"\n  Likes: {current_likes_str}"
                         html_output += f"<br>&nbsp;&nbsp;Likes: <b>{escape(current_likes_str)}</b>"
@@ -6056,7 +6107,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                 if "name" in f_dict and "uri" in f_dict:
                     print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
                     list_of_added_f_list += f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]"
-                    list_of_added_f_list_html += f"- <a href=\"{spotify_convert_uri_to_url(f_dict['uri'])}\">{escape(f_dict['name'])}</a>"
+                    list_of_added_f_list_html += f"- <a href=\"{escape_html_attr(spotify_convert_uri_to_url(f_dict['uri']))}\">{escape(f_dict['name'])}</a>"
 
                     # Add empty line between items if not the last one and there are multiple items
                     if len(added_f_list) > 1 and idx < len(added_f_list) - 1:
@@ -6138,7 +6189,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                         followers_str = restricted_followers if restricted_followers is not None else "n/a"
                         console_output = f"- {p_name} [ {p_url} ] [ RESTRICTED ]\n  Likes: {followers_str}\n  Metadata source: profile-view only"
                         email_output = f"- {p_name} [ {p_url} ] [ RESTRICTED ]\n  Likes: {followers_str}\n  Metadata source: profile-view only"
-                        html_output = f"- <a href=\"{p_url}\">{escape(p_name)}</a> [ <b>RESTRICTED</b> ]<br>&nbsp;&nbsp;Likes: <b>{escape(str(followers_str))}</b><br>&nbsp;&nbsp;Metadata source: profile-view only"
+                        html_output = f"- <a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a> [ <b>RESTRICTED</b> ]<br>&nbsp;&nbsp;Likes: <b>{escape(str(followers_str))}</b><br>&nbsp;&nbsp;Metadata source: profile-view only"
 
                         print(console_output)
                         list_of_removed_f_list += email_output
@@ -6172,7 +6223,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                     if is_private:
                         console_output = f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private"
                         email_output = f"- {spotify_format_playlist_reference(uri)}: playlist has been removed or set to private"
-                        html_output = f"- <a href=\"{p_url}\">{escape(p_name)}</a>: playlist has been removed or set to private"
+                        html_output = f"- <a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a>: playlist has been removed or set to private"
                         console_output += f"\n  Likes: {last_known_likes_str}"
                         email_output += f"\n  Likes: {last_known_likes_str}"
                         html_output += f"<br>&nbsp;&nbsp;Likes: <b>{escape(last_known_likes_str)}</b>"
@@ -6224,7 +6275,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                     else:
                         console_output = f"- {spotify_format_playlist_reference(uri)}"
                         email_output = f"- {spotify_format_playlist_reference(uri)}"
-                        html_output = f"- <a href=\"{p_url}\">{escape(p_name)}</a>"
+                        html_output = f"- <a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a>"
                         console_output += f"\n  Likes: {last_known_likes_str}"
                         email_output += f"\n  Likes: {last_known_likes_str}"
                         html_output += f"<br>&nbsp;&nbsp;Likes: <b>{escape(last_known_likes_str)}</b>"
@@ -6282,7 +6333,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                 if "name" in f_dict and "uri" in f_dict:
                     print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
                     list_of_removed_f_list += f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]"
-                    list_of_removed_f_list_html += f"- <a href=\"{spotify_convert_uri_to_url(f_dict['uri'])}\">{escape(f_dict['name'])}</a>"
+                    list_of_removed_f_list_html += f"- <a href=\"{escape_html_attr(spotify_convert_uri_to_url(f_dict['uri']))}\">{escape(f_dict['name'])}</a>"
 
                     # Add empty line between items if not the last one and there are multiple items
                     if len(removed_f_list) > 1 and idx < len(removed_f_list) - 1:
@@ -9361,7 +9412,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                                     m_subject = f"Spotify user {username} number of likes for playlist '{p_name}' has changed! ({p_likes_diff_str}, {likes_display_old} -> {likes_display_new})"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                    m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>': number of likes changed from <b>{escape(str(likes_display_old))}</b> to <b>{escape(str(likes_display_new))}</b> (<b>{escape(p_likes_diff_str)}</b>)<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                                    m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a></b>': number of likes changed from <b>{escape(str(likes_display_old))}</b> to <b>{escape(str(likes_display_new))}</b> (<b>{escape(p_likes_diff_str)}</b>)<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
                                     send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=select_notification_image_url(p_image_url, profile_image_url=image_url), email_image_url=p_image_url)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
@@ -9377,7 +9428,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                             print_operation_error("A CSV event could not be written", e)
                                         m_subject = f"Spotify user {username} playlist '{p_name_old}' name changed to '{p_name}'! [RESTRICTED]"
                                         m_body = f"{p_message}\nMetadata source: profile-view only\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                        m_body_html = f"<html><head></head><body>Playlist '<b>{escape(p_name_old)}</b>': name changed to new name '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>' [<b>RESTRICTED</b>]<br><br>Metadata source: profile-view only<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                                        m_body_html = f"<html><head></head><body>Playlist '<b>{escape(p_name_old)}</b>': name changed to new name '<b><a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a></b>' [<b>RESTRICTED</b>]<br><br>Metadata source: profile-view only<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
                                         send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=select_notification_image_url(p_image_url, profile_image_url=image_url), email_image_url=p_image_url)
                                         print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                         print_cur_ts("Timestamp:\t\t\t")
@@ -9502,7 +9553,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                             for collab_id, collab_name in added_collaborators.items():
                                                 added_collab = f'- {collab_name} [ {spotify_convert_uri_to_url(f"spotify:user:{collab_id}")} ]\n'
                                                 p_message_added_collaborators += added_collab
-                                                p_message_added_collaborators_html += f'- <a href="{spotify_convert_uri_to_url(f"spotify:user:{collab_id}")}">{escape(collab_name)}</a><br>'
+                                                p_message_added_collaborators_html += f'- <a href="{escape_html_attr(spotify_convert_uri_to_url(f"spotify:user:{collab_id}"))}">{escape(collab_name)}</a><br>'
                                                 try:
                                                     if csv_file_name:
                                                         write_csv_entry(csv_file_name, now_local_naive(), "Added Collaborator", p_name, "", collab_name)
@@ -9519,7 +9570,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                             for collab_id, collab_name in removed_collaborators.items():
                                                 removed_collab = f'- {collab_name} [ {spotify_convert_uri_to_url(f"spotify:user:{collab_id}")} ]\n'
                                                 p_message_removed_collaborators += removed_collab
-                                                p_message_removed_collaborators_html += f'- <a href="{spotify_convert_uri_to_url(f"spotify:user:{collab_id}")}">{escape(collab_name)}</a><br>'
+                                                p_message_removed_collaborators_html += f'- <a href="{escape_html_attr(spotify_convert_uri_to_url(f"spotify:user:{collab_id}"))}">{escape(collab_name)}</a><br>'
                                                 try:
                                                     if csv_file_name:
                                                         write_csv_entry(csv_file_name, now_local_naive(), "Removed Collaborator", p_name, collab_name, "")
@@ -9536,7 +9587,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                                     m_subject = f"Spotify user {username} number of collaborators for playlist '{p_name}' has changed! ({p_collaborators_diff_str}, {p_collaborators_old} -> {p_collaborators})"
                                     m_body = f"{p_message}\n{p_message_added_collaborators}{p_message_removed_collaborators}Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                    m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>': number of collaborators changed from <b>{p_collaborators_old}</b> to <b>{p_collaborators}</b> (<b>{escape(p_collaborators_diff_str)}</b>)<br>{p_message_added_collaborators_html}{p_message_removed_collaborators_html}<br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                                    m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a></b>': number of collaborators changed from <b>{p_collaborators_old}</b> to <b>{p_collaborators}</b> (<b>{escape(p_collaborators_diff_str)}</b>)<br>{p_message_added_collaborators_html}{p_message_removed_collaborators_html}<br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
                                     send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=select_notification_image_url(p_image_url, profile_image_url=image_url), email_image_url=p_image_url)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
@@ -9626,7 +9677,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                                             if line:
                                                                 added_track_email += f"[ {line} ]\n"
                                                     added_track_email += f'[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
-                                                    added_track_html = f'- <b><a href="{spotify_convert_uri_to_url(f_dict["uri"])}">{escape(f_dict["artist"])} - {escape(f_dict["track"])}</a></b> [ {escape(get_date_from_ts(f_dict["added_at"]))}, <a href="{spotify_convert_uri_to_url(tempuri)}">{escape(f_dict["added_by"])}</a> ]<br>'
+                                                    added_track_html = f'- <b><a href="{escape_html_attr(spotify_convert_uri_to_url(f_dict["uri"]))}">{escape(f_dict["artist"])} - {escape(f_dict["track"])}</a></b> [ {escape(get_date_from_ts(f_dict["added_at"]))}, <a href="{escape_html_attr(spotify_convert_uri_to_url(tempuri))}">{escape(f_dict["added_by"])}</a> ]<br>'
                                                     if music_urls_html:
                                                         for line in music_urls_html.split("<br>"):
                                                             if line:
@@ -9685,7 +9736,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                                             if line:
                                                                 removed_track_email += f"[ {line} ]\n"
                                                     removed_track_email += f'[ Collaborator URL: {spotify_convert_uri_to_url(tempuri)} ]\n\n'
-                                                    removed_track_html = f'- <b><a href="{spotify_convert_uri_to_url(f_dict["uri"])}">{escape(f_dict["artist"])} - {escape(f_dict["track"])}</a></b> [ {escape(get_date_from_ts(f_dict["added_at"]))}, <a href="{spotify_convert_uri_to_url(tempuri)}">{escape(f_dict["added_by"])}</a> ]<br>'
+                                                    removed_track_html = f'- <b><a href="{escape_html_attr(spotify_convert_uri_to_url(f_dict["uri"]))}">{escape(f_dict["artist"])} - {escape(f_dict["track"])}</a></b> [ {escape(get_date_from_ts(f_dict["added_at"]))}, <a href="{escape_html_attr(spotify_convert_uri_to_url(tempuri))}">{escape(f_dict["added_by"])}</a> ]<br>'
                                                     if music_urls_html:
                                                         for line in music_urls_html.split("<br>"):
                                                             if line:
@@ -9714,7 +9765,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                         if p_update and p_update_old:
                                             p_subject_after_str = f"; after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)}"
                                         m_subject = f"Spotify user {username} number of tracks for playlist '{p_name}' has changed! ({p_tracks_diff_str}, {p_tracks_old} -> {p_tracks}{p_subject_after_str})"
-                                        m_body_html_p_message = f"Playlist '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>': number of tracks changed from <b>{p_tracks_old}</b> to <b>{p_tracks}</b> (<b>{escape(p_tracks_diff_str)}</b>)"
+                                        m_body_html_p_message = f"Playlist '<b><a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a></b>': number of tracks changed from <b>{p_tracks_old}</b> to <b>{p_tracks}</b> (<b>{escape(p_tracks_diff_str)}</b>)"
                                         if p_after_str:
                                             m_body_html_p_message += f" (after <b>{escape(calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2))}</b>; previous update: <b>{escape(get_short_date_from_ts(p_update_old, True))}</b>)"
                                         m_body_html_p_message += "<br>"
@@ -9722,7 +9773,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                         if p_update and p_update_old:
                                             p_subject_after_str = f" (after {calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2)})"
                                         m_subject = f"Spotify user {username} list of tracks ({p_tracks}) for playlist '{p_name}' has changed!{p_subject_after_str}"
-                                        m_body_html_p_message = f"Playlist '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>': list of tracks (<b>{p_tracks}</b>) have changed"
+                                        m_body_html_p_message = f"Playlist '<b><a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a></b>': list of tracks (<b>{p_tracks}</b>) have changed"
                                         if p_after_str:
                                             m_body_html_p_message += f" (after <b>{escape(calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2))}</b>; previous update: <b>{escape(get_short_date_from_ts(p_update_old, True))}</b>)"
                                         m_body_html_p_message += "<br>"
@@ -9745,7 +9796,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                         print_operation_error("A CSV event could not be written", e)
                                     m_subject = f"Spotify user {username} playlist '{p_name_old}' name changed to '{p_name}'!"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                    m_body_html = f"<html><head></head><body>Playlist '<b>{escape(p_name_old)}</b>': name changed to new name '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>'<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                                    m_body_html = f"<html><head></head><body>Playlist '<b>{escape(p_name_old)}</b>': name changed to new name '<b><a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a></b>'<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
                                     send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=select_notification_image_url(p_image_url, profile_image_url=image_url), email_image_url=p_image_url)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
@@ -9761,7 +9812,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                         print_operation_error("A CSV event could not be written", e)
                                     m_subject = f"Spotify user {username} playlist '{p_name}' description has changed !"
                                     m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                    m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{p_url}\">{escape(p_name)}</a></b>' description changed from:<br><br>'<i>{escape(p_descr_old)}</i>'<br><br>to:<br><br>'<i>{escape(p_descr)}</i>'<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                                    m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a></b>' description changed from:<br><br>'<i>{escape(p_descr_old)}</i>'<br><br>to:<br><br>'<i>{escape(p_descr)}</i>'<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
                                     send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=select_notification_image_url(p_image_url, profile_image_url=image_url), email_image_url=p_image_url)
                                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                                     print_cur_ts("Timestamp:\t\t\t")
@@ -11059,6 +11110,7 @@ def main():
         sys.stdout = Logger(FINAL_LOG_PATH)
     else:
         FINAL_LOG_PATH = None
+        sys.stdout = TerminalStream(sys.stdout)
 
     if args.profile_notification is True:
         PROFILE_NOTIFICATION = True
