@@ -1021,6 +1021,8 @@ spotify_profile_monitor <spotify_target> -b spotify_profile_changes_spotify_user
 
 The file will be automatically created if it does not exist.
 
+Spotify-supplied text (playlist names, track names, artist names, collaborator names and descriptions) that starts with `=`, `+`, `-`, `@`, a tab or a carriage return is written with a leading apostrophe, so opening the export in a spreadsheet cannot evaluate it as a formula. The same applies to the per-playlist files produced by `--export-all-playlists`. Timestamps and numeric values are unaffected.
+
 <a id="detection-of-changed-profile-pictures"></a>
 ### Detection of Changed Profile Pictures
 
