@@ -630,6 +630,8 @@ For ntfy.sh the value looks like `https://ntfy.sh/spotify-profile-monitor-long-r
 
 Spotify Profile Monitor sends the alert body as a native UTF-8 ntfy message and the alert subject as its title. Query parameters already in the topic URL are preserved. Long ntfy messages are visibly truncated below ntfy's 4 KB boundary so they remain notifications instead of temporary attachments.
 
+The ntfy provider needs no request template. `WEBHOOK_TEMPLATE`, `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` shape the Discord embed only and are ignored when `WEBHOOK_PROVIDER` is `"ntfy"`. To customize ntfy delivery, add ntfy options such as priority or tags through `WEBHOOK_HEADERS` (for example `X-Priority` or `X-Tags`).
+
 Profile and playlist artwork is enabled by default for supported ntfy alerts. Disable it in `spotify_profile_monitor.conf` if you prefer text-only messages:
 
 ```ini
@@ -652,9 +654,11 @@ WEBHOOK_HEADERS = {
 }
 ```
 
-Header values support the same placeholders as `WEBHOOK_TEMPLATE`. Headers are validated before and after placeholder expansion so formatted values cannot add invalid names, non-string values or line breaks.
+Header values support the same placeholders as the Discord template (`{title}`, `{description}`, `{version}`, `{image_url}`, `{color}`, `{timestamp}` and so on) and work with both providers. Headers are validated before and after placeholder expansion so formatted values cannot add invalid names, non-string values or line breaks.
 
 #### Advanced Discord-format customization
+
+The settings in this section apply only when `WEBHOOK_PROVIDER` is `"discord"`. The ntfy provider ignores them.
 
 `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` control the sender name and HTTPS avatar for Discord-format payloads:
 
@@ -903,6 +907,8 @@ If you want to additionally export each of the user's playlists into a separate 
 ```sh
 spotify_profile_monitor <spotify_target> -i --export-all-playlists
 ```
+
+Each file is written to the current working directory using the sanitized playlist name. Filename sanitization removes path separators, so exports cannot escape that directory, but a playlist whose sanitized name collides with an existing `.csv` in that directory (including your own `-b` output) is appended to rather than replaced. Run the export from a dedicated empty directory.
 
 To skip public playlist processing while displaying details for a Spotify target, use `-q`:
 
