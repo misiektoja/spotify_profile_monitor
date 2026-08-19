@@ -3731,11 +3731,15 @@ def remove_key_from_list_of_dicts_copy(list_of_dicts, del_key):
 
 # Displays one image inline through imgcat using an argument vector instead of a shell
 def display_image_via_imgcat(imgcat_exe, path, blank_before=False, blank_after=False):
+    # Route the spacing to the terminal only; the image itself bypasses the log, so its blank lines should too
+    terminal_out = stdout_bck if stdout_bck is not None else sys.stdout
     if blank_before:
-        print()
+        terminal_out.write("\n")
+        terminal_out.flush()
     subprocess.run([imgcat_exe, path], check=True)
     if blank_after:
-        print()
+        terminal_out.write("\n")
+        terminal_out.flush()
 
 
 # Displays the downloaded image for user's profile or playlist's artwork
