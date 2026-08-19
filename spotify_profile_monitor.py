@@ -142,9 +142,11 @@ WEBHOOK_PROVIDER = "discord"
 WEBHOOK_URL = "your_webhook_url"
 
 # Discord display name (leave empty to use the webhook default)
+# Applies only when WEBHOOK_PROVIDER is "discord" (ignored by the ntfy provider)
 WEBHOOK_USERNAME = "Spotify Profile Monitor"
 
 # Discord avatar URL (leave empty to use the webhook default)
+# Applies only when WEBHOOK_PROVIDER is "discord" (ignored by the ntfy provider)
 WEBHOOK_AVATAR_URL = ""
 
 # Whether to send a webhook notification when the user's profile changes
@@ -169,6 +171,9 @@ WEBHOOK_HEADERS = {}
 # ----------------------------
 
 # Discord-format webhook request payload template
+# Applies only when WEBHOOK_PROVIDER is "discord". The "ntfy" provider needs no template and ignores this
+# value: it sends the alert body as a native ntfy message with the subject as its title. Use WEBHOOK_HEADERS
+# to add ntfy options such as priority or tags
 # Supported placeholders include title, description, version, image_url, fields, fields_str, color, timestamp,
 # username and avatar_url
 WEBHOOK_TEMPLATE = {
@@ -1200,7 +1205,11 @@ def signal_handler(sig, frame):
 
 
 # Checks internet connectivity
-def check_internet(url=CHECK_INTERNET_URL, timeout=CHECK_INTERNET_TIMEOUT, verify=VERIFY_SSL):
+def check_internet(url=None, timeout=None, verify=None):
+    # Resolve at call time so config file and dotenv overrides take effect (these globals change after import)
+    url = CHECK_INTERNET_URL if url is None else url
+    timeout = CHECK_INTERNET_TIMEOUT if timeout is None else timeout
+    verify = VERIFY_SSL if verify is None else verify
     try:
         debug_print(f"HTTP GET {url} [connectivity check], timeout={timeout}, verify_ssl={verify}")
         _ = req.get(url, headers={'User-Agent': USER_AGENT}, timeout=timeout, verify=verify)
@@ -2254,7 +2263,7 @@ def write_csv_entry(csv_file_name, timestamp, object_type, object_name, old, new
 
 
 # Converts a datetime to local timezone and removes timezone info (naive)
-def convert_to_local_naive(dt: datetime | None = None):
+def convert_to_local_naive(dt: Optional[datetime] = None):
     tz = pytz.timezone(LOCAL_TIMEZONE)
 
     if dt is not None:
@@ -4730,7 +4739,7 @@ def spotify_get_user_followers(access_token, user_uri_id):
 
 # Lists tracks for playlist with specified URI (-l flag)
 def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name, format_type=2):
-    added_at_dt: datetime | None = None
+    added_at_dt: Optional[datetime] = None
 
     try:
         if csv_file_name:
@@ -4951,7 +4960,7 @@ def spotify_get_user_liked_tracks(access_token):
 
 # Lists liked tracks by the user owning the access token
 def spotify_list_liked_tracks(sp_accessToken, csv_file_name, format_type=2):
-    added_at_dt: datetime | None = None
+    added_at_dt: Optional[datetime] = None
     username = ""
 
     try:
@@ -5204,7 +5213,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
     global PLAYLIST_INFO_CACHE
     list_of_playlists = []
     error_while_processing = False
-    added_at_dt: datetime | None = None
+    added_at_dt: Optional[datetime] = None
 
     if playlists_to_skip is None:
         playlists_to_skip = []
@@ -9929,7 +9938,7 @@ def cli_action_conflicts(args, allowed: Collection[str]) -> List[str]:
 # Parses configuration and command-line options then runs the selected operation
 def main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, VERBOSE_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, EMAIL_IMAGES, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, ALARM_TIMEOUT, CLEAN_OUTPUT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TARGET_USER_URI_ID, TRUNCATE_CHARS, NTFY_IMAGES
-    global EXPORT_ALL
+    global EXPORT_ALL, PLAYLIST_INFO_CACHE_TTL
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -10570,10 +10579,14 @@ def main():
         CLIENTTOKEN_REQUEST_BODY_FILE = os.path.expanduser(CLIENTTOKEN_REQUEST_BODY_FILE)
     if args.check_interval is not None:
         SPOTIFY_CHECK_INTERVAL = args.check_interval
-        if SPOTIFY_CHECK_INTERVAL > 0:
-            LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / SPOTIFY_CHECK_INTERVAL
     if args.error_interval is not None:
         SPOTIFY_ERROR_INTERVAL = args.error_interval
+
+    # Recompute interval-derived values after config file and CLI resolution so a config-file
+    # SPOTIFY_CHECK_INTERVAL is honored, not only a --check-interval override
+    if SPOTIFY_CHECK_INTERVAL > 0:
+        LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / SPOTIFY_CHECK_INTERVAL
+    PLAYLIST_INFO_CACHE_TTL = (SPOTIFY_CHECK_INTERVAL * 2 if SPOTIFY_CHECK_INTERVAL > 43200 else 43200)
     if args.profile_notification is True:
         PROFILE_NOTIFICATION = True
     if args.disable_followers_followings_notification is False:
@@ -10646,6 +10659,11 @@ def main():
         if not is_valid_timezone(LOCAL_TIMEZONE):
             print_recovery_error(ValueError(f"Invalid LOCAL_TIMEZONE: {LOCAL_TIMEZONE}"), "config_invalid")
             sys.exit(1)
+
+    # Honor a config file or dotenv VERIFY_SSL by suppressing insecure-request warnings before any request
+    # (the import-time guard only sees the built-in default)
+    if not VERIFY_SSL:
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     if not check_internet():
         sys.exit(1)
