@@ -21,7 +21,7 @@ pathvalidate (optional, needed by --export-all-playlists)
 Pillow (needed for email and ntfy artwork attachments)
 """
 
-VERSION = "3.7"
+VERSION = "3.7.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
