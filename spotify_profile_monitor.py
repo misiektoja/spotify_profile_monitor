@@ -830,8 +830,10 @@ re_replace_str = r'( - (\d*)( )*remaster$)|( - (\d*)( )*remastered( version)*( \
 # Default value for network-related timeouts in functions; in seconds
 FUNCTION_TIMEOUT = 15
 
-# Default value for alarm signal handler timeout; in seconds
-ALARM_TIMEOUT = 15
+# Enclosing main-loop watchdog timeout; in seconds
+# This is a backstop for the rare case where a per-request timeout does not fire. It must stay larger than a
+# single request's own alarm (FUNCTION_TIMEOUT + 2) so a nested request alarm never pre-empts legitimate work
+ALARM_TIMEOUT = 2 * (FUNCTION_TIMEOUT + 2) + 5
 ALARM_RETRY = 10
 
 # Variables for caching functionality of the Spotify 'cookie' access token / 'client' refresh token to avoid unnecessary refreshing
@@ -1195,6 +1197,31 @@ class PlaylistRestrictedError(Exception):
 # Signal handler for SIGALRM when the operation times out
 def timeout_handler(sig, frame):
     raise TimeoutException
+
+
+# Starts a POSIX alarm without discarding an earlier enclosing deadline
+def _start_timeout_alarm(timeout: float):
+    if platform.system() == "Windows" or not hasattr(signal, "setitimer"):
+        return None
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    previous_delay, previous_interval = signal.getitimer(signal.ITIMER_REAL)
+    effective_timeout = min(float(timeout), previous_delay) if previous_delay > 0 else float(timeout)
+    signal.signal(signal.SIGALRM, timeout_handler)
+    signal.setitimer(signal.ITIMER_REAL, effective_timeout)
+    return previous_handler, previous_delay, previous_interval, time.monotonic()
+
+
+# Restores the enclosing POSIX alarm with its elapsed time deducted
+def _restore_timeout_alarm(alarm_state) -> None:
+    if alarm_state is None:
+        return
+    previous_handler, previous_delay, previous_interval, started_at = alarm_state
+    elapsed = max(0.0, time.monotonic() - started_at)
+    signal.signal(signal.SIGALRM, previous_handler)
+    if previous_delay > 0:
+        signal.setitimer(signal.ITIMER_REAL, max(previous_delay - elapsed, 0.000001), previous_interval)
+    else:
+        signal.setitimer(signal.ITIMER_REAL, 0, previous_interval)
 
 
 # Signal handler when user presses Ctrl+C
@@ -2763,9 +2790,7 @@ def check_token_validity(access_token: str, client_id: Optional[str] = None, use
             "Client-Id": client_id
         })
 
-    if platform.system() != 'Windows':
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(FUNCTION_TIMEOUT + 2)
+    alarm_state = _start_timeout_alarm(FUNCTION_TIMEOUT + 2)
     try:
         debug_print(
             f"Token validity check mode={check_mode}, url={url}, "
@@ -2779,8 +2804,7 @@ def check_token_validity(access_token: str, client_id: Optional[str] = None, use
         valid = False
         debug_print(f"HTTP GET {url} -> failed during token validity check [mode={check_mode}]")
     finally:
-        if platform.system() != 'Windows':
-            signal.alarm(0)
+        _restore_timeout_alarm(alarm_state)
     return valid
 
 
@@ -2877,10 +2901,8 @@ def fetch_server_time(session: req.Session, ua: str) -> int:
         "Accept": "*/*",
     }
 
+    alarm_state = _start_timeout_alarm(FUNCTION_TIMEOUT + 2)
     try:
-        if platform.system() != 'Windows':
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(FUNCTION_TIMEOUT + 2)
         debug_print(f"HTTP HEAD {SERVER_TIME_URL} [server time] timeout={FUNCTION_TIMEOUT}")
         response = session.head(SERVER_TIME_URL, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         response.raise_for_status()
@@ -2890,8 +2912,7 @@ def fetch_server_time(session: req.Session, ua: str) -> int:
     except Exception as e:
         raise Exception(f"fetch_server_time() head network request error: {e}")
     finally:
-        if platform.system() != 'Windows':
-            signal.alarm(0)
+        _restore_timeout_alarm(alarm_state)
 
     date_hdr = response.headers.get("Date")
     if not date_hdr:
@@ -2948,11 +2969,8 @@ def refresh_access_token_from_sp_dc(sp_dc: str) -> dict:
 
     last_err = ""
 
+    alarm_state = _start_timeout_alarm(FUNCTION_TIMEOUT + 2)
     try:
-        if platform.system() != "Windows":
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(FUNCTION_TIMEOUT + 2)
-
         debug_print(f"HTTP GET {TOKEN_URL} [sp_dc transport] params={sanitize_debug_params(params)} headers={sanitize_debug_headers(headers)}")
         response = session.get(TOKEN_URL, params=params, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         response.raise_for_status()
@@ -2965,17 +2983,13 @@ def refresh_access_token_from_sp_dc(sp_dc: str) -> dict:
         last_err = str(e)
         debug_print(f"HTTP GET {TOKEN_URL} [sp_dc transport] failed: {sanitize_error_text(e)}")
     finally:
-        if platform.system() != "Windows":
-            signal.alarm(0)
+        _restore_timeout_alarm(alarm_state)
 
     if not transport or (sp_dc and not check_token_validity(token, data.get("clientId", ""), USER_AGENT)):
         params["reason"] = "init"
 
+        alarm_state = _start_timeout_alarm(FUNCTION_TIMEOUT + 2)
         try:
-            if platform.system() != "Windows":
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(FUNCTION_TIMEOUT + 2)
-
             debug_print(f"HTTP GET {TOKEN_URL} [sp_dc init] params={sanitize_debug_params(params)} headers={sanitize_debug_headers(headers)}")
             response = session.get(TOKEN_URL, params=params, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
             response.raise_for_status()
@@ -2988,8 +3002,7 @@ def refresh_access_token_from_sp_dc(sp_dc: str) -> dict:
             last_err = str(e)
             debug_print(f"HTTP GET {TOKEN_URL} [sp_dc init] failed: {sanitize_error_text(e)}")
         finally:
-            if platform.system() != "Windows":
-                signal.alarm(0)
+            _restore_timeout_alarm(alarm_state)
 
     if not init or not data or "accessToken" not in data:
         raise Exception(f"refresh_access_token_from_sp_dc(): Unsuccessful token request{': ' + last_err if last_err else ''}")
@@ -3530,10 +3543,8 @@ def spotify_get_access_token_from_client(device_id, system_id, user_uri_id, refr
         "Accept-Encoding": "gzip, deflate, br, zstd"
     }
 
+    alarm_state = _start_timeout_alarm(FUNCTION_TIMEOUT + 2)
     try:
-        if platform.system() != 'Windows':
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(FUNCTION_TIMEOUT + 2)
         debug_print(f"HTTP POST {LOGIN_URL} [client auth] headers={sanitize_debug_headers(headers)} payload_len={len(protobuf_body)}")
         response = req.post(LOGIN_URL, headers=headers, data=protobuf_body, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         debug_print(f"HTTP POST {LOGIN_URL} [client auth] -> {response.status_code}")
@@ -3544,8 +3555,7 @@ def spotify_get_access_token_from_client(device_id, system_id, user_uri_id, refr
         debug_print(f"HTTP POST {LOGIN_URL} [client auth] failed: {sanitize_error_text(e)}")
         raise Exception(f"spotify_get_access_token_from_client() network request error: {e}")
     finally:
-        if platform.system() != 'Windows':
-            signal.alarm(0)
+        _restore_timeout_alarm(alarm_state)
 
     if response.status_code != 200:
         if response.headers.get("client-token-error") == "INVALID_CLIENTTOKEN":
@@ -3626,10 +3636,8 @@ def spotify_get_client_token(app_version, device_id, system_id, **device_overrid
         "Accept-Encoding": "gzip, deflate, br, zstd",
     }
 
+    alarm_state = _start_timeout_alarm(FUNCTION_TIMEOUT + 2)
     try:
-        if platform.system() != 'Windows':
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(FUNCTION_TIMEOUT + 2)
         debug_print(f"HTTP POST {CLIENTTOKEN_URL} [client token] app_version={app_version}, device_overrides={device_overrides}, payload_len={len(body)}")
         response = req.post(CLIENTTOKEN_URL, headers=headers, data=body, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         debug_print(f"HTTP POST {CLIENTTOKEN_URL} [client token] -> {response.status_code}")
@@ -3640,8 +3648,7 @@ def spotify_get_client_token(app_version, device_id, system_id, **device_overrid
         debug_print(f"HTTP POST {CLIENTTOKEN_URL} [client token] failed: {sanitize_error_text(e)}")
         raise Exception(f"spotify_get_client_token() network request error: {e}")
     finally:
-        if platform.system() != 'Windows':
-            signal.alarm(0)
+        _restore_timeout_alarm(alarm_state)
 
     if response.status_code != 200:
         raise Exception(f"clienttoken request failed - status {response.status_code}\nHeaders: {response.headers}\nBody (raw): {response.content[:120]}...")
@@ -3722,6 +3729,15 @@ def remove_key_from_list_of_dicts_copy(list_of_dicts, del_key):
     return [{k: v for k, v in d.items() if k != del_key} for d in list_of_dicts]
 
 
+# Displays one image inline through imgcat using an argument vector instead of a shell
+def display_image_via_imgcat(imgcat_exe, path, blank_before=False, blank_after=False):
+    if blank_before:
+        print()
+    subprocess.run([imgcat_exe, path], check=True)
+    if blank_after:
+        print()
+
+
 # Displays the downloaded image for user's profile or playlist's artwork
 def display_tmp_pic(image_url, pic_file_tmp, imgcat_exe=None, is_profile=True):
 
@@ -3738,7 +3754,7 @@ def display_tmp_pic(image_url, pic_file_tmp, imgcat_exe=None, is_profile=True):
                 print(f"({get_short_date_from_ts(pic_mdate_dt, always_show_year=True)} - {calculate_timespan(now_local(), pic_mdate_dt, show_seconds=False)} ago)")
             if imgcat_exe:
                 try:
-                    subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {pic_file_tmp}", shell=True, check=True)
+                    display_image_via_imgcat(imgcat_exe, pic_file_tmp, blank_before=True)
                 except Exception:
                     pass
             try:
@@ -4174,9 +4190,7 @@ def is_user_removed(access_token, user_uri_id, oauth_app: bool = False):
             "Client-Id": SP_CACHED_CLIENT_ID
         })
 
-    if platform.system() != 'Windows':
-        signal.signal(signal.SIGALRM, timeout_handler)
-        signal.alarm(FUNCTION_TIMEOUT + 2)
+    alarm_state = _start_timeout_alarm(FUNCTION_TIMEOUT + 2)
 
     try:
         temp_session = req.Session()
@@ -4203,8 +4217,7 @@ def is_user_removed(access_token, user_uri_id, oauth_app: bool = False):
     except Exception:
         return False
     finally:
-        if platform.system() != 'Windows':
-            signal.alarm(0)
+        _restore_timeout_alarm(alarm_state)
 
 
 # Returns True if the access token owner's user ID matches the provided user_uri_id, False otherwise
@@ -8905,7 +8918,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                 try:
                     if imgcat_exe:
-                        subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {profile_pic_file} {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
+                        display_image_via_imgcat(imgcat_exe, profile_pic_file, blank_before=True, blank_after=True)
                     shutil.copy2(profile_pic_file, f'spotify_profile_{FILE_SUFFIX}_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
                 except Exception:
                     pass
@@ -8939,7 +8952,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                     try:
                         if imgcat_exe:
-                            subprocess.run(f"{'echo.' if platform.system() == 'Windows' else 'echo'} {'&' if platform.system() == 'Windows' else ';'} {imgcat_exe} {profile_pic_file_tmp} {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
+                            display_image_via_imgcat(imgcat_exe, profile_pic_file_tmp, blank_before=True, blank_after=True)
                         shutil.copy2(profile_pic_file_tmp, f'spotify_profile_{FILE_SUFFIX}_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
                         os.replace(profile_pic_file, profile_pic_file_old)
                         os.replace(profile_pic_file_tmp, profile_pic_file)
@@ -8976,9 +8989,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         debug_print(f"Loop tick: token_source={TOKEN_SOURCE}, check_interval={SPOTIFY_CHECK_INTERVAL}, error_interval={SPOTIFY_ERROR_INTERVAL}")
         # Sometimes Spotify network functions halt even though we specified the timeout
         # To overcome this we use alarm signal functionality to kill it inevitably, not available on Windows
-        if platform.system() != 'Windows':
-            signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(ALARM_TIMEOUT)
+        # The helper preserves any enclosing deadline so nested per-request alarms cannot disable this watchdog
+        alarm_state = _start_timeout_alarm(ALARM_TIMEOUT)
         try:
             if TOKEN_SOURCE == "client":
                 sp_accessToken = spotify_get_access_token_from_client_auto(DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN)
@@ -8992,18 +9004,15 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             email_sent = False
             webhook_sent = False
             monitor_recovery_tracker.reset()
-            if platform.system() != 'Windows':
-                signal.alarm(0)
+            _restore_timeout_alarm(alarm_state)
         except TimeoutException as e:
-            if platform.system() != 'Windows':
-                signal.alarm(0)
+            _restore_timeout_alarm(alarm_state)
             print_monitor_recovery(e, "runtime", monitor_recovery_tracker, f"* Error, retrying in {display_time(ALARM_RETRY)}: ")
             print_cur_ts("Timestamp:\t\t\t")
             time.sleep(ALARM_RETRY)
             continue
         except Exception as e:
-            if platform.system() != 'Windows':
-                signal.alarm(0)
+            _restore_timeout_alarm(alarm_state)
 
             debug_print(f"Main monitor loop error: {sanitize_error_text(e)}")
 
@@ -9199,7 +9208,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                     try:
                         if imgcat_exe:
-                            subprocess.run(f"{imgcat_exe} {profile_pic_file} {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
+                            display_image_via_imgcat(imgcat_exe, profile_pic_file, blank_after=True)
                         shutil.copy2(profile_pic_file, f'spotify_profile_{FILE_SUFFIX}_pic_{profile_pic_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
                     except Exception:
                         pass
@@ -9213,7 +9222,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     if notification_channels_enabled("profile", PROFILE_NOTIFICATION):
                         m_subject = f"Spotify user {username} has set profile picture ! ({get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)})"
                         m_body = f"Spotify user {username} has set profile picture !\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        m_body_html = f"<html><head></head><body>Spotify user <b>{username}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(SPOTIFY_CHECK_INTERVAL)}</b> ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                        m_body_html = f"<html><head></head><body>Spotify user <b>{escape(username)}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(SPOTIFY_CHECK_INTERVAL)}</b> ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}</body></html>"
                         send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=image_url, email_image_file=profile_pic_file, email_image_name="profile_pic")
 
                 else:
@@ -9241,7 +9250,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                         try:
                             if imgcat_exe:
-                                subprocess.run(f"{imgcat_exe} {profile_pic_file_tmp} {'&' if platform.system() == 'Windows' else ';'} {'echo.' if platform.system() == 'Windows' else 'echo'}", shell=True, check=True)
+                                display_image_via_imgcat(imgcat_exe, profile_pic_file_tmp, blank_after=True)
                             shutil.copy2(profile_pic_file_tmp, f'spotify_profile_{FILE_SUFFIX}_pic_{profile_pic_tmp_mdate_dt.strftime("%Y%m%d_%H%M")}.jpeg')
                             os.replace(profile_pic_file, profile_pic_file_old)
                             os.replace(profile_pic_file_tmp, profile_pic_file)
@@ -9252,7 +9261,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                             m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
                             m_subject = f"Spotify user {username} has changed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
                             m_body = f"Spotify user {username} has changed profile picture !\n\nPrevious one added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                            m_body_html = f"<html><head></head><body>Spotify user <b>{username}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(SPOTIFY_CHECK_INTERVAL)}</b> ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                            m_body_html = f"<html><head></head><body>Spotify user <b>{escape(username)}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(SPOTIFY_CHECK_INTERVAL)}</b> ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}</body></html>"
                             send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=image_url, email_image_file=profile_pic_file, email_image_name="profile_pic")
 
                         print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
@@ -10553,8 +10562,6 @@ def main():
         TOKEN_SOURCE = args.token_source
     if not TOKEN_SOURCE:
         TOKEN_SOURCE = "cookie"
-    if TOKEN_SOURCE == "cookie":
-        ALARM_TIMEOUT = int((TOKEN_MAX_RETRIES * TOKEN_RETRY_TIMEOUT) + 5)
     if args.spotify_dc_cookie:
         SP_DC_COOKIE = args.spotify_dc_cookie
     if args.oauth_app_creds:
