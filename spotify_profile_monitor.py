@@ -6646,11 +6646,14 @@ def _format_config_value(value, prefer_double_quotes: bool) -> str:
 RETIRED_CONFIG_SETTINGS = frozenset(("SECRET_CIPHER_DICT", "SECRET_CIPHER_DICT_URL", "TOTP_VER"))
 
 
-# Describes ignored retired settings in one sentence shared by startup output and Doctor
-def describe_retired_settings(names: Sequence[str]) -> str:
+# Describes ignored retired settings in one sentence, optionally naming the file they can be deleted from
+def describe_retired_settings(names: Sequence[str], path: Any = "") -> str:
     listed = ", ".join(sorted(names))
-    verb = "was" if len(names) == 1 else "were"
-    return f"{listed} {verb} removed in a later version and {'is' if len(names) == 1 else 'are'} ignored."
+    single = len(names) == 1
+    sentence = f"{listed} {'was' if single else 'were'} removed in a later version and {'is' if single else 'are'} ignored."
+    if path:
+        sentence += f" You can delete {'it' if single else 'them'} from {path}."
+    return sentence
 
 
 # Returns the setting names declared by the trusted built-in config template
@@ -7356,7 +7359,8 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
         if retired_out is not None:
             retired_out.extend(retired_settings)
         if retired_settings and report_errors:
-            print(f"* Note: {describe_retired_settings(retired_settings)} You can delete them from '{config_path}'.")
+            quoted_path = "'" + str(config_path) + "'"
+            print(f"* Note: {describe_retired_settings(retired_settings, quoted_path)}")
         return True
     except SyntaxError as exc:
         details = [f"Config file '{config_path}' has invalid Python syntax"]
@@ -10705,7 +10709,7 @@ def main():
             else:
                 sys.exit(1)
         elif config_retired and args.doctor:
-            doctor_startup_checks.append(make_doctor_check("Configuration", "WARN", "Configuration file contains removed settings", describe_retired_settings(config_retired), f"Delete them from {cfg_path}"))
+            doctor_startup_checks.append(make_doctor_check("Configuration", "WARN", "Configuration file contains removed settings", describe_retired_settings(config_retired, cfg_path), ""))
 
     if len(sys.argv) == 1 and not TARGET_USER_URI_ID:
         prepare_startup_screen(require_input=True)
