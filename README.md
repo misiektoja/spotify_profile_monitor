@@ -1046,7 +1046,7 @@ On the first run, it saves the current profile picture to `spotify_profile_<user
 
 On each subsequent check a new image is fetched and it is compared byte-for-byte with the saved image.
 
-Profile pictures are accepted only from Spotify HTTPS CDN hosts, redirects are not followed and the download stops at 5 MB. The saved file is replaced only after a complete picture arrives, so a refused or interrupted download leaves the previous picture in place and reports `* Error saving profile picture !`.
+Profile pictures are accepted only from the HTTPS CDN hosts Spotify serves them on (`scdn.co` and `spotifycdn.com`, plus `fbcdn.net` and `fbsbx.com` for accounts linked to Facebook), redirects are not followed and the download stops at 5 MB. The saved file is replaced only after a complete picture arrives, so a refused or interrupted download leaves the previous picture in place and reports `* Error saving profile picture !`.
 
 If a change is detected, the old picture is moved to `spotify_profile_<user_id/file_suffix>_pic_old.jpeg` and the new one is saved to:
 - `spotify_profile_<user_id/file_suffix>_pic.jpeg` (current)
