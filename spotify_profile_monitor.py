@@ -6638,6 +6638,21 @@ def _format_config_value(value, prefer_double_quotes: bool) -> str:
     raise TypeError(f"Unsupported config value type: {type(value).__name__}")
 
 
+# Settings that earlier versions wrote into generated configuration files and that later releases
+# removed. Ignoring them with a warning keeps an untouched older configuration working on upgrade,
+# while any other unknown name is still rejected so a typo cannot silently do nothing.
+# SECRET_CIPHER_DICT, SECRET_CIPHER_DICT_URL and TOTP_VER shipped in 2.6.1 through 3.4.1 and were
+# replaced in 3.5 by TOTP_VERSION and TOTP_SECRET_CIPHER_BYTES.
+RETIRED_CONFIG_SETTINGS = frozenset(("SECRET_CIPHER_DICT", "SECRET_CIPHER_DICT_URL", "TOTP_VER"))
+
+
+# Describes ignored retired settings in one sentence shared by startup output and Doctor
+def describe_retired_settings(names: Sequence[str]) -> str:
+    listed = ", ".join(sorted(names))
+    verb = "was" if len(names) == 1 else "were"
+    return f"{listed} {verb} removed in a later version and {'is' if len(names) == 1 else 'are'} ignored."
+
+
 # Returns the setting names declared by the trusted built-in config template
 def _config_allowed_names() -> FrozenSet[str]:
     template_tree = ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec")
@@ -6645,7 +6660,7 @@ def _config_allowed_names() -> FrozenSet[str]:
 
 
 # Parses allowlisted literal config assignments without executing any file content
-def parse_config_content(content: str, filename: str = "<config>") -> Dict[str, Any]:
+def parse_config_content(content: str, filename: str = "<config>", retired_out: Optional[List[str]] = None) -> Dict[str, Any]:
     tree = ast.parse(content, filename, "exec")
     allowed_names = _config_allowed_names()
     parsed_values: Dict[str, Any] = {}
@@ -6653,6 +6668,10 @@ def parse_config_content(content: str, filename: str = "<config>") -> Dict[str, 
         if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
             raise ValueError(f"Line {getattr(statement, 'lineno', '?')}: only NAME = value assignments are allowed")
         name = statement.targets[0].id
+        if name in RETIRED_CONFIG_SETTINGS and name not in allowed_names:
+            if retired_out is not None and name not in retired_out:
+                retired_out.append(name)
+            continue
         if name not in allowed_names:
             raise ValueError(f"Line {statement.lineno}: unsupported configuration setting {name!r}")
         try:
@@ -7325,14 +7344,19 @@ def find_config_file(cli_path=None):
     return None
 
 
-# Loads one UTF-8 config atomically and reports exact failures safely
-def load_config_file(config_path, namespace=None, error_out=None, report_errors=True):
+# Loads one UTF-8 config atomically and reports exact failures and ignored settings safely
+def load_config_file(config_path, namespace=None, error_out=None, report_errors=True, retired_out=None):
     selected_namespace = globals() if namespace is None else namespace
+    retired_settings: List[str] = []
     try:
         content = Path(config_path).read_text(encoding="utf-8")
         # Parsed as data rather than executed, so a config file picked up from the working directory cannot run code
-        parsed_values = parse_config_content(content, str(config_path))
+        parsed_values = parse_config_content(content, str(config_path), retired_settings)
         selected_namespace.update(parsed_values)
+        if retired_out is not None:
+            retired_out.extend(retired_settings)
+        if retired_settings and report_errors:
+            print(f"* Note: {describe_retired_settings(retired_settings)} You can delete them from '{config_path}'.")
         return True
     except SyntaxError as exc:
         details = [f"Config file '{config_path}' has invalid Python syntax"]
@@ -10674,11 +10698,14 @@ def main():
 
     if cfg_path:
         config_errors = []
-        if not load_config_file(cfg_path, error_out=config_errors, report_errors=not args.doctor):
+        config_retired = []
+        if not load_config_file(cfg_path, error_out=config_errors, report_errors=not args.doctor, retired_out=config_retired):
             if args.doctor:
                 doctor_startup_checks.extend(config_errors)
             else:
                 sys.exit(1)
+        elif config_retired and args.doctor:
+            doctor_startup_checks.append(make_doctor_check("Configuration", "WARN", "Configuration file contains removed settings", describe_retired_settings(config_retired), f"Delete them from {cfg_path}"))
 
     if len(sys.argv) == 1 and not TARGET_USER_URI_ID:
         prepare_startup_screen(require_input=True)
