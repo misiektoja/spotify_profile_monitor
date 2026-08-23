@@ -67,6 +67,43 @@ def test_convert_url_to_uri_round_trips(uri):
     assert monitor.spotify_convert_url_to_uri(monitor.spotify_convert_uri_to_url(uri)) == uri
 
 
+@pytest.mark.parametrize("uri,expected", [
+    ("spotify:user:MiXeD", "https://open.spotify.com/user/MiXeD?si=1"),
+    ("spotify:playlist:37i9dQZF1DX", "https://open.spotify.com/playlist/37i9dQZF1DX?si=1"),
+    ("  spotify:track:abc  ", "https://open.spotify.com/track/abc?si=1"),
+    ("SPOTIFY:TRACK:abc", "https://open.spotify.com/track/abc?si=1"),
+])
+# Confirms a valid URI converts with its identifier case preserved, since Spotify IDs are case sensitive
+def test_convert_uri_to_url_accepts_valid_references(uri, expected):
+    assert monitor.spotify_convert_uri_to_url(uri) == expected
+
+
+@pytest.mark.parametrize("uri", [
+    "spotify:playlist:idspotify:user:evil",
+    "spotify:episode:abc",
+    "spotify:show:abc",
+    "spotify:user:",
+    "spotify:user:abc:extra",
+    "::37i9dQZF1DX",
+    "spotify:user",
+    "https://open.spotify.com/user/abc",
+    "",
+    "   ",
+    None,
+    42,
+    ["spotify:user:abc"],
+])
+# Confirms an unsupported or malformed reference yields an empty string instead of a wrong or partial link
+def test_convert_uri_to_url_rejects_unparseable_references(uri):
+    assert monitor.spotify_convert_uri_to_url(uri) == ""
+
+
+# Confirms the object type is matched as a whole part, so an ID containing another type cannot redirect the link
+def test_convert_uri_to_url_matches_whole_parts():
+    assert monitor.spotify_convert_uri_to_url("spotify:album:trackfulID") == "https://open.spotify.com/album/trackfulID?si=1"
+    assert monitor.spotify_convert_uri_to_url("spotify:playlist:userlike") == "https://open.spotify.com/playlist/userlike?si=1"
+
+
 # Confirms an unparseable playlist reference fails with the dedicated message instead of an opaque API error
 def test_list_tracks_rejects_unparseable_playlist():
     with pytest.raises(ValueError, match="Invalid Spotify playlist"):
