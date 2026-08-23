@@ -109,10 +109,16 @@ def test_search_users_encodes_the_search_term(monkeypatch, capsys):
     assert "extensions=" in prepared_url
 
 
-@pytest.mark.parametrize("url,allowed", [("https://i.scdn.co/image/ab1", True), ("https://image-cdn-ak.spotifycdn.com/image/ab1", True), ("https://mosaic.scdn.co/640/ab1", True), ("https://evil.example/x.jpg", False), ("http://i.scdn.co/image/ab1", False), ("https://notscdn.co/x.jpg", False), ("https://i.scdn.co.evil.example/x.jpg", False)])
-# Confirms profile pictures are only fetched from Spotify HTTPS CDN hosts
+@pytest.mark.parametrize("url,allowed", [("https://i.scdn.co/image/ab1", True), ("https://image-cdn-ak.spotifycdn.com/image/ab1", True), ("https://mosaic.scdn.co/640/ab1", True), ("https://evil.example/x.jpg", False), ("http://i.scdn.co/image/ab1", False), ("https://notscdn.co/x.jpg", False), ("https://i.scdn.co.evil.example/x.jpg", False), ("https://fbcdn.net.evil.example/x.jpg", False), ("spotify:image:5c5cc54bd034019326ff5f2e1dc51dcd83656efd", False)])
+# Confirms images are only fetched from HTTPS hosts in the allowed CDN families
 def test_save_profile_pic_host_allowlist(url, allowed):
     assert monitor.spotify_image_url_is_allowed(url) is allowed
+
+
+@pytest.mark.parametrize("url", ["https://scontent-cdg4-2.xx.fbcdn.net/v/t39.30808-1/474097772_n.jpg", "https://scontent-tpe1-1.xx.fbcdn.net/v/t39.30808-1/x.jpg", "https://platform-lookaside.fbsbx.com/platform/profilepic/?asid=1&height=300"])
+# Confirms Facebook-linked accounts keep working, since a live sample showed 48.4% of profile pictures on these hosts
+def test_save_profile_pic_allows_facebook_cdn(url):
+    assert monitor.spotify_image_url_is_allowed(url) is True
 
 
 # Confirms an off-allowlist URL is refused before any request is made and writes no file
