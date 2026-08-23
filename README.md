@@ -697,6 +697,8 @@ spotify_profile_monitor --send-test-webhook
 
 Email and webhook delivery are independent. A failure in one channel does not stop the other channel.
 
+Webhook requests do not follow redirects, so `WEBHOOK_HEADERS` credentials and alert content can never be handed to a host you did not configure. If your destination answers with a redirect, delivery fails with a message telling you to save the final URL. Save it with `--set-webhook-url` then confirm with `--send-test-webhook`.
+
 <a id="storing-secrets"></a>
 ### Storing Secrets
 
@@ -862,6 +864,8 @@ If you want to display details for a specific Spotify playlist URL (i.e. its nam
 ```sh
 spotify_profile_monitor -l "https://open.spotify.com/playlist/playlist_uri_id"
 ```
+
+The `-l` flag accepts a playlist URL, a `spotify:playlist:playlist_uri_id` URI or the bare playlist ID. A value in none of these forms is reported as an invalid playlist instead of being sent to Spotify.
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/assets/spotify_profile_monitor_playlist.png" alt="spotify_profile_monitor_playlist" width="100%"/>
@@ -1041,6 +1045,8 @@ Since Spotify periodically changes the profile picture URL even when the image i
 On the first run, it saves the current profile picture to `spotify_profile_<user_id/file_suffix>_pic.jpeg`
 
 On each subsequent check a new image is fetched and it is compared byte-for-byte with the saved image.
+
+Profile pictures are accepted only from Spotify HTTPS CDN hosts, redirects are not followed and the download stops at 5 MB. The saved file is replaced only after a complete picture arrives, so a refused or interrupted download leaves the previous picture in place and reports `* Error saving profile picture !`.
 
 If a change is detected, the old picture is moved to `spotify_profile_<user_id/file_suffix>_pic_old.jpeg` and the new one is saved to:
 - `spotify_profile_<user_id/file_suffix>_pic.jpeg` (current)
