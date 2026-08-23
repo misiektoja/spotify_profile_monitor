@@ -749,6 +749,7 @@ TOTP_VERSION = 0
 TOTP_SECRET_CIPHER_BYTES: tuple[int, ...] = ()
 TRUNCATE_CHARS = 0
 EXPORT_ALL = False
+EXPORT_ALL_FORCE = False
 
 exec(CONFIG_BLOCK, globals())
 
@@ -957,6 +958,7 @@ from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
 import argparse
 import ast
+import contextlib
 import csv
 import getpass
 import subprocess
@@ -1029,6 +1031,9 @@ SPOTIFY_CREDENTIALED_HOST_SUFFIXES = ("spotify.com",)
 
 # A playlist tops out at 10000 tracks and a page holds 100, so this ceiling is far above any legitimate pagination run
 SPOTIFY_PAGINATION_MAX_PAGES = 1000
+
+# The web-player bundle is served from Spotify's own domains and its CDN (observed: open.spotifycdn.com)
+SPOTIFY_WEB_BUNDLE_HOST_SUFFIXES = ("spotify.com", "spotifycdn.com", "scdn.co")
 EMAIL_ARTWORK_CONTENT_ID = "spotify_artwork"
 EMAIL_ARTWORK_MAX_DIMENSIONS = (320, 320)
 
@@ -2090,16 +2095,26 @@ def build_webhook_headers(provider: str, payload: dict) -> dict:
     return headers
 
 
-# Returns True when a URL may receive a request carrying the Spotify bearer token
-def spotify_api_url_is_allowed(api_url: Any) -> bool:
-    if not isinstance(api_url, str) or not api_url:
+# Returns True when a URL is a complete HTTPS URL whose host matches one of the allowed suffixes
+def url_host_is_allowed(url: Any, allowed_suffixes: Sequence[str]) -> bool:
+    if not isinstance(url, str) or not url:
         return False
     try:
-        parsed_url = urlsplit(api_url)
+        parsed_url = urlsplit(url)
     except ValueError:
         return False
     hostname = parsed_url.hostname.casefold() if parsed_url.hostname else ""
-    return parsed_url.scheme.casefold() == "https" and any(hostname == suffix or hostname.endswith(f".{suffix}") for suffix in SPOTIFY_CREDENTIALED_HOST_SUFFIXES)
+    return parsed_url.scheme.casefold() == "https" and any(hostname == suffix or hostname.endswith(f".{suffix}") for suffix in allowed_suffixes)
+
+
+# Returns True when a URL may receive a request carrying the Spotify bearer token
+def spotify_api_url_is_allowed(api_url: Any) -> bool:
+    return url_host_is_allowed(api_url, SPOTIFY_CREDENTIALED_HOST_SUFFIXES)
+
+
+# Returns True when a URL may be fetched as the Spotify web-player JavaScript bundle
+def spotify_web_bundle_url_is_allowed(bundle_url: Any) -> bool:
+    return url_host_is_allowed(bundle_url, SPOTIFY_WEB_BUNDLE_HOST_SUFFIXES)
 
 
 # Validates one server-supplied pagination URL before a request carrying the Spotify bearer token is sent to it
@@ -2115,12 +2130,7 @@ def spotify_next_page_url(next_url: Any, pages_fetched: int, context: str) -> st
 
 # Returns True when a Spotify image URL uses HTTPS on one of the CDN hosts Spotify serves images from
 def spotify_image_url_is_allowed(image_url: str) -> bool:
-    try:
-        parsed_url = urlsplit(image_url)
-    except ValueError:
-        return False
-    hostname = parsed_url.hostname.casefold() if parsed_url.hostname else ""
-    return parsed_url.scheme.casefold() == "https" and any(hostname == suffix or hostname.endswith(f".{suffix}") for suffix in SPOTIFY_IMAGE_ALLOWED_HOST_SUFFIXES)
+    return url_host_is_allowed(image_url, SPOTIFY_IMAGE_ALLOWED_HOST_SUFFIXES)
 
 
 # Downloads one bounded image from a trusted Spotify CDN host
@@ -2831,9 +2841,11 @@ def spotify_extract_id_or_name(s):
     if not isinstance(s, str) or not s.strip():
         return ""
 
-    s = s.strip().lower()
+    # Case is preserved because Spotify identifiers are case sensitive, so two IDs differing only in
+    # case must not collide in ignore-list matching or be mistaken for the official 'spotify' account
+    s = s.strip()
 
-    if s.startswith(f"{SPOTIFY_WEB_BASE_URL}/"):
+    if s.casefold().startswith(f"{SPOTIFY_WEB_BASE_URL}/".casefold()):
         parsed = urlparse(s)
         path_parts = parsed.path.strip("/").split("/")
         if len(path_parts) == 2:
@@ -3973,6 +3985,10 @@ def spotify_discover_playlist_query_hash(force=False):
             break
     if not bundle_url:
         raise RuntimeError("Cannot find the Spotify web-player JavaScript bundle")
+    # The src attribute comes from remote HTML and an absolute URL there would override the base,
+    # so the resolved host is confirmed to be Spotify-owned before the bundle is fetched
+    if not spotify_web_bundle_url_is_allowed(bundle_url):
+        raise RuntimeError(f"Spotify web-player bundle URL is not on a Spotify host: {bundle_url}")
 
     debug_print(f"HTTP GET {bundle_url} [playlist query bundle]")
     bundle_response = SESSION.get(bundle_url, headers={"User-Agent": WEB_PLAYER_USER_AGENT}, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
@@ -4106,7 +4122,12 @@ def spotify_get_playlist_info_web(playlist_uri, get_tracks):
         else:
             raw_items = []
             offset = 0
+            pages_fetched = 0
             while offset < total_tracks:
+                # A server that keeps raising totalCount cannot drive an unbounded loop
+                pages_fetched += 1
+                if pages_fetched > SPOTIFY_PAGINATION_MAX_PAGES:
+                    raise RuntimeError(f"Spotify web-player playlist pagination exceeded {SPOTIFY_PAGINATION_MAX_PAGES} pages for {playlist_uri}")
                 variables = {"includeEpisodeContentRatingsV2": False, "limit": WEB_PLAYLIST_PAGE_LIMIT, "offset": offset, "uri": playlist_uri}
                 page_data = spotify_web_playlist_query("fetchPlaylistContents", variables)
                 page_playlist = page_data.get("playlistV2")
@@ -4119,9 +4140,11 @@ def spotify_get_playlist_info_web(playlist_uri, get_tracks):
                 page_total = page_content.get("totalCount") if isinstance(page_content, dict) else None
                 if page_total is not None:
                     try:
-                        total_tracks = int(page_total)
+                        page_total_tracks = int(page_total)
                     except (TypeError, ValueError):
                         raise ValueError(f"Playlist's paginated total tracks number is malformed for {playlist_uri}")
+                    # A later page may only shrink the total, so a growing count cannot extend the run
+                    total_tracks = min(total_tracks, page_total_tracks)
                 raw_items.extend(page_items)
                 offset += len(page_items)
 
@@ -4984,7 +5007,7 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
     else:
         try:
             if CLEAN_OUTPUT and csv_file_name:
-                with open(csv_file_name, "w") as file:
+                with open(csv_file_name, "w", encoding="utf-8") as file:
                     file.writelines([track + '\n' for track in tracks_list])
         except Exception as e:
             print_operation_error(f"Output file '{csv_file_name}' could not be written", e)
@@ -4993,7 +5016,8 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
         # print(f"Playlist artwork URL:\t{p_image_url}")
         print(f"Playlist artwork:\t", end="")
 
-        display_tmp_pic(p_image_url, f"spotify_{playlist_uri}_playlist_pic_tmp.jpeg", imgcat_exe, False)
+        # The bare ID is used because a full URI embeds colons, which Windows rejects in a filename
+        display_tmp_pic(p_image_url, f"spotify_{spotify_extract_id_or_name(playlist_uri)}_playlist_pic_tmp.jpeg", imgcat_exe, False)
 
         total_tracks = sum(user_track_counts.values())
 
@@ -5147,7 +5171,7 @@ def spotify_list_liked_tracks(sp_accessToken, csv_file_name, format_type=2):
     else:
         try:
             if CLEAN_OUTPUT and csv_file_name:
-                with open(csv_file_name, "w") as file:
+                with open(csv_file_name, "w", encoding="utf-8") as file:
                     file.writelines([track + '\n' for track in tracks_list])
         except Exception as e:
             print_operation_error(f"Output file '{csv_file_name}' could not be written", e)
@@ -5672,6 +5696,54 @@ def extract_playlist_uris(playlist_list):
     return frozenset(p.get("uri") if isinstance(p, dict) else p for p in playlist_list if p)
 
 
+# Returns the dedicated directory that holds every --export-all-playlists file
+def playlist_export_directory() -> Path:
+    return Path(os.path.expanduser(f"spotify_profile_{FILE_SUFFIX}_playlists_export"))
+
+
+# Builds one export path inside the export directory, keeping same-named playlists in separate files
+def build_playlist_export_path(playlist_name, playlist_id, used_paths=None) -> Path:
+    from pathvalidate import sanitize_filename
+
+    export_directory = playlist_export_directory()
+    safe_name = str(sanitize_filename(playlist_name or "")).strip().rstrip(".") or "playlist"
+    candidate = export_directory / f"{safe_name}.csv"
+
+    # Two playlists can sanitize to the same name, so the ID disambiguates instead of appending to one file
+    if used_paths is not None and candidate in used_paths:
+        suffix = str(playlist_id or "").strip() or f"{len(used_paths) + 1}"
+        candidate = export_directory / f"{safe_name} ({suffix}).csv"
+    if used_paths is not None:
+        used_paths.add(candidate)
+    return candidate
+
+
+# Drops cache entries that aged out or belong to playlists the monitored profile no longer exposes
+def prune_playlist_caches(current_playlists=None) -> None:
+    global GLITCH_CACHE
+    global PLAYLIST_INFO_CACHE
+    global WEB_PLAYLIST_REVISION_CACHE
+    global COLLABORATORS_BASELINE_CACHE
+    global COLLABORATORS_PENDING_CACHE
+
+    now = time.time()
+    GLITCH_CACHE = {uri: ts for uri, ts in GLITCH_CACHE.items() if now - ts < SPOTIFY_CHECK_INTERVAL}
+    PLAYLIST_INFO_CACHE = {uri: entry for uri, entry in PLAYLIST_INFO_CACHE.items() if now - entry.get("timestamp", 0) < PLAYLIST_INFO_CACHE_TTL}
+    WEB_PLAYLIST_REVISION_CACHE = {uri: entry for uri, entry in WEB_PLAYLIST_REVISION_CACHE.items() if now - entry.get("timestamp", 0) < PLAYLIST_INFO_CACHE_TTL}
+
+    # The collaborator caches carry no timestamp, so they are pruned against the playlists that still exist.
+    # PLAYLISTS_BASELINE_CACHE and PLAYLISTS_PENDING_CACHE hold one entry per monitored user and cannot grow
+    if current_playlists is None:
+        return
+
+    live_uris = extract_playlist_uris(current_playlists)
+    if not live_uris:
+        return
+
+    COLLABORATORS_BASELINE_CACHE = {uri: entry for uri, entry in COLLABORATORS_BASELINE_CACHE.items() if uri in live_uris}
+    COLLABORATORS_PENDING_CACHE = {uri: entry for uri, entry in COLLABORATORS_PENDING_CACHE.items() if uri in live_uris}
+
+
 # Reports whether a playlist count or URI membership changed
 def playlist_collection_changed(current_playlists, previous_playlists, current_count, previous_count):
     return current_count != previous_count or extract_playlist_uris(current_playlists) != extract_playlist_uris(previous_playlists)
@@ -5688,6 +5760,18 @@ def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_
 
     if playlists_to_skip is None:
         playlists_to_skip = []
+
+    used_export_paths = set()
+    if EXPORT_ALL:
+        # Exports are confined to their own directory so a playlist name chosen by the monitored user
+        # cannot land beside, or append to, the operator's other files in the working directory
+        export_directory = playlist_export_directory()
+        try:
+            export_directory.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            print_operation_error(f"The export directory '{export_directory}' could not be created", e)
+            return
+        print(f"* Exporting playlists to '{export_directory}{os.sep}'\n")
 
     if list_of_playlists:
         print()
@@ -5728,12 +5812,15 @@ def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_
                 if p_descr:
                     print(f"'{p_descr}'")
                 if EXPORT_ALL and not skipped_from_processing and not p_restricted:
-                    from pathvalidate import sanitize_filename
-                    safe_filename = sanitize_filename(p_name)
-                    safe_filename_path = os.path.expanduser(safe_filename + '.csv')
-                    print(f"-- Exporting playlist to '{safe_filename_path}'")
-                    spotify_list_tracks_for_playlist(sp_accessToken, p_url, safe_filename_path, CSV_FILE_FORMAT_EXPORT)
-                    print(f"-- Export completed")
+                    export_path = build_playlist_export_path(p_name, p_uri_id, used_export_paths)
+                    if export_path.exists() and not EXPORT_ALL_FORCE:
+                        print(f"-- Skipping export to '{export_path}': the file already exists (use --force to overwrite)")
+                    else:
+                        print(f"-- Exporting playlist to '{export_path}'")
+                        if export_path.exists():
+                            export_path.unlink()
+                        spotify_list_tracks_for_playlist(sp_accessToken, p_url, str(export_path), CSV_FILE_FORMAT_EXPORT)
+                        print(f"-- Export completed")
                 print()
 
             if p_update is not None and p_update > p_update_recent:
@@ -6016,15 +6103,8 @@ def get_playlist_details_for_notification(sp_accessToken, playlist_uri):
 
 # Prints and saves changed lists of followers, followings or playlists with enabled notifications
 def spotify_print_changed_followers_followings_playlists(username, f_list, f_list_old, f_count, f_old_count, f_str, f_str_by_or_from, f_added_str, f_added_csv, f_removed_str, f_removed_csv, f_file, csv_file_name, profile_notification, is_playlist, sp_accessToken=None, notification_image_url="", webhook_notification_allowed=None):
-    global GLITCH_CACHE
-    global PLAYLIST_INFO_CACHE
-    global WEB_PLAYLIST_REVISION_CACHE
-
     if is_playlist:
-        now = time.time()
-        GLITCH_CACHE = {uri: ts for uri, ts in GLITCH_CACHE.items() if now - ts < SPOTIFY_CHECK_INTERVAL}
-        PLAYLIST_INFO_CACHE = {uri: entry for uri, entry in PLAYLIST_INFO_CACHE.items() if now - entry.get("timestamp", 0) < PLAYLIST_INFO_CACHE_TTL}
-        WEB_PLAYLIST_REVISION_CACHE = {uri: entry for uri, entry in WEB_PLAYLIST_REVISION_CACHE.items() if now - entry.get("timestamp", 0) < PLAYLIST_INFO_CACHE_TTL}
+        prune_playlist_caches(f_list)
 
     f_diff = f_count - f_old_count
 
@@ -6408,10 +6488,9 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
         if removed_f_list:
             print()
 
-    if is_playlist and f_diff != 0 and not list_of_added_f_list.strip() and not list_of_removed_f_list.strip():
-        print("Added", list_of_added_f_list.strip())
-        print("Removed", list_of_removed_f_list.strip())
-        return True
+    # A playlist count moved without producing any renderable membership change, so there is nothing to
+    # report. The baseline below is still written, otherwise the same delta is re-evaluated every check
+    nothing_to_report = is_playlist and f_diff != 0 and not list_of_added_f_list.strip() and not list_of_removed_f_list.strip()
 
     f_list_to_save = []
     f_list_to_save.append(f_count)
@@ -6421,6 +6500,9 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
             json.dump(f_list_to_save, f, indent=2)
     except Exception as e:
         print_operation_error(f"The {str(f_str).lower()} list could not be saved to '{f_file}'", e)
+
+    if nothing_to_report:
+        return
 
     try:
         if csv_file_name:
@@ -6434,7 +6516,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
     webhook_allowed = bool(profile_notification) if webhook_notification_allowed is None else bool(webhook_notification_allowed)
     webhook_enabled = bool(webhook_allowed and webhook_event_enabled(notification_type))
     if not email_enabled and not webhook_enabled:
-        return False
+        return
 
     if playlist_membership_only_change:
         m_subject = f"Spotify user {username} {str(f_str).lower()} have changed! (total remains {f_count})"
@@ -6447,8 +6529,6 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
 
     selected_notification_image_url = select_notification_image_url(playlist_notification_image_url, profile_image_url=notification_image_url)
     send_notification_channels(notification_type, m_subject, m_body, m_body_html, email_enabled=email_enabled, webhook_enabled=webhook_enabled, image_url=selected_notification_image_url, email_image_url=playlist_notification_image_url if is_playlist else "")
-
-    return False
 
 
 # Saves user's profile pic to selected file name from a trusted Spotify CDN host with a bounded read
@@ -6654,6 +6734,9 @@ def write_config_file(destination, content: str) -> dict:
             temporary_file.write(content)
             temporary_file.flush()
             os.fsync(temporary_file.fileno())
+        # Matches the dotenv writer, since the wizard also stores device identifiers here
+        if os.name == "posix":
+            os.chmod(str(temporary_path), 0o600)
         if destination_path.exists():
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
             for collision_index in range(1000):
@@ -6955,7 +7038,7 @@ def read_firefox_sp_dc(cookie_file, now=None):
     if not cookie_path.is_file():
         raise BrowserCookieImportError(f"Firefox cookie database '{cookie_path}' was not found. Pass a valid cookies.sqlite path with --cookie-file.")
     try:
-        with sqlite3.connect(cookie_path.resolve().as_uri() + "?immutable=1", uri=True) as connection:
+        with contextlib.closing(sqlite3.connect(cookie_path.resolve().as_uri() + "?immutable=1", uri=True)) as connection:
             columns = connection.execute("PRAGMA table_info(moz_cookies)").fetchall()
             column_names = {str(row[1]).lower(): str(row[1]) for row in columns}
             if "name" not in column_names or "value" not in column_names:
@@ -9423,6 +9506,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         list_of_playlists = []
         error_while_processing = False
 
+        # Swept every cycle rather than only when a playlist change fires, so a long-running process
+        # does not accumulate entries for playlists the user has since removed
+        prune_playlist_caches(playlists)
+
         if DETECT_CHANGES_IN_PLAYLISTS:
             if playlists:
                 list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True, playlists_to_skip, show_progress=False)
@@ -10091,7 +10178,7 @@ def cli_action_conflicts(args, allowed: Collection[str]) -> List[str]:
 # Parses configuration and command-line options then runs the selected operation
 def main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, VERBOSE_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, EMAIL_IMAGES, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, ALARM_TIMEOUT, CLEAN_OUTPUT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TARGET_USER_URI_ID, TRUNCATE_CHARS, NTFY_IMAGES
-    global EXPORT_ALL, PLAYLIST_INFO_CACHE_TTL
+    global EXPORT_ALL, EXPORT_ALL_FORCE, PLAYLIST_INFO_CACHE_TTL
 
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
@@ -10188,7 +10275,7 @@ def main():
     browser_import.add_argument(
         "--force",
         action="store_true",
-        help="Replace an existing SP_DC_COOKIE or generated config without a prompt after safe validation and backup",
+        help="Replace an existing SP_DC_COOKIE or generated config without a prompt after safe validation and backup, or overwrite existing files when used with --export-all-playlists",
     )
 
     # Token source
@@ -10563,7 +10650,7 @@ def main():
             import_only_flags.append("--browser-profile")
         if args.cookie_file is not None:
             import_only_flags.append("--cookie-file")
-        if args.force and not args.generate_config:
+        if args.force and not args.generate_config and not args.export_all_playlists:
             import_only_flags.append("--force")
         if import_only_flags:
             parser.error(f"{', '.join(import_only_flags)} require --import-browser-cookie")
@@ -10620,6 +10707,10 @@ def main():
     if not args.user_id and not target_free_mode:
         print_recovery_error(context="target_missing")
         sys.exit(1)
+
+    # Resolved here rather than just before monitoring so listing modes name their output files after the target too
+    if not FILE_SUFFIX and args.user_id:
+        FILE_SUFFIX = str(args.user_id)
 
     if args.env_file:
         DOTENV_FILE = os.path.expanduser(args.env_file)
@@ -10858,7 +10949,11 @@ def main():
                         print(" - Device ID:\t\t", DEVICE_ID)
                         print(" - System ID:\t\t", SYSTEM_ID)
                         print(" - Spotify user ID:\t", USER_URI_ID)
-                        print(" - Refresh Token:\t", REFRESH_TOKEN, "\n")
+                        # Masked by default, matching the SIGHUP reload output. Pass --verbose to read the value
+                        if VERBOSE_MODE:
+                            print(" - Refresh Token:\t", REFRESH_TOKEN, "\n")
+                        else:
+                            print(" - Refresh Token:\t", mask_secret(REFRESH_TOKEN), "(re-run with --verbose to show)\n")
                         sys.exit(0)
             else:
                 print(f"* Error: Protobuf file ({LOGIN_REQUEST_BODY_FILE}) does not exist")
@@ -10999,6 +11094,7 @@ def main():
             install_command = _wizard_render_command([sys.executable or ("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", "pathvalidate"])
             raise SystemExit(f"Error: Couldn't find the pathvalidate library required for --export-all-playlists !\n\nTo install it through the active Python environment, run:\n    {install_command}\n\nOnce installed, re-run this tool")
         EXPORT_ALL = True
+        EXPORT_ALL_FORCE = bool(args.force)
 
     if args.list_tracks_for_playlist:
         try:
@@ -11170,10 +11266,7 @@ def main():
     else:
         playlists_to_skip = []
 
-    if not FILE_SUFFIX:
-        FILE_SUFFIX = str(args.user_id)
-
-    if args.truncate:
+    if args.truncate is not None:
         if args.truncate != 999:
             TRUNCATE_CHARS = args.truncate
         else:
@@ -11215,7 +11308,7 @@ def main():
     if PROFILE_NOTIFICATION is False:
         FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
 
-    if SMTP_HOST.startswith("your_smtp_server_"):
+    if str(SMTP_HOST).startswith("your_smtp_server_"):
         PROFILE_NOTIFICATION = False
         FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
