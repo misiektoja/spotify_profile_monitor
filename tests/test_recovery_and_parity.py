@@ -40,11 +40,40 @@ def test_config_load_is_atomic_for_in_place_mutation(tmp_path):
 # Verifies successful config execution commits assignments, mutations and deletions together
 def test_config_load_commits_complete_namespace_transaction(tmp_path):
     config_path = tmp_path / "valid.conf"
-    config_path.write_text("VALUES.append('saved')\nSETTING = 'changed'\ndel REMOVE_ME\n", encoding="utf-8")
-    namespace = {"VALUES": ["original"], "SETTING": "original", "REMOVE_ME": True}
+    config_path.write_text("LOCAL_TIMEZONE = 'UTC'\nTRUNCATE_CHARS = 120\n", encoding="utf-8")
+    namespace = {"LOCAL_TIMEZONE": "Auto", "TRUNCATE_CHARS": 0, "KEEP_ME": True}
 
     assert monitor.load_config_file(config_path, namespace=namespace, report_errors=False) is True
-    assert namespace == {"VALUES": ["original", "saved"], "SETTING": "changed"}
+    assert namespace == {"LOCAL_TIMEZONE": "UTC", "TRUNCATE_CHARS": 120, "KEEP_ME": True}
+
+
+@pytest.mark.parametrize("content", ["VALUES.append('saved')\n", "del LOCAL_TIMEZONE\n", "import os\n", "LOCAL_TIMEZONE = __import__('os').getcwd()\n", "LOCAL_TIMEZONE = open('/etc/passwd').read()\n", "if True:\n    LOCAL_TIMEZONE = 'UTC'\n", "LOCAL_TIMEZONE = 'UTC'; import sys\n"])
+# Verifies a config file cannot execute code, import modules or delete settings
+def test_config_load_refuses_executable_content(tmp_path, content):
+    config_path = tmp_path / "hostile.conf"
+    config_path.write_text(content, encoding="utf-8")
+    namespace = {"LOCAL_TIMEZONE": "Auto", "VALUES": ["original"]}
+
+    assert monitor.load_config_file(config_path, namespace=namespace, report_errors=False) is False
+    assert namespace == {"LOCAL_TIMEZONE": "Auto", "VALUES": ["original"]}
+
+
+# Verifies a setting the tool does not define is rejected instead of silently landing in the namespace
+def test_config_load_rejects_unknown_setting(tmp_path):
+    config_path = tmp_path / "unknown.conf"
+    config_path.write_text("NOT_A_REAL_SETTING = 1\n", encoding="utf-8")
+    namespace = {"LOCAL_TIMEZONE": "Auto"}
+
+    assert monitor.load_config_file(config_path, namespace=namespace, report_errors=False) is False
+    assert "NOT_A_REAL_SETTING" not in namespace
+
+
+# Verifies the shipped config template still loads through the restricted parser
+def test_config_template_parses_as_literals():
+    parsed = monitor.parse_config_content(monitor.CONFIG_BLOCK, "<built-in-config>")
+
+    assert parsed["LOCAL_TIMEZONE"] == "Auto"
+    assert len(parsed) == len(monitor._config_allowed_names())
 
 
 # Verifies loading a real config preserves builtins needed by later timestamp formatting
