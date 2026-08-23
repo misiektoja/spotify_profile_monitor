@@ -946,7 +946,6 @@ from datetime import datetime, timezone, timedelta
 from dateutil import relativedelta
 from dateutil.parser import isoparse
 import calendar
-import copy
 import requests as req
 import shutil
 import signal
@@ -957,6 +956,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
 import argparse
+import ast
 import csv
 import getpass
 import subprocess
@@ -991,7 +991,7 @@ from io import BytesIO
 from pathlib import Path, PureWindowsPath
 import secrets
 import socket
-from typing import Any, Callable, Collection, List, Optional, Sequence, Tuple, Type, cast
+from typing import Any, Callable, Collection, Dict, FrozenSet, List, Optional, Sequence, Tuple, Type, cast
 from email.utils import parsedate_to_datetime
 
 import urllib3
@@ -1023,6 +1023,12 @@ NTFY_IMAGE_FILENAME = "spotify-profile.jpg"
 # Spotify serves images from its own CDN and, for accounts linked to Facebook, from Facebook's CDN.
 # Measured against the live profile API: 51.6% of profile pictures are on scdn.co, 48.4% on fbcdn.net or fbsbx.com
 SPOTIFY_IMAGE_ALLOWED_HOST_SUFFIXES = ("scdn.co", "spotifycdn.com", "fbcdn.net", "fbsbx.com")
+
+# Every endpoint that receives the Spotify bearer token lives under this suffix (api, api-partner, spclient, open, login5)
+SPOTIFY_CREDENTIALED_HOST_SUFFIXES = ("spotify.com",)
+
+# A playlist tops out at 10000 tracks and a page holds 100, so this ceiling is far above any legitimate pagination run
+SPOTIFY_PAGINATION_MAX_PAGES = 1000
 EMAIL_ARTWORK_CONTENT_ID = "spotify_artwork"
 EMAIL_ARTWORK_MAX_DIMENSIONS = (320, 320)
 
@@ -2084,7 +2090,30 @@ def build_webhook_headers(provider: str, payload: dict) -> dict:
     return headers
 
 
-# Returns whether one image URL is a complete HTTPS URL on a Spotify CDN host
+# Returns True when a URL may receive a request carrying the Spotify bearer token
+def spotify_api_url_is_allowed(api_url: Any) -> bool:
+    if not isinstance(api_url, str) or not api_url:
+        return False
+    try:
+        parsed_url = urlsplit(api_url)
+    except ValueError:
+        return False
+    hostname = parsed_url.hostname.casefold() if parsed_url.hostname else ""
+    return parsed_url.scheme.casefold() == "https" and any(hostname == suffix or hostname.endswith(f".{suffix}") for suffix in SPOTIFY_CREDENTIALED_HOST_SUFFIXES)
+
+
+# Validates one server-supplied pagination URL before a request carrying the Spotify bearer token is sent to it
+def spotify_next_page_url(next_url: Any, pages_fetched: int, context: str) -> str:
+    if not next_url:
+        return ""
+    if pages_fetched >= SPOTIFY_PAGINATION_MAX_PAGES:
+        raise RuntimeError(f"Spotify {context} pagination exceeded {SPOTIFY_PAGINATION_MAX_PAGES} pages")
+    if not spotify_api_url_is_allowed(next_url):
+        raise RuntimeError(f"Spotify {context} pagination returned a next URL outside the Spotify API: {next_url!r}")
+    return str(next_url)
+
+
+# Returns True when a Spotify image URL uses HTTPS on one of the CDN hosts Spotify serves images from
 def spotify_image_url_is_allowed(image_url: str) -> bool:
     try:
         parsed_url = urlsplit(image_url)
@@ -4182,7 +4211,7 @@ def is_playlist_private(access_token, playlist_uri, oauth_app: bool = False):
                 return False
 
     playlist_id = playlist_uri.split(':', 2)[2]
-    url = f"{SPOTIFY_API_BASE_URL}/playlists/{playlist_id}?fields=id"
+    url = f"{SPOTIFY_API_BASE_URL}/playlists/{quote(playlist_id, safe='')}?fields=id"
 
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -4221,7 +4250,7 @@ def is_user_removed(access_token, user_uri_id, oauth_app: bool = False):
     # For oauth_app / oauth_user: use web scraping fallback (Client Credentials token cannot access user profile endpoints)
     # open.spotify.com/user/{id} returns 404 for removed users, no auth needed
     if TOKEN_SOURCE in {"oauth_app", "oauth_user"} or oauth_app:
-        url = f"{SPOTIFY_WEB_BASE_URL}/user/{user_uri_id}"
+        url = f"{SPOTIFY_WEB_BASE_URL}/user/{quote(user_uri_id, safe='')}"
         try:
             debug_print(f"HTTP HEAD {url} [user removed check]")
             response = req.head(url, timeout=FUNCTION_TIMEOUT, allow_redirects=True, verify=VERIFY_SSL)
@@ -4235,7 +4264,7 @@ def is_user_removed(access_token, user_uri_id, oauth_app: bool = False):
             return False
 
     # For cookie/client: use internal API (works with these token types)
-    url = f"{SPOTIFY_PROFILE_API_BASE_URL}/{user_uri_id}?playlist_limit=0&artist_limit=0&episode_limit=0&market=from_token"
+    url = f"{SPOTIFY_PROFILE_API_BASE_URL}/{quote(user_uri_id, safe='')}?playlist_limit=0&artist_limit=0&episode_limit=0&market=from_token"
 
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -4321,11 +4350,11 @@ def _spotify_get_playlist_info_api(access_token, playlist_uri, get_tracks, oauth
         print(f"Invalid playlist format")
 
     if get_tracks:
-        url1 = f"{SPOTIFY_API_BASE_URL}/playlists/{playlist_id}?fields=name,description,owner,followers,external_urls,tracks.total,collaborative,images"
-        url2 = f"{SPOTIFY_API_BASE_URL}/playlists/{playlist_id}/tracks?fields=next,total,items(added_at,track(name,uri,duration_ms,album(images)),added_by),items(track(artists(name,uri)))"
+        url1 = f"{SPOTIFY_API_BASE_URL}/playlists/{quote(playlist_id, safe='')}?fields=name,description,owner,followers,external_urls,tracks.total,collaborative,images"
+        url2 = f"{SPOTIFY_API_BASE_URL}/playlists/{quote(playlist_id, safe='')}/tracks?fields=next,total,items(added_at,track(name,uri,duration_ms,album(images)),added_by),items(track(artists(name,uri)))"
     else:
-        url1 = f"{SPOTIFY_API_BASE_URL}/playlists/{playlist_id}?fields=name,description,owner,followers,external_urls,tracks.total,images"
-        url2 = f"{SPOTIFY_API_BASE_URL}/playlists/{playlist_id}/tracks?fields=next,total,items(added_at)"
+        url1 = f"{SPOTIFY_API_BASE_URL}/playlists/{quote(playlist_id, safe='')}?fields=name,description,owner,followers,external_urls,tracks.total,images"
+        url2 = f"{SPOTIFY_API_BASE_URL}/playlists/{quote(playlist_id, safe='')}/tracks?fields=next,total,items(added_at)"
 
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -4362,7 +4391,7 @@ def _spotify_get_playlist_info_api(access_token, playlist_uri, get_tracks, oauth
             for track in json_response2.get("items"):
                 sp_playlist_tracks_concatenated_list.append(track)
 
-            next_url = json_response2.get("next")
+            next_url = spotify_next_page_url(json_response2.get("next"), page_idx, "playlist tracks")
 
         sp_playlist_name = json_response1.get("name", "")
 
@@ -4539,11 +4568,11 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks, oauth_app:
 # Returns detailed info about user with specified URI
 def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_played_limit):
     # URL used for cookie and client token sources
-    url1 = f"{SPOTIFY_PROFILE_API_BASE_URL}/{user_uri_id}?playlist_limit={PLAYLISTS_LIMIT if get_playlists else 0}&artist_limit={recently_played_limit}&episode_limit=10&market=from_token"
+    url1 = f"{SPOTIFY_PROFILE_API_BASE_URL}/{quote(user_uri_id, safe='')}?playlist_limit={PLAYLISTS_LIMIT if get_playlists else 0}&artist_limit={recently_played_limit}&episode_limit=10&market=from_token"
 
     # URLs used for oauth_app & oauth_user token sources
-    url2 = f"{SPOTIFY_API_BASE_URL}/users/{user_uri_id}"
-    url2_pl = f"{SPOTIFY_API_BASE_URL}/users/{user_uri_id}/playlists?limit={PLAYLISTS_LIMIT if get_playlists else 0}"
+    url2 = f"{SPOTIFY_API_BASE_URL}/users/{quote(user_uri_id, safe='')}"
+    url2_pl = f"{SPOTIFY_API_BASE_URL}/users/{quote(user_uri_id, safe='')}/playlists?limit={PLAYLISTS_LIMIT if get_playlists else 0}"
 
     def _rq(url: str, **kw) -> dict:
         headers = {
@@ -4643,12 +4672,14 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
             })
 
             if get_playlists:
+                playlist_page_idx = 0
                 while url_me_playlists:
+                    playlist_page_idx += 1
                     json_response = _rq(url_me_playlists)
                     raw_playlist_data_from_api = json_response.get("items")
                     current_list_to_process = raw_playlist_data_from_api if isinstance(raw_playlist_data_from_api, list) else []
                     out["sp_user_public_playlists_uris"].extend({"image_url": (p.get("images") or [{}])[0].get("url", ""), "uri": p.get("uri"), "owner_uri": p.get("owner", {}).get("uri")} for p in current_list_to_process if isinstance(p, dict) and (GET_ALL_PLAYLISTS or p.get("owner", {}).get("uri") == f"spotify:user:{user_uri_id}"))
-                    url_me_playlists = json_response.get("next")
+                    url_me_playlists = spotify_next_page_url(json_response.get("next"), playlist_page_idx, "own playlists")
                 out["sp_user_public_playlists_count"] = len(out["sp_user_public_playlists_uris"])
 
         else:
@@ -4668,12 +4699,14 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
                 })
 
                 if get_playlists:
+                    playlist_page_idx = 0
                     while url2_pl:
+                        playlist_page_idx += 1
                         json_response = _rq(url2_pl)
                         raw_playlist_data_from_api = json_response.get("items")
                         current_list_to_process = raw_playlist_data_from_api if isinstance(raw_playlist_data_from_api, list) else []
                         out["sp_user_public_playlists_uris"].extend({"image_url": (p.get("images") or [{}])[0].get("url", ""), "uri": p.get("uri"), "owner_uri": p.get("owner", {}).get("uri")} for p in current_list_to_process if isinstance(p, dict) and (GET_ALL_PLAYLISTS or p.get("owner", {}).get("uri") == f"spotify:user:{user_uri_id}"))
-                        url2_pl = json_response.get("next")
+                        url2_pl = spotify_next_page_url(json_response.get("next"), playlist_page_idx, "user playlists")
                     out["sp_user_public_playlists_count"] = len(out["sp_user_public_playlists_uris"])
 
             except req.HTTPError as e:
@@ -4739,7 +4772,7 @@ def spotify_get_user_followings(access_token, user_uri_id):
         else:
             return {"sp_user_followings": []}
 
-    url = f"{SPOTIFY_PROFILE_API_BASE_URL}/{user_uri_id}/following?market=from_token"
+    url = f"{SPOTIFY_PROFILE_API_BASE_URL}/{quote(user_uri_id, safe='')}/following?market=from_token"
     headers = {
         "Authorization": f"Bearer {access_token}",
         "User-Agent": USER_AGENT
@@ -4776,7 +4809,7 @@ def spotify_get_user_followers(access_token, user_uri_id):
     if TOKEN_SOURCE not in {"cookie", "client"}:
         return {"sp_user_followers": []}
 
-    url = f"{SPOTIFY_PROFILE_API_BASE_URL}/{user_uri_id}/followers?market=from_token"
+    url = f"{SPOTIFY_PROFILE_API_BASE_URL}/{quote(user_uri_id, safe='')}/followers?market=from_token"
     headers = {
         "Authorization": f"Bearer {access_token}",
         "User-Agent": USER_AGENT
@@ -4996,8 +5029,10 @@ def spotify_get_user_liked_tracks(access_token):
         sp_playlist_tracks_concatenated_list = []
         json_response: dict = {}
         next_url = url
+        page_idx = 0
 
         while next_url:
+            page_idx += 1
             debug_print(f"HTTP GET {next_url} [liked tracks] headers={sanitize_debug_headers(headers)}")
             response = SESSION.get(next_url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
             debug_print(f"HTTP GET {next_url} [liked tracks] -> {response.status_code}")
@@ -5007,7 +5042,7 @@ def spotify_get_user_liked_tracks(access_token):
             for track in json_response.get("items", []):
                 sp_playlist_tracks_concatenated_list.append(track)
 
-            next_url = json_response.get("next")
+            next_url = spotify_next_page_url(json_response.get("next"), page_idx, "liked tracks")
 
         sp_playlist_tracks = sp_playlist_tracks_concatenated_list
 
@@ -6523,9 +6558,33 @@ def _format_config_value(value, prefer_double_quotes: bool) -> str:
     raise TypeError(f"Unsupported config value type: {type(value).__name__}")
 
 
-# Validates Python config content without executing it
+# Returns the setting names declared by the trusted built-in config template
+def _config_allowed_names() -> FrozenSet[str]:
+    template_tree = ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec")
+    return frozenset(statement.targets[0].id for statement in template_tree.body if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name))
+
+
+# Parses allowlisted literal config assignments without executing any file content
+def parse_config_content(content: str, filename: str = "<config>") -> Dict[str, Any]:
+    tree = ast.parse(content, filename, "exec")
+    allowed_names = _config_allowed_names()
+    parsed_values: Dict[str, Any] = {}
+    for statement in tree.body:
+        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
+            raise ValueError(f"Line {getattr(statement, 'lineno', '?')}: only NAME = value assignments are allowed")
+        name = statement.targets[0].id
+        if name not in allowed_names:
+            raise ValueError(f"Line {statement.lineno}: unsupported configuration setting {name!r}")
+        try:
+            parsed_values[name] = ast.literal_eval(statement.value)
+        except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError) as exc:
+            raise ValueError(f"Line {statement.lineno}: {name} must be a plain value such as a number, string, True, False, None, list, tuple or dict") from exc
+    return parsed_values
+
+
+# Validates config content through the same restricted parser used at startup
 def validate_config_content(content: str, filename: str = "<generated-config>") -> None:
-    compile(content, filename, "exec")
+    parse_config_content(content, filename)
 
 
 # Renders CONFIG_BLOCK with current non-secret values and original secret placeholders
@@ -7183,30 +7242,14 @@ def find_config_file(cli_path=None):
     return None
 
 
-# Clones mutable namespace values so failed config code cannot leak in-place changes
-def clone_config_namespace(namespace: dict) -> dict:
-    candidate = {}
-    for key, value in namespace.items():
-        if isinstance(value, (dict, list, set, bytearray)):
-            candidate[key] = copy.deepcopy(value)
-        else:
-            candidate[key] = value
-    return candidate
-
-
-# Loads one UTF-8 Python config atomically and reports exact failures safely
+# Loads one UTF-8 config atomically and reports exact failures safely
 def load_config_file(config_path, namespace=None, error_out=None, report_errors=True):
     selected_namespace = globals() if namespace is None else namespace
     try:
         content = Path(config_path).read_text(encoding="utf-8")
-        compiled = compile(content, str(config_path), "exec")
-        original_keys = set(selected_namespace)
-        candidate_namespace = clone_config_namespace(selected_namespace)
-        exec(compiled, candidate_namespace)
-        candidate_namespace.pop("__builtins__", None)
-        for deleted_key in original_keys.difference(candidate_namespace).difference({"__builtins__"}):
-            selected_namespace.pop(deleted_key, None)
-        selected_namespace.update(candidate_namespace)
+        # Parsed as data rather than executed, so a config file picked up from the working directory cannot run code
+        parsed_values = parse_config_content(content, str(config_path))
+        selected_namespace.update(parsed_values)
         return True
     except SyntaxError as exc:
         details = [f"Config file '{config_path}' has invalid Python syntax"]
@@ -7217,9 +7260,13 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
         details.append(f"Parser: {exc.msg}")
         detail = " | ".join(details)
         summary = details[0] + (f" at line {exc.lineno}" if exc.lineno is not None else "")
+    # Checked before ValueError because UnicodeDecodeError derives from it
     except UnicodeDecodeError:
         detail = f"Config file '{config_path}' is not valid UTF-8"
         summary = detail
+    except ValueError as exc:
+        detail = f"Config file '{config_path}' contains unsupported content: {exc}"
+        summary = "The configuration file contains unsupported content"
     except Exception as exc:
         detail = f"Config file '{config_path}' failed with {type(exc).__name__}: {sanitize_error_text(exc)}"
         summary = "The configuration file could not be loaded"
