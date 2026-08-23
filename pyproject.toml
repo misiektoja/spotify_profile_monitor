@@ -40,6 +40,8 @@ classifiers = [
 keywords = ["spotify", "monitoring", "tracking", "real-time", "playlists", "osint"]
 
 [project.optional-dependencies]
+test = ["pytest>=7.0"]
+# Needed only to import Chrome/Brave/Chromium cookies (--import-browser-cookie); macOS and Linux only
 browser = ["pycookiecheat>=0.8"]
 
 [project.urls]
@@ -53,3 +55,9 @@ spotify_profile_monitor = "spotify_profile_monitor:main"
 [tool.setuptools]
 py-modules = ["spotify_profile_monitor"]
 include-package-data = true
+
+[tool.pytest.ini_options]
+# Run the in-repo source, never an installed copy, by putting the project root first on sys.path
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-ra"
