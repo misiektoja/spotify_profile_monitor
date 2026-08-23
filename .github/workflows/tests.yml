@@ -1,0 +1,72 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  test:
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[test]'
+
+      - name: Import the module on the declared interpreter
+        # The console script exercises module import and argument parsing, which is where a syntax or
+        # annotation feature newer than the declared minimum would break every supported invocation
+        run: |
+          python -c "import spotify_profile_monitor"
+          spotify_profile_monitor --version
+
+      - name: Run offline test suite
+        run: python -m pytest
+
+  windows-smoke:
+    name: platform smoke (Windows)
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: python -m pip install -e ".[test]"
+
+      - name: Import the module and report the version
+        run: |
+          python -c "import spotify_profile_monitor"
+          spotify_profile_monitor --version
+
+      - name: Run platform-sensitive tests
+        # Windows is a declared supported platform and several behaviors differ there: the ANSI codepage
+        # default for text writes, reserved characters in artwork filenames, export path handling and the
+        # POSIX-only watchdog. These files carry that coverage
+        run: python -m pytest tests/test_cleanup_and_compatibility.py tests/test_untrusted_output.py tests/test_url_and_download_safety.py tests/test_runtime_deadlines.py tests/test_setup_and_startup.py
