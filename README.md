@@ -432,6 +432,8 @@ spotify_profile_monitor --token-source client -w <path-to-login-request-body-fil
 
 If successful, the tool will automatically extract the necessary fields and begin monitoring.
 
+When `-w` is used on its own to inspect a Protobuf file, the extracted refresh token is masked. Add `--verbose` to print the full value when you need to copy it into your configuration.
+
 Instead of using the `-w` flag each time, you can persist the Protobuf login request file path by setting the `LOGIN_REQUEST_BODY_FILE` configuration option.
 
 The same applies to `--token-source client` flag - you can persist it via `TOKEN_SOURCE` configuration option set to `client`.
@@ -914,7 +916,15 @@ If you want to additionally export each of the user's playlists into a separate 
 spotify_profile_monitor <spotify_target> -i --export-all-playlists
 ```
 
-Each file is written to the current working directory using the sanitized playlist name. Filename sanitization removes path separators, so exports cannot escape that directory, but a playlist whose sanitized name collides with an existing `.csv` in that directory (including your own `-b` output) is appended to rather than replaced. Run the export from a dedicated empty directory.
+Each file is written into a dedicated `spotify_profile_<user_id/file_suffix>_playlists_export` directory created in the current working directory, using the sanitized playlist name. Exports can no longer land beside your other files, so your `-b` output and anything else in the working directory are untouched.
+
+An existing export file is never appended to. If the file is already present from an earlier run, that playlist is skipped with a message. Pass `--force` to replace existing exports:
+
+```sh
+spotify_profile_monitor <spotify_target> -i --export-all-playlists --force
+```
+
+When two playlists sanitize to the same filename, the second one gets the playlist ID appended so both are exported in full.
 
 To skip public playlist processing while displaying details for a Spotify target, use `-q`:
 
@@ -1086,6 +1096,8 @@ https://open.spotify.com/user/USER_ID?si=1
 ```
 
 You can comment out specific lines with # if needed.
+
+Entries are matched case sensitively, because Spotify identifiers are case sensitive and two IDs differing only in case are different playlists. Copy each ID, name or URL exactly as Spotify shows it.
 
 If certain playlists are blacklisted, there will be an appropriate message. For example:
 
