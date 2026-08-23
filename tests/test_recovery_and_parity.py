@@ -68,6 +68,36 @@ def test_config_load_rejects_unknown_setting(tmp_path):
     assert "NOT_A_REAL_SETTING" not in namespace
 
 
+# Verifies a configuration written by an older version still loads when it carries retired settings
+def test_config_load_ignores_retired_settings(tmp_path, capsys):
+    config_path = tmp_path / "legacy.conf"
+    config_path.write_text('TOTP_VER = 0\nSECRET_CIPHER_DICT = {"12": [1, 2]}\nSECRET_CIPHER_DICT_URL = "https://example.invalid/secrets.json"\nTRUNCATE_CHARS = 120\n', encoding="utf-8")
+    namespace = {"TRUNCATE_CHARS": 0}
+
+    assert monitor.load_config_file(config_path, namespace=namespace) is True
+    assert namespace == {"TRUNCATE_CHARS": 120}
+    output = capsys.readouterr().out
+    assert "TOTP_VER" in output
+    assert "are ignored" in output
+
+
+# Verifies retired settings are reported to the caller so Doctor can surface them without printing
+def test_config_load_reports_retired_settings_to_caller(tmp_path):
+    config_path = tmp_path / "legacy.conf"
+    config_path.write_text("TOTP_VER = 0\nTRUNCATE_CHARS = 120\n", encoding="utf-8")
+    retired = []
+
+    assert monitor.load_config_file(config_path, namespace={}, report_errors=False, retired_out=retired) is True
+    assert retired == ["TOTP_VER"]
+
+
+# Verifies ignoring retired names does not weaken rejection of any other unknown setting
+def test_retired_allowance_does_not_accept_other_unknown_names():
+    assert monitor.RETIRED_CONFIG_SETTINGS.isdisjoint(monitor._config_allowed_names())
+    with pytest.raises(ValueError, match="unsupported configuration setting"):
+        monitor.parse_config_content("TOTP_VERSION_TYPO = 1\n")
+
+
 # Verifies the shipped config template still loads through the restricted parser
 def test_config_template_parses_as_literals():
     parsed = monitor.parse_config_content(monitor.CONFIG_BLOCK, "<built-in-config>")
