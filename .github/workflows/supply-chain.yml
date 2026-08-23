@@ -1,0 +1,69 @@
+name: Supply chain
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # A weekly run catches vulnerabilities that are published after a change merged.
+    - cron: "17 5 * * 1"
+
+permissions: {}
+
+jobs:
+  pip-audit:
+    name: Vulnerable dependencies
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+
+      - name: Install pip-audit
+        run: python -m pip install --upgrade pip pip-audit
+
+      - name: Audit the resolved dependency tree
+        # Auditing the project rather than the runner environment keeps pip-audit's own dependencies
+        # out of the result, so a finding always concerns something a user actually installs.
+        run: pip-audit --strict --progress-spinner=off .
+
+  sbom:
+    name: Software bill of materials
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+
+      - name: Install the project into an isolated environment
+        # The SBOM records the transitive closure a user really gets, which needs a resolved install
+        # rather than the version floors declared in pyproject.toml.
+        run: |
+          python -m venv local/sbom-venv
+          local/sbom-venv/bin/python -m pip install --upgrade pip
+          local/sbom-venv/bin/python -m pip install .
+
+      - name: Generate the SBOM
+        run: |
+          python -m pip install cyclonedx-bom
+          mkdir -p dist
+          cyclonedx-py environment local/sbom-venv/bin/python --of JSON -o dist/spotify_profile_monitor.cdx.json
+
+      - name: Publish the SBOM
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: spotify-profile-monitor-sbom
+          path: dist/spotify_profile_monitor.cdx.json
+          if-no-files-found: error
