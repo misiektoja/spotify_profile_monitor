@@ -127,15 +127,18 @@ def test_generated_config_preserves_secrets_and_updates_regular_values():
 # Verifies safe config writes validate first and back up replacements
 def test_write_config_validates_and_backs_up(tmp_path):
     destination = tmp_path / "profile.conf"
-    destination.write_text("VALUE = 1\n", encoding="utf-8")
+    destination.write_text("TRUNCATE_CHARS = 1\n", encoding="utf-8")
 
-    status = monitor.write_config_file(destination, "VALUE = 2\n")
+    status = monitor.write_config_file(destination, "TRUNCATE_CHARS = 2\n")
 
-    assert destination.read_text(encoding="utf-8") == "VALUE = 2\n"
-    assert Path(status["backup_path"]).read_text(encoding="utf-8") == "VALUE = 1\n"
+    assert destination.read_text(encoding="utf-8") == "TRUNCATE_CHARS = 2\n"
+    assert Path(status["backup_path"]).read_text(encoding="utf-8") == "TRUNCATE_CHARS = 1\n"
     with pytest.raises(SyntaxError):
-        monitor.write_config_file(destination, "VALUE =\n")
-    assert destination.read_text(encoding="utf-8") == "VALUE = 2\n"
+        monitor.write_config_file(destination, "TRUNCATE_CHARS =\n")
+    # Content that parses but is not a plain setting assignment is refused before the file is touched
+    with pytest.raises(ValueError):
+        monitor.write_config_file(destination, "TRUNCATE_CHARS = __import__('os').getpid()\n")
+    assert destination.read_text(encoding="utf-8") == "TRUNCATE_CHARS = 2\n"
 
 
 # Verifies generated recovery commands preserve interpreter and custom paths
