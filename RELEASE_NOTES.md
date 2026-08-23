@@ -9,7 +9,6 @@ Version **3.7.1** is a maintenance release that restores **Python 3.9 support**,
 **Features and improvements**:
 
 - **IMPROVE:** **Clearer ntfy webhook customization** - Documentation and the generated configuration now state that `WEBHOOK_TEMPLATE`, `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` apply only to Discord and are ignored by ntfy, which needs no template. Customize ntfy delivery through `WEBHOOK_HEADERS` such as `X-Priority` or `X-Tags`
-- **IMPROVE:** **Documented playlist export location** - The `--export-all-playlists` documentation now explains that files are written to the current working directory and that a name collision appends to an existing file, so exports are best run from a dedicated empty directory
 
 **Bug fixes**:
 
