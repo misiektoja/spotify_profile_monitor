@@ -819,9 +819,13 @@ AMAZON_MUSIC_SEARCH_URL = "https://music.amazon.com/search"
 DEEZER_SEARCH_URL = "https://www.deezer.com/search"
 TIDAL_SEARCH_URL = "https://tidal.com/search"
 TARGET_INPUT_ERROR = f"Invalid Spotify target. Use {SPOTIFY_WEB_BASE_URL}/user/USER_ID, spotify:user:USER_ID or a Spotify user ID."
+PLAYLIST_INPUT_ERROR = f"Invalid Spotify playlist. Use {SPOTIFY_WEB_BASE_URL}/playlist/PLAYLIST_ID, spotify:playlist:PLAYLIST_ID or a Spotify playlist ID."
+
+# Object types that can appear as a whole path segment in a Spotify link or as the middle field of a Spotify URI
+SPOTIFY_OBJECT_TYPES = frozenset({"user", "artist", "track", "album", "playlist"})
 
 # Stable machine-readable categories used by recovery output and Doctor checks
-RECOVERY_CODES = frozenset({"config.missing", "config.invalid", "dependency.missing", "secret.missing", "auth.cookie_invalid", "auth.client_invalid", "auth.oauth_invalid", "auth.rejected", "network.unavailable", "network.timeout", "spotify.rate_limited", "spotify.unavailable", "target.invalid", "target.not_found", "smtp.invalid", "smtp.authentication", "smtp.connection", "webhook.invalid", "webhook.rejected", "webhook.rate_limited", "webhook.connection", "file.unreadable", "file.unwritable", "unknown"})
+RECOVERY_CODES = frozenset({"config.missing", "config.invalid", "dependency.missing", "secret.missing", "auth.cookie_invalid", "auth.client_invalid", "auth.oauth_invalid", "auth.rejected", "network.unavailable", "network.timeout", "spotify.rate_limited", "spotify.unavailable", "target.invalid", "target.not_found", "smtp.invalid", "smtp.authentication", "smtp.connection", "webhook.invalid", "webhook.rejected", "webhook.redirected", "webhook.rate_limited", "webhook.connection", "file.unreadable", "file.unwritable", "unknown"})
 
 # Strings removed from track names for generating proper Genius search URLs
 re_search_str = r'remaster|extended|original mix|remix|original soundtrack|radio( |-)edit|\(feat\.|( \(.*version\))|( - .*version)'
@@ -1509,6 +1513,8 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
     if context.startswith("webhook"):
         if status == 429 or any(term in message for term in ("429", "too many requests", "rate limit")):
             return make_recovery_advice("webhook.rate_limited", "The webhook service is temporarily limiting messages", recovery_fix_with_guide("Wait briefly then run --send-test-webhook", WEBHOOK_GUIDE_URL), True, safe_detail)
+        if status is not None and 300 <= status <= 399:
+            return make_recovery_advice("webhook.redirected", "The webhook destination redirected the alert", recovery_fix_with_guide("Redirects are not followed, so custom headers and alert content cannot reach another host. Save the final destination with --set-webhook-url then run --send-test-webhook", WEBHOOK_GUIDE_URL), False, safe_detail)
         if status is not None and 400 <= status <= 499:
             return make_recovery_advice("webhook.rejected", "The webhook service did not accept the alert", recovery_fix_with_guide("Check that WEBHOOK_PROVIDER matches the saved destination then run --send-test-webhook", WEBHOOK_GUIDE_URL), False, safe_detail)
         return make_recovery_advice("webhook.connection", "The webhook alert could not be sent", recovery_fix_with_guide("Check connectivity then run --send-test-webhook. Retry with --debug if it still fails", WEBHOOK_GUIDE_URL), True, safe_detail)
@@ -2236,13 +2242,13 @@ def send_webhook(title: str, description: str, notification_type: str = "profile
         try:
             if provider == "ntfy":
                 if use_ntfy_image:
-                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=ntfy_image, params={"title": ntfy_title, "message": ntfy_message}, headers=dict(request_headers, **{"Content-Type": "image/jpeg", "X-Filename": NTFY_IMAGE_FILENAME}), timeout=WEBHOOK_TIMEOUT_SECONDS)
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=ntfy_image, params={"title": ntfy_title, "message": ntfy_message}, headers=dict(request_headers, **{"Content-Type": "image/jpeg", "X-Filename": NTFY_IMAGE_FILENAME}), timeout=WEBHOOK_TIMEOUT_SECONDS, allow_redirects=False)
                 else:
-                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=ntfy_message.encode("utf-8"), params={"title": ntfy_title}, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS)
+                    response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=ntfy_message.encode("utf-8"), params={"title": ntfy_title}, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS, allow_redirects=False)
             elif isinstance(discord_payload, str):
-                response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=discord_payload, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS)
+                response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), data=discord_payload, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS, allow_redirects=False)
             else:
-                response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), json=discord_payload, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS)
+                response = WEBHOOK_SESSION.post(str(WEBHOOK_URL).strip(), json=discord_payload, headers=request_headers, timeout=WEBHOOK_TIMEOUT_SECONDS, allow_redirects=False)
             if 200 <= response.status_code <= 299:
                 return 0
             last_error = response
@@ -3850,40 +3856,35 @@ def spotify_convert_uri_to_url(uri):
     return url
 
 
-# Converts Spotify URL (e.g. https://open.spotify.com/user/username) to URI (e.g. spotify:user:username)
+# Converts Spotify URL (e.g. https://open.spotify.com/user/username) or URI to URI (e.g. spotify:user:username), returning an empty string when the reference cannot be parsed
 def spotify_convert_url_to_uri(url):
-
-    url = url or ''
-    uri = ""
     if not isinstance(url, str):
-        return uri
-    if "user" in url:
-        uri = url.split('user/', 1)[1]
-        if "?" in uri:
-            uri = uri.split('?', 1)[0]
-        uri = f"spotify:user:{uri}"
-    elif "artist" in url:
-        uri = url.split('artist/', 1)[1]
-        if "?" in uri:
-            uri = uri.split('?', 1)[0]
-        uri = f"spotify:artist:{uri}"
-    elif "track" in url:
-        uri = url.split('track/', 1)[1]
-        if "?" in uri:
-            uri = uri.split('?', 1)[0]
-        uri = f"spotify:track:{uri}"
-    elif "album" in url:
-        uri = url.split('album/', 1)[1]
-        if "?" in uri:
-            uri = uri.split('?', 1)[0]
-        uri = f"spotify:album:{uri}"
-    elif "playlist" in url:
-        uri = url.split('playlist/', 1)[1]
-        if "?" in uri:
-            uri = uri.split('?', 1)[0]
-        uri = f"spotify:playlist:{uri}"
+        return ""
 
-    return uri
+    value = url.strip()
+    if not value:
+        return ""
+
+    if value.casefold().startswith("spotify:"):
+        parts = value.split(":")
+        if len(parts) == 3 and parts[1].casefold() in SPOTIFY_OBJECT_TYPES and parts[2]:
+            return f"spotify:{parts[1].casefold()}:{parts[2]}"
+        return ""
+
+    try:
+        parsed = urlsplit(value)
+    except ValueError:
+        return ""
+
+    # Whole path segments are matched so an object ID that merely contains "user", "track" or "album" cannot be
+    # mistaken for the object type, and so a localized link such as /intl-pl/track/<id> still resolves correctly
+    segments = [segment for segment in parsed.path.split("/") if segment]
+    for index, segment in enumerate(segments[:-1]):
+        object_type = segment.casefold()
+        if object_type in SPOTIFY_OBJECT_TYPES:
+            return f"spotify:{object_type}:{segments[index + 1]}"
+
+    return ""
 
 
 # Returns True when complete non-placeholder OAuth app credentials are configured
@@ -4824,9 +4825,12 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
 
     pattern = re.compile(r'^[a-zA-Z0-9]{22}$')
     if (pattern.match(playlist_url)):
-        playlist_uri = f"::{playlist_url}"
+        playlist_uri = f"spotify:playlist:{playlist_url}"
     else:
         playlist_uri = spotify_convert_url_to_uri(playlist_url)
+
+    if not playlist_uri:
+        raise ValueError(PLAYLIST_INPUT_ERROR)
 
     sp_playlist_data = spotify_get_playlist_info(sp_accessToken, playlist_uri, True)
 
@@ -5112,20 +5116,35 @@ def spotify_list_liked_tracks(sp_accessToken, csv_file_name, format_type=2):
             print_operation_error(f"Output file '{csv_file_name}' could not be written", e)
 
 
-# Compares two lists of dictionaries
+# Builds one hashable signature for a dictionary so list differences can use set lookups instead of linear scans
+def dict_signature(item):
+    if isinstance(item, dict):
+        return tuple(sorted((str(key), repr(value)) for key, value in item.items()))
+    return (repr(item),)
+
+
+# Returns the entries of the first list that are absent from the second, preserving their order and duplicates
 def compare_two_lists_of_dicts(list1: list, list2: list):
     if not list1:
-        list1 = []
+        return []
     if not list2:
-        list2 = []
+        return list(list1)
 
-    diff = [i for i in list1 + list2 if i not in list2]
-    return diff
+    signatures = {dict_signature(item) for item in list2}
+    return [item for item in list1 if dict_signature(item) not in signatures]
 
 
 # Searches for Spotify users (-s flag)
 def spotify_search_users(access_token, username):
-    url = f"{SPOTIFY_PARTNER_BASE_URL}/pathfinder/v1/query?operationName=searchUsers&variables=%7B%22searchTerm%22%3A%22{username}%22%2C%22offset%22%3A0%2C%22limit%22%3A5%2C%22numberOfTopResults%22%3A5%2C%22includeAudiobooks%22%3Afalse%7D&extensions=%7B%22persistedQuery%22%3A%7B%22version%22%3A1%2C%22sha256Hash%22%3A%22{SP_SHA256}%22%7D%7D"
+    url = f"{SPOTIFY_PARTNER_BASE_URL}/pathfinder/v1/query"
+
+    # Built as structures and percent-encoded by requests so a search term containing #, &, = or a space
+    # cannot truncate the URL or inject query parameters
+    query_params = {
+        "operationName": "searchUsers",
+        "variables": json.dumps({"searchTerm": username, "offset": 0, "limit": 5, "numberOfTopResults": 5, "includeAudiobooks": False}, separators=(",", ":")),
+        "extensions": json.dumps({"persistedQuery": {"version": 1, "sha256Hash": SP_SHA256}}, separators=(",", ":")),
+    }
 
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -5141,7 +5160,7 @@ def spotify_search_users(access_token, username):
 
     try:
         debug_print(f"HTTP GET {url} [search users] headers={sanitize_debug_headers(headers)}")
-        response = SESSION.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
+        response = SESSION.get(url, params=query_params, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         debug_print(f"HTTP GET {url} [search users] -> {response.status_code}")
         response.raise_for_status()
     except Exception:
@@ -6395,27 +6414,48 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
     return False
 
 
-# Saves user's profile pic to selected file name
+# Saves user's profile pic to selected file name from a trusted Spotify CDN host with a bounded read
 def save_profile_pic(user_image_url, image_file_name):
     try:
+        if not spotify_image_url_is_allowed(user_image_url):
+            raise ValueError("profile picture URL must use a Spotify HTTPS CDN host")
+
         debug_print(f"HTTP GET {user_image_url} [profile image] stream=True")
-        image_response = req.get(user_image_url, headers={'User-Agent': USER_AGENT}, timeout=FUNCTION_TIMEOUT, stream=True, verify=VERIFY_SSL)
-        debug_print(f"HTTP GET {user_image_url} [profile image] -> {image_response.status_code}")
-        image_response.raise_for_status()
-        url_time = image_response.headers.get('last-modified')
+        image_response = req.get(user_image_url, headers={'User-Agent': USER_AGENT}, timeout=FUNCTION_TIMEOUT, stream=True, verify=VERIFY_SSL, allow_redirects=False)
+        with image_response:
+            debug_print(f"HTTP GET {user_image_url} [profile image] -> {image_response.status_code}")
+            image_response.raise_for_status()
+            if image_response.status_code != 200:
+                raise ValueError(f"profile picture request returned HTTP {image_response.status_code}")
+
+            content_length = (image_response.headers or {}).get("Content-Length")
+            if content_length is not None and int(content_length) > NOTIFICATION_IMAGE_DOWNLOAD_LIMIT_BYTES:
+                raise ValueError(f"profile picture exceeds {NOTIFICATION_IMAGE_DOWNLOAD_LIMIT_BYTES} bytes")
+
+            image_bytes = bytearray()
+            for chunk in image_response.iter_content(chunk_size=NOTIFICATION_IMAGE_DOWNLOAD_CHUNK_BYTES):
+                if not chunk:
+                    continue
+                image_bytes.extend(chunk)
+                if len(image_bytes) > NOTIFICATION_IMAGE_DOWNLOAD_LIMIT_BYTES:
+                    raise ValueError(f"profile picture exceeds {NOTIFICATION_IMAGE_DOWNLOAD_LIMIT_BYTES} bytes")
+
+            url_time = image_response.headers.get('last-modified')
+
+        if not image_bytes:
+            raise ValueError("profile picture response was empty")
 
         url_time_in_tz_ts = 0
         if url_time:
             url_time_in_tz = parsedate_to_datetime(url_time).astimezone(pytz.timezone(LOCAL_TIMEZONE))
             url_time_in_tz_ts = int(url_time_in_tz.timestamp())
 
-        if image_response.status_code == 200:
-            with open(image_file_name, 'wb') as f:
-                image_response.raw.decode_content = True
-                shutil.copyfileobj(image_response.raw, f)
-            if url_time_in_tz_ts:
-                os.utime(image_file_name, (url_time_in_tz_ts, url_time_in_tz_ts))
-            debug_print(f"save_profile_pic(): saved image to {image_file_name}")
+        # Written only once the complete bounded body arrived so a capped or failed download cannot truncate a saved picture
+        with open(image_file_name, 'wb') as f:
+            f.write(image_bytes)
+        if url_time_in_tz_ts:
+            os.utime(image_file_name, (url_time_in_tz_ts, url_time_in_tz_ts))
+        debug_print(f"save_profile_pic(): saved image to {image_file_name}")
         return True
     except Exception as e:
         debug_print(f"save_profile_pic(): failed for url={user_image_url}: {sanitize_error_text(e)}")
@@ -10923,7 +10963,9 @@ def main():
                 sp_accessToken = spotify_get_access_token_from_sp_dc(SP_DC_COOKIE)
             spotify_list_tracks_for_playlist(sp_accessToken, args.list_tracks_for_playlist, CSV_FILE, CSV_FILE_FORMAT_EXPORT)
         except Exception as e:
-            if 'Not Found' in str(e) or '400 Client' in str(e):
+            if str(e) == PLAYLIST_INPUT_ERROR:
+                print_operation_error(PLAYLIST_INPUT_ERROR, e)
+            elif 'Not Found' in str(e) or '400 Client' in str(e):
                 print_operation_error("The playlist does not exist or is private", e)
             else:
                 print_recovery_error(e, "metadata")
