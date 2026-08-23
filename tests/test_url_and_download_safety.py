@@ -1,4 +1,5 @@
 import json
+import re
 import tempfile
 import types
 from pathlib import Path
@@ -175,6 +176,76 @@ def test_save_profile_pic_saves_allowed_image():
         with patch.object(monitor.req, "get", return_value=FakeImageResponse([b"JPEG", b"DATA"])):
             assert monitor.save_profile_pic("https://i.scdn.co/image/ab1", str(target)) is True
         assert target.read_bytes() == b"JPEGDATA"
+
+
+@pytest.mark.parametrize("url,allowed", [("https://api.spotify.com/v1/playlists/x/tracks?offset=100", True), ("https://api-partner.spotify.com/pathfinder/v1/query", True), ("https://spclient.wg.spotify.com/user-profile-view/v3/profile/x", True), ("https://guc-spclient.spotify.com/presence-view/v1/buddylist", True), ("https://open.spotify.com/", True), ("http://api.spotify.com/v1/x", False), ("https://evil.example/v1/x", False), ("https://api.spotify.com.evil.example/v1/x", False), ("https://spotify.com.evil.example/x", False), ("//evil.example/x", False), ("", False), (None, False), (123, False)])
+# Confirms only HTTPS Spotify hosts may receive a request carrying the bearer token
+def test_spotify_api_url_allowlist(url, allowed):
+    assert monitor.spotify_api_url_is_allowed(url) is allowed
+
+
+@pytest.mark.parametrize("next_url", [None, "", 0])
+# Confirms the end of a pagination run is reported as a clean stop
+def test_next_page_url_ends_pagination(next_url):
+    assert monitor.spotify_next_page_url(next_url, 1, "playlist tracks") == ""
+
+
+# Confirms a legitimate Spotify pagination URL is passed through
+def test_next_page_url_accepts_spotify_host():
+    assert monitor.spotify_next_page_url("https://api.spotify.com/v1/next", 1, "playlist tracks") == "https://api.spotify.com/v1/next"
+
+
+@pytest.mark.parametrize("next_url", ["http://api.spotify.com/v1/next", "https://evil.example/v1/next", "https://api.spotify.com.evil.example/v1/next", {"url": "x"}, ["https://api.spotify.com/v1/next"]])
+# Confirms a server-supplied next URL off the Spotify API is refused before the token is sent
+def test_next_page_url_refuses_foreign_host(next_url):
+    with pytest.raises(RuntimeError, match="outside the Spotify API"):
+        monitor.spotify_next_page_url(next_url, 1, "playlist tracks")
+
+
+# Confirms an endless next chain is stopped by the page ceiling
+def test_next_page_url_enforces_page_ceiling():
+    with pytest.raises(RuntimeError, match="exceeded"):
+        monitor.spotify_next_page_url("https://api.spotify.com/v1/next", monitor.SPOTIFY_PAGINATION_MAX_PAGES, "liked tracks")
+
+
+# Matches a next URL taken straight from a response body without passing through the gate
+UNGATED_NEXT_ASSIGNMENT = re.compile(r'^\s*\w+\s*=\s*(?!spotify_next_page_url\()[\w.]*\.get\("next"\)', re.MULTILINE)
+
+
+# Confirms every credential-bearing pagination loop routes its next URL through the gate
+def test_pagination_loops_are_gated():
+    import inspect
+
+    source = inspect.getsource(monitor)
+    assert source.count("spotify_next_page_url(") >= 4
+    assert not UNGATED_NEXT_ASSIGNMENT.findall(source)
+
+
+# Confirms the guard above would actually catch an ungated pagination assignment
+def test_ungated_next_assignment_is_detectable():
+    assert UNGATED_NEXT_ASSIGNMENT.findall('            next_url = json_response.get("next")\n')
+    assert UNGATED_NEXT_ASSIGNMENT.findall('    url2_pl = response.get("next")\n')
+    assert not UNGATED_NEXT_ASSIGNMENT.findall('            next_url = spotify_next_page_url(json_response.get("next"), page_idx, "liked tracks")\n')
+
+
+@pytest.mark.parametrize("hostile_id,forbidden", [("../../v1/me", "/../"), ("a?x=1", "?x=1"), ("a#frag", "#frag"), ("a/b", "a/b")])
+# Confirms an identifier from an API response cannot escape its own path segment
+def test_api_urls_encode_interpolated_ids(hostile_id, forbidden):
+    from urllib.parse import quote
+
+    url = f"{monitor.SPOTIFY_PROFILE_API_BASE_URL}/{quote(hostile_id, safe='')}?market=from_token"
+    assert forbidden not in url
+    assert "%2F" in url or "%3F" in url or "%23" in url
+
+
+# Confirms every credential-bearing API URL percent-encodes the identifier it interpolates
+def test_api_url_builders_quote_identifiers():
+    import inspect
+    import re
+
+    source = inspect.getsource(monitor)
+    pattern = re.compile(r'f"\{SPOTIFY_(?:API|PROFILE_API|SPCLIENT)_BASE_URL\}[^"]*\{(?!quote\()(user_uri_id|playlist_id)\b')
+    assert not pattern.findall(source)
 
 
 # Confirms every webhook POST call site refuses redirects
