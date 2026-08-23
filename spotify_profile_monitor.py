@@ -3870,33 +3870,26 @@ def display_tmp_pic(image_url, pic_file_tmp, imgcat_exe=None, is_profile=True):
         print("")
 
 
-# Converts Spotify URI (e.g. spotify:user:username) to URL (e.g. https://open.spotify.com/user/username)
+# Converts Spotify URI (e.g. spotify:user:username) to URL (e.g. https://open.spotify.com/user/username), returning an empty string when the reference cannot be parsed
 def spotify_convert_uri_to_url(uri):
     # Add si parameter so link opens in native Spotify app after clicking
     si = "?si=1"
     # si=""
 
-    uri = uri or ''
-    url = ""
     if not isinstance(uri, str):
-        return url
-    if "spotify:user:" in uri:
-        s_id = uri.split(':', 2)[2]
-        url = f"{SPOTIFY_WEB_BASE_URL}/user/{s_id}{si}"
-    elif "spotify:artist:" in uri:
-        s_id = uri.split(':', 2)[2]
-        url = f"{SPOTIFY_WEB_BASE_URL}/artist/{s_id}{si}"
-    elif "spotify:track:" in uri:
-        s_id = uri.split(':', 2)[2]
-        url = f"{SPOTIFY_WEB_BASE_URL}/track/{s_id}{si}"
-    elif "spotify:album:" in uri:
-        s_id = uri.split(':', 2)[2]
-        url = f"{SPOTIFY_WEB_BASE_URL}/album/{s_id}{si}"
-    elif "spotify:playlist:" in uri:
-        s_id = uri.split(':', 2)[2]
-        url = f"{SPOTIFY_WEB_BASE_URL}/playlist/{s_id}{si}"
+        return ""
 
-    return url
+    # Whole colon-separated parts are matched so an object ID that merely contains "spotify:user:" or any
+    # other object prefix cannot change how the reference is read, mirroring spotify_convert_url_to_uri
+    parts = uri.strip().split(":")
+    if len(parts) != 3 or parts[0].casefold() != "spotify":
+        return ""
+
+    object_type = parts[1].casefold()
+    if object_type not in SPOTIFY_OBJECT_TYPES or not parts[2]:
+        return ""
+
+    return f"{SPOTIFY_WEB_BASE_URL}/{object_type}/{parts[2]}{si}"
 
 
 # Converts Spotify URL (e.g. https://open.spotify.com/user/username) or URI to URI (e.g. spotify:user:username), returning an empty string when the reference cannot be parsed
@@ -10205,7 +10198,7 @@ def cli_action_conflicts(args, allowed: Collection[str]) -> List[str]:
 
 # Parses configuration and command-line options then runs the selected operation
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, VERBOSE_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, EMAIL_IMAGES, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, ALARM_TIMEOUT, CLEAN_OUTPUT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TARGET_USER_URI_ID, TRUNCATE_CHARS, NTFY_IMAGES
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, VERBOSE_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, EMAIL_IMAGES, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, CLEAN_OUTPUT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TARGET_USER_URI_ID, TRUNCATE_CHARS, NTFY_IMAGES
     global EXPORT_ALL, EXPORT_ALL_FORCE, PLAYLIST_INFO_CACHE_TTL
 
     signal.signal(signal.SIGINT, signal_handler)
