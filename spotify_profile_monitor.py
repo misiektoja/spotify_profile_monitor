@@ -939,7 +939,6 @@ if sys.version_info < (3, 9):
     sys.exit(1)
 
 import time
-import string
 import textwrap
 import json
 import os
@@ -994,7 +993,6 @@ from pathlib import Path, PureWindowsPath
 import secrets
 import socket
 from typing import Any, Callable, Collection, Dict, FrozenSet, List, Optional, Sequence, Tuple, Type, cast
-from email.utils import parsedate_to_datetime
 
 import urllib3
 if not VERIFY_SSL:
@@ -5423,7 +5421,8 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                         except (TypeError, ValueError):
                             return None
 
-                    def _build_restricted_playlist_data():
+                    # Binding the loop variables as defaults keeps this helper independent of later iterations
+                    def _build_restricted_playlist_data(playlist=playlist, cached_entry=cached_entry):
                         fallback_name = playlist.get("name", "") or cached_entry.get("name", "")
                         fallback_owner = playlist.get("owner_name", "") or cached_entry.get("owner", "")
                         fallback_owner_uri = playlist.get("owner_uri", "") or cached_entry.get("owner_uri", "")
@@ -5779,7 +5778,6 @@ def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_
                 p_date = playlist.get("date")
                 p_update = playlist.get("update_date")
                 p_collaborators_count = playlist.get("collaborators_count")
-                p_collaborators = playlist.get("collaborators")
                 p_owner = playlist.get("owner", "")
                 p_owner_uri = playlist.get("owner_uri", "")
                 p_restricted = bool(playlist.get("restricted", False))
@@ -8090,7 +8088,8 @@ def _doctor_progress(label: str) -> None:
     if sys.stdout.isatty():
         message = f"* Checking {label} ..."
         width = max(len(message), int(getattr(_doctor_progress, "last_width", 0)))
-        setattr(_doctor_progress, "last_width", width)
+        # Function attributes hold this transient state, so the assignment stays dynamic for the type checker
+        setattr(_doctor_progress, "last_width", width)  # noqa: B010
         print("\r" + message.ljust(width), end="", flush=True)
 
 
@@ -8100,7 +8099,7 @@ def _doctor_progress_clear() -> None:
         width = int(getattr(_doctor_progress, "last_width", 0))
         if width:
             print("\r" + (" " * width) + "\r", end="", flush=True)
-    setattr(_doctor_progress, "last_width", 0)
+    setattr(_doctor_progress, "last_width", 0)  # noqa: B010
 
 
 # Builds all independent and dependent Doctor checks with optional progress updates
@@ -8992,8 +8991,6 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             playlists.extend(ADD_PLAYLISTS_TO_MONITOR)
             playlists_count += len(ADD_PLAYLISTS_TO_MONITOR)
 
-    recently_played_artists = sp_user_data["sp_user_recently_played_artists"]
-
     print(f"Username:\t\t\t{username}")
     print(f"Spotify user ID:\t\t{user_uri_id}")
     print(f"User URL:\t\t\t{spotify_convert_uri_to_url(f'spotify:user:{user_uri_id}')}")
@@ -9346,8 +9343,6 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 playlists.extend(ADD_PLAYLISTS_TO_MONITOR)
                 playlists_count += len(ADD_PLAYLISTS_TO_MONITOR)
 
-        recently_played_artists = sp_user_data["sp_user_recently_played_artists"]
-
         if followers_count != followers_old_count:
             if followers_count == 0:
                 followers_zeroed_counter += 1
@@ -9557,7 +9552,6 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     p_descr = html.unescape(playlist.get("desc", ""))
                     p_likes = playlist.get("likes", 0)
                     p_tracks = playlist.get("tracks_count", 0)
-                    p_date = playlist.get("date")
                     p_update = playlist.get("update_date")
                     p_collaborators = playlist.get("collaborators_count")
                     p_collaborators_list = playlist.get("collaborators")
@@ -11118,7 +11112,8 @@ def main():
             print("Error: --export-all-playlists requires -i / --show-user-profile flag !")
             sys.exit(1)
         try:
-            import pathvalidate
+            # Imported only to check availability and report a friendly install command when it is missing
+            import pathvalidate  # noqa: F401
         except ModuleNotFoundError:
             install_command = _wizard_render_command([sys.executable or ("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", "pathvalidate"])
             raise SystemExit(f"Error: Couldn't find the pathvalidate library required for --export-all-playlists !\n\nTo install it through the active Python environment, run:\n    {install_command}\n\nOnce installed, re-run this tool")
