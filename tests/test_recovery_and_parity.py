@@ -67,6 +67,43 @@ def test_documentation_site_contract():
     assert "mkdocs gh-deploy --force --strict" in workflow
 
 
+# Verifies every in-page and cross-page documentation fragment link resolves, which MkDocs does not check for same-page anchors
+def test_documentation_fragment_links_resolve():
+    pages = {path.name: path.read_text(encoding="utf-8") for path in sorted((Path(__file__).parents[1] / "docs").glob("*.md"))}
+    anchors = {name: markdown_anchors(text) for name, text in pages.items()}
+    broken = []
+
+    for name, text in pages.items():
+        for target, fragment in re.findall(r"\]\(([^)#\s]*)#([^)\s]+)\)", text):
+            if target.startswith("http"):
+                continue
+            page = target or name
+            if page not in anchors:
+                broken.append(f"{name}: link to unknown page {page}")
+            elif fragment not in anchors[page]:
+                broken.append(f"{name}: dead anchor {page}#{fragment}")
+        for target in re.findall(r"\]\(([A-Za-z0-9._-]+\.md)\)", text):
+            if target not in pages:
+                broken.append(f"{name}: link to unknown page {target}")
+
+    assert broken == []
+
+
+# Verifies debugging guidance tracks the current shared utilities instead of a stale branch or download command
+def test_debugging_docs_track_the_current_utilities():
+    debugging = (Path(__file__).parents[1] / "docs" / "debugging.md").read_text(encoding="utf-8")
+
+    # These utilities live on the sibling project's default branch, so a dev-branch link rots as soon as dev moves
+    assert "/dev/" not in debugging
+    assert "refs/heads/dev" not in debugging
+    assert "wget " not in debugging
+    for command in ("curl -fsSLO https://raw.githubusercontent.com/misiektoja/spotify_monitor/refs/heads/main/debug/spotify_monitor_totp_test.py", "curl -fsSLO https://raw.githubusercontent.com/misiektoja/spotify_monitor/refs/heads/main/debug/spotify_monitor_secret_grabber.py"):
+        assert command in debugging
+    # The container examples must keep checking for a newer extractor image before each run
+    assert debugging.count("docker run --rm --pull=always") == 5
+    assert 'SPOTIFY_SECRET_GRABBER_UID="$(id -u)" SPOTIFY_SECRET_GRABBER_GID="$(id -g)" docker compose run --rm spotify-secrets-grabber --all' in debugging
+
+
 # Verifies the README keeps pointing readers at the published documentation instead of removed sections
 def test_readme_points_at_the_documentation_site():
     readme = (Path(__file__).parents[1] / "README.md").read_text(encoding="utf-8")
