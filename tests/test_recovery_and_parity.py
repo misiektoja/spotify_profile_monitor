@@ -3,6 +3,7 @@ import os
 import re
 import subprocess
 import sys
+import unicodedata
 from unittest.mock import Mock
 
 import pytest
@@ -19,13 +20,59 @@ def test_runtime_url_builders_use_global_bases(monkeypatch):
     assert monitor.spotify_convert_uri_to_url("spotify:user:target") == "https://web.example/user/target?si=1"
 
 
-# Verifies project guide globals use the repository base and match explicit README anchors
-def test_guide_urls_match_readme_anchors():
-    guide_names = ("QUICK_START_GUIDE_URL", "INSTALLATION_GUIDE_URL", "CONFIG_GUIDE_URL", "COOKIE_GUIDE_URL", "MANUAL_COOKIE_GUIDE_URL", "CLIENT_GUIDE_URL", "TARGET_GUIDE_URL", "SMTP_GUIDE_URL", "WEBHOOK_GUIDE_URL", "SECRETS_GUIDE_URL", "INTERVALS_GUIDE_URL", "DOCTOR_GUIDE_URL", "OAUTH_GUIDE_URL", "OAUTH_USER_GUIDE_URL", "BROWSER_COOKIE_GUIDE_URL", "SETUP_GUIDE_URL")
-    readme_anchors = set(re.findall(r'<a\s+id=["\x27]([^"\x27]+)', (Path(__file__).parents[1] / "README.md").read_text(encoding="utf-8")))
+# Returns explicit and heading-generated Markdown anchor IDs for one document
+def markdown_anchors(text: str) -> set:
+    anchors = set(re.findall(r'<a\s+id=["\x27]([^"\x27]+)', text))
+    in_fence = False
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            continue
+        heading = None if in_fence else re.match(r"^#{1,6}\s+(.+?)\s*$", stripped)
+        if heading is None:
+            continue
+        normalized = unicodedata.normalize("NFKD", heading.group(1)).encode("ascii", "ignore").decode("ascii").casefold()
+        slug = re.sub(r"[-\s]+", "-", re.sub(r"[^\w\s-]", "", normalized)).strip("-")
+        if slug:
+            anchors.add(slug)
+    return anchors
 
-    assert all(getattr(monitor, name).startswith(monitor.PROJECT_URL + "#") for name in guide_names)
-    assert all(getattr(monitor, name).partition("#")[2] in readme_anchors for name in guide_names)
+
+# Verifies every runtime guide global resolves to a published documentation page and anchor
+def test_guide_urls_match_documentation_anchors():
+    guide_names = ("QUICK_START_GUIDE_URL", "INSTALLATION_GUIDE_URL", "CONFIG_GUIDE_URL", "COOKIE_GUIDE_URL", "MANUAL_COOKIE_GUIDE_URL", "CLIENT_GUIDE_URL", "TARGET_GUIDE_URL", "SMTP_GUIDE_URL", "WEBHOOK_GUIDE_URL", "SECRETS_GUIDE_URL", "INTERVALS_GUIDE_URL", "DOCTOR_GUIDE_URL", "OAUTH_GUIDE_URL", "OAUTH_USER_GUIDE_URL", "BROWSER_COOKIE_GUIDE_URL", "SETUP_GUIDE_URL")
+
+    for name in guide_names:
+        guide_url = getattr(monitor, name)
+        assert guide_url.startswith(monitor.DOCUMENTATION_URL + "/"), name
+        relative_path, _separator, fragment = guide_url.removeprefix(monitor.DOCUMENTATION_URL).lstrip("/").partition("#")
+        document_path = "docs/index.md" if not relative_path else f"docs/{relative_path.rstrip('/')}.md"
+        document = Path(__file__).parents[1] / document_path
+        assert document.is_file(), f"{name} references missing page {document_path}"
+        if fragment:
+            assert fragment in markdown_anchors(document.read_text(encoding="utf-8")), f"{name} references missing anchor #{fragment} in {document_path}"
+
+
+# Verifies the documentation site publishes every navigation page through a strict deployment
+def test_documentation_site_contract():
+    root = Path(__file__).parents[1]
+    mkdocs = (root / "mkdocs.yml").read_text(encoding="utf-8")
+    workflow = (root / ".github/workflows/docs.yml").read_text(encoding="utf-8")
+
+    assert f"site_url: {monitor.DOCUMENTATION_URL}/" in mkdocs
+    for page in ("index.md", "installation.md", "setup-and-first-run.md", "configuration.md", "usage.md", "troubleshooting.md", "debugging.md", "testing.md", "about.md"):
+        assert f": {page}" in mkdocs, page
+        assert (root / "docs" / page).is_file(), page
+    assert "mkdocs gh-deploy --force --strict" in workflow
+
+
+# Verifies the README keeps pointing readers at the published documentation instead of removed sections
+def test_readme_points_at_the_documentation_site():
+    readme = (Path(__file__).parents[1] / "README.md").read_text(encoding="utf-8")
+
+    assert f"{monitor.DOCUMENTATION_URL}/" in readme
+    assert "#table-of-contents" not in readme
 
 
 # Verifies failed config execution cannot mutate scalar or mutable existing values
