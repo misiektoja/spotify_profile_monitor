@@ -108,6 +108,7 @@ RECEIVER_EMAIL = "your_receiver_email"
 PROFILE_NOTIFICATION = False
 
 # Whether to attach playlist or album artwork to email notifications
+# Requires the optional Pillow package: pip install "spotify_profile_monitor[notification-images]"
 # Image preparation failures fall back to text-only email
 EMAIL_IMAGES = False
 
@@ -209,8 +210,9 @@ WEBHOOK_TRANSFORMS = []
 NTFY_ACCESS_TOKEN = ""
 
 # Whether to attach profile or playlist artwork to supported ntfy alerts
+# Requires the optional Pillow package: pip install "spotify_profile_monitor[notification-images]"
 # Image preparation or delivery failures fall back to text
-NTFY_IMAGES = True
+NTFY_IMAGES = False
 
 # How often to check for user profile changes; in seconds
 # Can also be set using the -c flag
@@ -7401,6 +7403,19 @@ def _wizard_install_method() -> str:
     return "manual" if os.path.basename(sys.argv[0] or "").endswith(".py") else "pip"
 
 
+# Returns the Pillow requirement that matches the running interpreter
+def notification_images_requirement() -> str:
+    return "Pillow>=11.3.0,<12" if sys.version_info < (3, 10) else "Pillow>=12.0.0"
+
+
+# Returns the command that installs optional email and ntfy artwork support
+def notification_images_install_command(method: Optional[str] = None) -> str:
+    selected_method = _wizard_install_method() if method is None else method
+    requirement = "spotify_profile_monitor[notification-images]" if selected_method == "pip" else notification_images_requirement()
+    executable = sys.executable or ("python" if platform.system() == "Windows" else "python3")
+    return _wizard_render_command([executable, "-m", "pip", "install", requirement])
+
+
 # Returns command arguments using friendly names or exact runtime paths
 def _wizard_local_command_args(method: str, exact: bool = False) -> List[str]:
     if exact:
@@ -7736,6 +7751,14 @@ def make_doctor_check(section: str, status: str, label: str, detail: Any = "", f
     return DoctorCheck(section, status, sanitize_error_text(label), sanitize_error_text(detail), sanitize_error_text(selected_fix), advice)
 
 
+# Explains what missing artwork support means for the current image settings and how to install it
+def doctor_notification_images_detail() -> str:
+    remedy = f"Install it with: {notification_images_install_command()}"
+    if EMAIL_IMAGES or NTFY_IMAGES:
+        return f"Artwork attachments are enabled, so email and ntfy alerts stay text-only until Pillow is installed. Normal monitoring is unaffected. {remedy}"
+    return f"Required only when EMAIL_IMAGES or NTFY_IMAGES attaches artwork to alerts, which is currently disabled. Normal monitoring is unaffected. {remedy}"
+
+
 # Checks the active Python version plus required and optional dependencies
 def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[str], Any]] = None) -> List[DoctorCheck]:
     checks = []
@@ -7746,7 +7769,7 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
     else:
         checks.append(make_doctor_check("Environment", "FAIL", f"Python {version_text} is unsupported", fix="Install Python 3.9 or newer then retry"))
     find_spec = importlib.util.find_spec if spec_finder is None else spec_finder
-    required = (("requests", "requests"), ("dateutil", "python-dateutil"), ("urllib3", "urllib3"), ("dotenv", "python-dotenv"), ("pyotp", "pyotp"), ("pytz", "pytz"), ("tzlocal", "tzlocal"), ("spotipy", "Spotipy"), ("wcwidth", "wcwidth"), ("pathvalidate", "pathvalidate"), ("PIL", "Pillow"))
+    required = (("requests", "requests"), ("dateutil", "python-dateutil"), ("urllib3", "urllib3"), ("dotenv", "python-dotenv"), ("pyotp", "pyotp"), ("pytz", "pytz"), ("tzlocal", "tzlocal"), ("spotipy", "Spotipy"), ("wcwidth", "wcwidth"), ("pathvalidate", "pathvalidate"))
     for module_name, package_name in required:
         try:
             present = find_spec(module_name) is not None
@@ -7759,13 +7782,16 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
         advice = classify_recovery_error(ModuleNotFoundError(package_name), "dependency", f"Missing Python package: {package_name}")
         fix = recovery_fix_with_guide(f"Install it through the active Python environment then retry: {install_command}", INSTALLATION_GUIDE_URL)
         checks.append(make_doctor_check("Environment", "FAIL", f"Required dependency {package_name} is missing", advice.detail, fix, advice))
-    optional = (("pycookiecheat", "pycookiecheat"),)
+    optional = (("pycookiecheat", "pycookiecheat"), ("PIL", "Pillow"))
     for module_name, package_name in optional:
         try:
             present = find_spec(module_name) is not None
         except (ImportError, ValueError):
             present = False
-        purpose = "Used only for importing cookies from Chromium-based browsers. Firefox cookie import does not need it" if present else "Required only for importing cookies from Chromium-based browsers. Normal monitoring is unaffected. Firefox cookie import is also unaffected"
+        if module_name == "PIL":
+            purpose = "Used only for email and ntfy artwork attachments" if present else doctor_notification_images_detail()
+        else:
+            purpose = "Used only for importing cookies from Chromium-based browsers. Firefox cookie import does not need it" if present else "Required only for importing cookies from Chromium-based browsers. Normal monitoring is unaffected. Firefox cookie import is also unaffected"
         checks.append(make_doctor_check("Environment", "PASS" if present else "WARN", f"Optional dependency {package_name} is {'installed' if present else 'not installed'}", purpose))
     return checks
 
@@ -10888,7 +10914,7 @@ def main():
         sys.exit(doctor_exit)
 
     if (EMAIL_IMAGES or NTFY_IMAGES) and not NOTIFICATION_IMAGES_AVAILABLE:
-        print("* Warning: Pillow is not installed, so email and ntfy artwork attachments are disabled for this run")
+        print(f"* Warning: Pillow is not installed, so email and ntfy artwork attachments are disabled for this run\n*          Install it with: {notification_images_install_command()}")
         EMAIL_IMAGES = False
         NTFY_IMAGES = False
 
