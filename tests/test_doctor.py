@@ -23,6 +23,27 @@ def test_doctor_explains_browser_import_dependency_scope():
     assert check.detail == "Used only for importing cookies from Chromium-based browsers. Firefox cookie import does not need it"
 
 
+# Pillow moved to an optional extra, so a missing copy must never be reported as a broken installation
+def test_doctor_treats_missing_artwork_support_as_optional():
+    checks = monitor.doctor_check_environment((3, 12, 1), lambda name: None if name == "PIL" else object())
+
+    assert not any(check.status == "FAIL" and "Pillow" in check.label for check in checks)
+    check = next(item for item in checks if "Pillow" in item.label)
+    assert check.status == "WARN"
+    # The rendered command follows the entry point, so assert the part that holds either way
+    assert "-m pip install" in check.detail and "Normal monitoring is unaffected" in check.detail
+
+
+# A user who turned artwork on needs to be told the alerts are silently text-only until Pillow is installed
+def test_doctor_artwork_detail_follows_the_image_settings(monkeypatch):
+    monkeypatch.setattr(monitor, "EMAIL_IMAGES", False)
+    monkeypatch.setattr(monitor, "NTFY_IMAGES", False)
+    assert "currently disabled" in monitor.doctor_notification_images_detail()
+
+    monkeypatch.setattr(monitor, "NTFY_IMAGES", True)
+    assert "text-only until Pillow is installed" in monitor.doctor_notification_images_detail()
+
+
 # Verifies Doctor omits the internal separator resolution for valid settings
 def test_doctor_omits_valid_ascii_separator_resolution(monkeypatch):
     monkeypatch.setattr(monitor, "ASCII_LOG_SEPARATORS", "Auto")
