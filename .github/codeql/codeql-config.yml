@@ -1,0 +1,12 @@
+name: spotify_profile_monitor CodeQL configuration
+
+queries:
+  - uses: security-extended
+
+query-filters:
+  # VERIFY_SSL is a documented setting that defaults to True. It exists so someone behind a
+  # TLS-inspecting proxy can opt out deliberately, so every HTTPS call passes verify=VERIFY_SSL and
+  # this query reports all of them on every change. The invariant that matters here is that no call
+  # may verify less than the setting, which tests/test_runtime_deadlines.py enforces directly.
+  - exclude:
+      id: py/request-without-cert-validation
