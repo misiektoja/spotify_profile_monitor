@@ -18,7 +18,7 @@ The distributed package contains no vendored third-party source. It declares the
 | [spotipy](https://github.com/spotipy-dev/spotipy) | >=2.24.0 | MIT | Spotify Web API access for the OAuth token sources |
 | [wcwidth](https://github.com/jquast/wcwidth) | >=0.2.7 | MIT | Terminal column widths for aligned output and truncation |
 | [pathvalidate](https://github.com/thombashi/pathvalidate) | >=3.2.0 | MIT | Sanitizing playlist names into safe export filenames |
-| [Pillow](https://github.com/python-pillow/Pillow) | >=10.0 | MIT-CMU | Artwork handling for email and ntfy image notifications |
+| [Pillow](https://github.com/python-pillow/Pillow) | >=11.3.0,<12 on Python 3.9, >=12.0.0 on 3.10+ (optional) | MIT-CMU | Artwork handling for email and ntfy image notifications |
 | [pycookiecheat](https://github.com/n8henrie/pycookiecheat) | >=0.8, `browser` extra | MIT | Importing Chrome, Brave and Chromium cookies on macOS and Linux |
 
 ## Build, test and documentation dependencies
