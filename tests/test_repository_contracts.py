@@ -1,6 +1,9 @@
-"""Contract tests for governance documents, issue templates, workflows and declared versions."""
+"""Contract tests for governance documents, issue templates, workflows, repository metadata and declared versions."""
 
+import configparser
 import re
+import subprocess
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -27,7 +30,7 @@ def read_yaml_asset(relative_path: str):
 class TestGovernanceDocuments:
     # Contributors are pointed to these documents from the README and templates, so a missing one is a broken promise
     def test_governance_documents_exist(self):
-        for relative_path in ("SECURITY.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "THIRD_PARTY_NOTICES.md", "LICENSE", ".github/pull_request_template.md"):
+        for relative_path in ("SECURITY.md", "SUPPORT.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "THIRD_PARTY_NOTICES.md", "LICENSE", ".github/pull_request_template.md"):
             asset = PROJECT_ROOT / relative_path
             assert asset.is_file(), relative_path
             assert asset.stat().st_size > 200, relative_path
@@ -141,6 +144,107 @@ class TestWorkflowSupplyChain:
         assert {"github-actions", "pip"} <= {entry["package-ecosystem"] for entry in updates}
 
 
+class TestRepositoryMetadata:
+    # Verifies the citation metadata GitHub renders stays parseable and describes this project
+    def test_citation_describes_this_project(self):
+        citation = read_yaml_asset("CITATION.cff")
+        assert citation["cff-version"] == "1.2.0"
+        assert citation["type"] == "software"
+        assert citation["title"] == "spotify_profile_monitor"
+        assert citation["message"]
+        assert citation["license"] == "GPL-3.0-or-later"
+        assert citation["repository-code"] == "https://github.com/misiektoja/spotify_profile_monitor"
+        assert citation["date-released"].isoformat() == str(citation["date-released"])
+
+        author = citation["authors"][0]
+        assert author["given-names"] and author["family-names"] and author["alias"] == "misiektoja"
+
+    # The sponsor button needs a target, since an empty file hides it without failing any check
+    def test_funding_declares_a_sponsor_target(self):
+        funding = read_yaml_asset(".github/FUNDING.yml")
+        assert funding["github"] == "misiektoja"
+        assert funding["buy_me_a_coffee"] == "misiektoja"
+
+    # The shared editor settings must still declare the style the repository is written in
+    def test_editor_configuration_declares_the_repository_style(self):
+        settings = configparser.ConfigParser()
+        settings.read_string("[editorconfig]\n" + read_asset(".editorconfig"))
+
+        assert settings["editorconfig"]["root"] == "true"
+        assert settings["*"]["charset"] == "utf-8"
+        assert settings["*"]["end_of_line"] == "lf"
+        assert settings["*"]["indent_style"] == "space"
+        assert settings["*"]["indent_size"] == "4"
+        assert settings["*"]["insert_final_newline"] == "true"
+        assert settings["*"]["trim_trailing_whitespace"] == "true"
+        assert settings["*.py"]["indent_size"] == "4"
+        assert settings["*.{yml,yaml}"]["indent_size"] == "2"
+        assert settings["*.toml"]["indent_size"] == "2"
+        # Two trailing spaces are a Markdown line break, so they must stay exempt from trimming
+        assert settings["*.md"]["trim_trailing_whitespace"] == "false"
+
+    # An editor setting only warns on the machine that has it, so the tracked files are checked directly
+    def test_tracked_text_files_obey_the_declared_whitespace_rules(self):
+        listing = subprocess.run(["git", "ls-files"], cwd=PROJECT_ROOT, check=False, capture_output=True, text=True)
+        if listing.returncode != 0:
+            pytest.skip("not a git checkout")
+
+        offenders = []
+        for name in listing.stdout.split():
+            asset = PROJECT_ROOT / name
+            if not asset.is_file() or asset.suffix.casefold() in {".png", ".jpg", ".gif"}:
+                continue
+            content = asset.read_bytes()
+            if b"\r\n" in content:
+                offenders.append(f"{name}: CRLF line ending")
+            if content and not content.endswith(b"\n"):
+                offenders.append(f"{name}: missing final newline")
+            # LICENSE is verbatim upstream text and Markdown keeps meaningful trailing spaces
+            if name != "LICENSE" and asset.suffix.casefold() != ".md" and re.search(rb"[ \t]+\n", content):
+                offenders.append(f"{name}: trailing whitespace")
+        assert offenders == []
+
+    # One CRLF commit from a Windows contributor would otherwise rewrite whole files
+    def test_line_ending_policy_is_declared(self):
+        attributes = read_asset(".gitattributes")
+        assert "* text=auto eol=lf" in attributes
+        for pattern in ("*.png binary", "*.jpg binary", "*.gif binary"):
+            assert pattern in attributes
+
+    # The support document must route each request to a channel that exists
+    def test_support_document_routes_every_request_type(self):
+        support = read_asset("SUPPORT.md")
+        for destination in ("https://github.com/misiektoja/spotify_profile_monitor/discussions", "https://github.com/misiektoja/spotify_profile_monitor/security/advisories/new", "https://github.com/misiektoja/spotify_profile_monitor/issues/new?template=bug_report.yml", "https://github.com/misiektoja/spotify_profile_monitor/issues/new?template=feature_request.yml"):
+            assert destination in support
+        assert "spotify_profile_monitor --doctor" in support
+        for concept in ("sp_dc", "SMTP passwords", "webhook URLs", "--debug"):
+            assert concept in support
+
+    # A locally clean commit must not still fail CI, so the hook and the pinned extra have to agree
+    def test_local_hooks_match_the_pinned_linter(self):
+        pinned = re.search(r'lint = \["ruff==([^"]+)"\]', read_asset("pyproject.toml"))
+        assert pinned is not None
+
+        hooks = read_yaml_asset(".pre-commit-config.yaml")["repos"]
+        ruff_hook = next(entry for entry in hooks if "ruff-pre-commit" in entry["repo"])
+        assert ruff_hook["rev"] == f"v{pinned.group(1)}"
+
+        lint_steps = read_yaml_asset(".github/workflows/tests.yml")["jobs"]["lint"]["steps"]
+        assert any("ruff check" in step.get("run", "") for step in lint_steps)
+
+    # An unsigned download cannot be told apart from a tampered one, so releases carry checksums and provenance
+    def test_release_archives_ship_checksums_and_provenance(self):
+        job = read_yaml_asset(".github/workflows/release-assets.yml")["jobs"]["build-and-upload-assets"]
+        assert job["permissions"]["attestations"] == "write"
+        assert job["permissions"]["id-token"] == "write"
+
+        assert any("sha256sum" in step.get("run", "") for step in job["steps"])
+        assert any("attest-build-provenance" in step.get("uses", "") for step in job["steps"])
+
+        upload = next(step for step in job["steps"] if "action-gh-release" in step.get("uses", ""))
+        assert "_SHA256SUMS.txt" in upload["with"]["files"]
+
+
 class TestVersionConsistency:
     # The module, its docstring and the package metadata must agree, since only one of them reaches a user
     def test_declared_versions_match(self):
@@ -149,6 +253,18 @@ class TestVersionConsistency:
 
         assert packaged is not None and docstring is not None
         assert monitor.VERSION == packaged.group(1) == docstring.group(1)
+
+    # The citation must name a version somebody can actually cite, so it tracks the newest dated release
+    # notes section rather than the version under development
+    def test_citation_tracks_the_newest_released_version(self):
+        released = re.search(r"^# Changes in ([\d.]+) \((\d{1,2} \w{3} \d{4})\)", read_asset("RELEASE_NOTES.md"), re.M)
+        citation = read_asset("CITATION.cff")
+        cited_version = re.search(r'^version: "([^"]+)"', citation, re.M)
+        cited_date = re.search(r"^date-released: (\d{4}-\d{2}-\d{2})", citation, re.M)
+
+        assert released is not None and cited_version is not None and cited_date is not None
+        assert cited_version.group(1) == released.group(1)
+        assert cited_date.group(1) == datetime.strptime(released.group(2), "%d %b %Y").strftime("%Y-%m-%d")
 
     # Release notes must describe the version the code actually declares, or the notes ship ahead of the code
     def test_release_notes_lead_with_the_declared_version(self):
