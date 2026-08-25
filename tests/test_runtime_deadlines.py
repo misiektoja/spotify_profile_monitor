@@ -285,3 +285,38 @@ def test_every_http_call_verifies_through_the_configured_setting():
     # A refactor that renames the sessions must not quietly leave this test matching nothing
     assert len(calls) >= 25
     assert offenders == []
+
+
+# The excluded py/request-without-cert-validation query is replaced by the assertion above, so the exclusion
+# must stay narrow. A future blanket suppression would remove coverage this suite cannot restore
+def test_codeql_configuration_excludes_only_the_documented_query():
+    config = (PROJECT_ROOT / ".github" / "codeql" / "codeql-config.yml").read_text(encoding="utf-8")
+    excluded = re.findall(r"^\s*-\s*exclude:\s*\n\s*id:\s*(\S+)", config, re.M)
+
+    assert excluded == ["py/request-without-cert-validation"]
+    assert "security-extended" in config
+
+
+# The in-code CodeQL suppression stands in for sanitize_error_text, which the query does not model as a
+# sanitizer. It is only honoured while it sits on its own line directly above the flagged call, so a
+# refactor that moves the redaction or the comment must fail here instead of silently logging in clear text
+def test_debug_logging_suppression_stays_attached_to_its_sanitizer():
+    lines = (PROJECT_ROOT / "spotify_profile_monitor.py").read_text(encoding="utf-8").splitlines()
+    suppressions = [index for index, line in enumerate(lines) if line.strip() == "# codeql[py/clear-text-logging-sensitive-data]"]
+
+    assert len(suppressions) == 1
+    index = suppressions[0]
+    assert "sanitize_error_text(message)" in lines[index + 1]
+    assert any("sanitize_error_text" in line for line in lines[max(index - 4, 0):index] if line.strip().startswith("#"))
+
+
+# Debug output must be redacted centrally, since most call sites pass raw text that may embed a token
+def test_debug_print_redacts_through_the_shared_sanitizer(capsys, monkeypatch):
+    monkeypatch.setattr(monitor, "DEBUG_MODE", True)
+    monkeypatch.setattr(monitor, "SP_DC_COOKIE", "cookie-secret-value")
+
+    monitor.debug_print("probe sp_dc=cookie-secret-value trailing")
+    captured = capsys.readouterr().out
+
+    assert "cookie-secret-value" not in captured
+    assert "<redacted>" in captured
