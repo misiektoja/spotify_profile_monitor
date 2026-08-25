@@ -8,4 +8,11 @@ python-dotenv>=0.19
 spotipy>=2.24.0
 wcwidth>=0.2.7
 pathvalidate>=3.2.0
-Pillow>=10.0
+
+# Optional for email and ntfy artwork attachments (EMAIL_IMAGES, NTFY_IMAGES)
+# Pillow 12 dropped Python 3.9, so 3.9 keeps the last release that supports it
+# Pillow>=12.0.0; python_version >= "3.10"
+# Pillow>=11.3.0,<12; python_version < "3.10"
+
+# Optional for browser import feature
+# pycookiecheat>=0.8
