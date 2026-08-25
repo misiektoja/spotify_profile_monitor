@@ -607,3 +607,14 @@ def test_generated_config_includes_webhook_settings():
     assert namespace["NTFY_IMAGES"] is True
     assert namespace["EMAIL_IMAGES"] is False
     assert namespace["DETECT_CHANGED_PROFILE_PIC"] is True
+
+
+# Verifies webhook delivery honors VERIFY_SSL like every other request, so a TLS-inspecting proxy works
+def test_webhook_delivery_honors_the_verification_setting(monkeypatch):
+    configure_webhook(monkeypatch)
+    monkeypatch.setattr(monitor, "VERIFY_SSL", False)
+    webhook_post = Mock(return_value=FakeResponse())
+    monkeypatch.setattr(monitor.WEBHOOK_SESSION, "post", webhook_post)
+
+    assert monitor.send_webhook("Title", "Body", "profile") == 0
+    assert webhook_post.call_args.kwargs["verify"] is False
