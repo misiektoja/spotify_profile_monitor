@@ -618,3 +618,28 @@ def test_webhook_delivery_honors_the_verification_setting(monkeypatch):
 
     assert monitor.send_webhook("Title", "Body", "profile") == 0
     assert webhook_post.call_args.kwargs["verify"] is False
+
+
+# Verifies every delivery carries the deadline and refuses a redirect, which could retarget the payload
+def test_webhook_delivery_is_bounded_and_does_not_follow_redirects(monkeypatch):
+    configure_webhook(monkeypatch)
+    webhook_post = Mock(return_value=FakeResponse())
+    monkeypatch.setattr(monitor.WEBHOOK_SESSION, "post", webhook_post)
+
+    assert monitor.send_webhook("Title", "Body", "profile") == 0
+    request = webhook_post.call_args
+    assert request.args == (monitor.WEBHOOK_URL,)
+    assert request.kwargs["timeout"] == monitor.WEBHOOK_TIMEOUT_SECONDS
+    assert request.kwargs["allow_redirects"] is False
+
+
+# Verifies a destination replaced mid-delivery is refused rather than posted to blindly
+def test_webhook_delivery_refuses_a_destination_that_stopped_validating(monkeypatch):
+    configure_webhook(monkeypatch)
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", "http://example.test/hook")
+    webhook_post = Mock(return_value=FakeResponse())
+    monkeypatch.setattr(monitor.WEBHOOK_SESSION, "post", webhook_post)
+
+    with pytest.raises(monitor.req.exceptions.InvalidURL):
+        monitor.post_webhook_request(json={"content": "body"})
+    webhook_post.assert_not_called()
