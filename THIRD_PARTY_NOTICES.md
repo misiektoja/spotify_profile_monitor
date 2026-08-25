@@ -28,6 +28,7 @@ These are not part of the distributed package.
 | Component | License | Use |
 | --- | --- | --- |
 | [pytest](https://github.com/pytest-dev/pytest) | MIT | Test suite |
+| [Ruff](https://github.com/astral-sh/ruff) | MIT | Linting the module and the test suite |
 | [PyYAML](https://github.com/yaml/pyyaml) | MIT | Validating workflows and issue templates in the test suite |
 | [pip-audit](https://github.com/pypa/pip-audit) | Apache-2.0 | Dependency vulnerability audit in the supply chain workflow |
 | [CycloneDX](https://github.com/CycloneDX/cyclonedx-python) | Apache-2.0 | Software bill of materials in the supply chain workflow |
