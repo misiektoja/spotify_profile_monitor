@@ -285,8 +285,9 @@ class WebPlaylistBackendTests(unittest.TestCase):
     # Retries idempotent web-player GraphQL POSTs while leaving other POSTs unretried
     def test_web_player_adapter_retries_post(self):
         self.assertIs(monitor.SESSION.get_adapter(monitor.WEB_PLAYER_QUERY_URL), monitor.web_player_adapter)
-        web_player_methods = getattr(monitor.SESSION.get_adapter(monitor.WEB_PLAYER_QUERY_URL), "max_retries").allowed_methods
-        default_methods = getattr(monitor.SESSION.get_adapter("https://api.spotify.com/v1/playlists/abc"), "max_retries").allowed_methods
+        # get_adapter is typed as returning BaseAdapter, which does not declare max_retries
+        web_player_methods = getattr(monitor.SESSION.get_adapter(monitor.WEB_PLAYER_QUERY_URL), "max_retries").allowed_methods  # noqa: B009
+        default_methods = getattr(monitor.SESSION.get_adapter("https://api.spotify.com/v1/playlists/abc"), "max_retries").allowed_methods  # noqa: B009
         self.assertIn("POST", web_player_methods)
         self.assertNotIn("POST", default_methods)
 
