@@ -22,7 +22,6 @@ dependencies = [
   "spotipy>=2.24.0",
   "wcwidth>=0.2.7",
   "pathvalidate>=3.2.0",
-  "Pillow>=10.0",
 ]
 classifiers = [
   "Programming Language :: Python :: 3",
@@ -40,9 +39,11 @@ classifiers = [
 keywords = ["spotify", "monitoring", "tracking", "real-time", "playlists", "osint"]
 
 [project.optional-dependencies]
-test = ["pytest>=7.0", "pyyaml>=6.0"]
+test = ["pytest>=7.0", "pyyaml>=6.0", "Pillow>=11.3.0,<12; python_version < '3.10'", "Pillow>=12.0.0; python_version >= '3.10'"]
 # Pinned so a new ruff release cannot fail CI on a rule that did not exist when the change was written
 lint = ["ruff==0.16.4"]
+# Pillow 12 dropped Python 3.9, so 3.9 keeps the last release that supports it while 3.10 and newer get the current one
+notification-images = ["Pillow>=11.3.0,<12; python_version < '3.10'", "Pillow>=12.0.0; python_version >= '3.10'"]
 # Needed only to import Chrome/Brave/Chromium cookies (--import-browser-cookie); macOS and Linux only
 browser = ["pycookiecheat>=0.8"]
 
