@@ -14,6 +14,7 @@ Version **3.7.1** is a maintenance release that restores **Python 3.9 support**,
 
 **Bug fixes**:
 
+- **BUGFIX:** **Private configuration backups** - Replacing a configuration file through the setup wizard or `--generate-config` created its timestamped `.bak` copy with default permissions, so a configuration you had kept owner-only, including one holding captured device identifiers, left a world-readable backup beside it. Backups are now created owner-only from the start and keep the permissions of the file they copy
 - **BUGFIX:** **Python 3.9 startup restored** - The tool again starts on Python 3.9, the documented minimum runtime. A newer type-annotation syntax prevented the module from loading on 3.9
 - **BUGFIX:** **Config-file check interval honored** - Setting `SPOTIFY_CHECK_INTERVAL` in the config file now correctly scales the `LIVENESS_CHECK_INTERVAL` cadence and the playlist metadata cache lifetime, not only when `-c` / `--check-interval` is passed on the command line
 - **BUGFIX:** **Connectivity check respects configuration** - The startup internet check now honors `VERIFY_SSL`, `CHECK_INTERNET_URL` and `CHECK_INTERNET_TIMEOUT` from the config file or dotenv and `VERIFY_SSL = False` suppresses insecure-request warnings as intended
