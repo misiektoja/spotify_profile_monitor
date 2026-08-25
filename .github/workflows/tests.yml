@@ -93,3 +93,19 @@ jobs:
         # default for text writes, reserved characters in artwork filenames, export path handling and the
         # POSIX-only watchdog. These files carry that coverage
         run: python -m pytest tests/test_cleanup_and_compatibility.py tests/test_untrusted_output.py tests/test_url_and_download_safety.py tests/test_runtime_deadlines.py tests/test_setup_and_startup.py
+
+  docs-check:
+    name: Documentation strict build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.13"
+      - name: Install documentation dependencies
+        run: python -m pip install -r docs/requirements.txt
+      - name: Build documentation with strict validation
+        run: python -m mkdocs build --strict --site-dir local/docs-site
