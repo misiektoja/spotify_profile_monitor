@@ -25,3 +25,16 @@ updates:
         update-types: ["minor", "patch"]
     commit-message:
       prefix: "build"
+
+  # Documentation site build dependencies
+  - package-ecosystem: "pip"
+    directory: "/docs"
+    target-branch: "dev"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 3
+    groups:
+      docs:
+        patterns: ["*"]
+    commit-message:
+      prefix: "docs"
