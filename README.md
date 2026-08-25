@@ -109,8 +109,9 @@ spotify_profile_monitor --setup
 ## Requirements
 
 * Python 3.9 or higher
-* Libraries: `requests`, `python-dateutil`, `urllib3`, `pyotp`, `pytz`, `tzlocal`, `python-dotenv`, [Spotipy](https://github.com/spotipy-dev/spotipy), `wcwidth`, `pathvalidate`, `Pillow`
+* Libraries: `requests`, `python-dateutil`, `urllib3`, `pyotp`, `pytz`, `tzlocal`, `python-dotenv`, [Spotipy](https://github.com/spotipy-dev/spotipy), `wcwidth`, `pathvalidate`
 * Optional for Chrome, Brave or Chromium cookie import: [pycookiecheat](https://github.com/n8henrie/pycookiecheat)
+* Optional for email and ntfy artwork attachments: [Pillow](https://github.com/python-pillow/Pillow)
 
 Tested on:
 
@@ -138,6 +139,14 @@ pip install "spotify_profile_monitor[browser]"
 
 Firefox import is built in and needs no extra package.
 
+To attach playlist, album or profile artwork to email and ntfy notifications, install the artwork extra:
+
+```sh
+pip install "spotify_profile_monitor[notification-images]"
+```
+
+Without it the tool runs normally and the affected alerts stay text-only. Python 3.9 installs the last Pillow release that supports it.
+
 <a id="manual-installation"></a>
 ### Manual Installation
 
@@ -146,7 +155,7 @@ Download the *[spotify_profile_monitor.py](https://raw.githubusercontent.com/mis
 Install dependencies via pip:
 
 ```sh
-pip install requests python-dateutil urllib3 pyotp pytz tzlocal python-dotenv spotipy wcwidth pathvalidate Pillow
+pip install requests python-dateutil urllib3 pyotp pytz tzlocal python-dotenv spotipy wcwidth pathvalidate
 ```
 
 Alternatively, from the downloaded *[requirements.txt](https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/requirements.txt)*:
@@ -638,11 +647,13 @@ Spotify Profile Monitor sends the alert body as a native UTF-8 ntfy message and 
 
 The ntfy provider needs no request template. `WEBHOOK_TEMPLATE`, `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` shape the Discord embed only and are ignored when `WEBHOOK_PROVIDER` is `"ntfy"`. To customize ntfy delivery, add ntfy options such as priority or tags through `WEBHOOK_HEADERS` (for example `X-Priority` or `X-Tags`).
 
-Profile and playlist artwork is enabled by default for supported ntfy alerts. Disable it in `spotify_profile_monitor.conf` if you prefer text-only messages:
+Profile and playlist artwork is disabled by default and needs the optional artwork extra (`pip install "spotify_profile_monitor[notification-images]"`). Enable it in `spotify_profile_monitor.conf` once the extra is installed:
 
 ```ini
-NTFY_IMAGES = False
+NTFY_IMAGES = True
 ```
+
+If the setting is on but the extra is missing, the monitor reports it at startup and sends the affected alerts as text.
 
 The monitor accepts artwork only from Spotify HTTPS CDN hosts. It limits downloads to 5 MiB and rejects oversized decoded images before preparing each attachment in memory. If image preparation fails the alert is sent as text. If an attachment upload fails the monitor retries once as text. Self-hosted ntfy servers must allow attachments.
 
@@ -983,7 +994,7 @@ Make sure you defined your SMTP settings earlier (see [SMTP settings](#smtp-sett
 
 Playlist change emails include inline artwork when Spotify provides it. Track-change alerts prefer playlist artwork when both playlist and album images are available, then fall back to album artwork when the playlist has no image. Artwork is accepted only from Spotify HTTPS CDN hosts and is resized to fit within 320 x 320 pixels. Download or image preparation failures do not block the email. Dedicated profile-picture events continue to attach the saved profile picture.
 
-Playlist and album artwork are disabled by default. To include them in email notifications:
+Playlist and album artwork are disabled by default and need the optional artwork extra (`pip install "spotify_profile_monitor[notification-images]"`). To include them in email notifications:
 
 ```ini
 EMAIL_IMAGES = True
