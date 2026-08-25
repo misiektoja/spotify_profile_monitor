@@ -45,7 +45,7 @@ would see.
 | `test_runtime_deadlines.py` | Nested request alarms restoring the enclosing watchdog deadline, and the POSIX-only guard |
 | `test_cleanup_and_compatibility.py` | Case-sensitive ID handling, UTF-8 CSV writes and export round-trips |
 | `test_doctor.py` | `--doctor` environment, dependency, cookie and settings checks |
-| `test_repository_contracts.py` | Governance documents, issue templates, action pinning, release gating and declared versions |
+| `test_repository_contracts.py` | Governance documents, issue templates, action pinning, release gating and declared versions plus repository metadata: citation, funding, line endings, the declared editor style, the pinned linter and release integrity |
 
 ## Conventions
 
