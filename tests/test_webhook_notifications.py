@@ -619,6 +619,56 @@ def test_generated_config_includes_webhook_settings():
     assert namespace["DETECT_CHANGED_PROFILE_PIC"] is True
 
 
+# Artwork is an optional extra, so the wizard must offer to install it instead of silently enabling a dead setting
+def test_wizard_artwork_prompt_offers_installation_when_pillow_is_missing(monkeypatch):
+    monkeypatch.setattr(monitor, "_wizard_notification_images_dependency_available", lambda: False)
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", Mock(side_effect=[True, True]))
+    installs = Mock(return_value=True)
+    monkeypatch.setattr(monitor, "_wizard_install_notification_images_dependency", installs)
+
+    assert monitor._wizard_collect_notification_images("Attach artwork?") is True
+    assert installs.call_count == 1
+
+
+# Declining the feature must never trigger an installation prompt
+def test_wizard_artwork_prompt_skips_installation_when_declined(monkeypatch):
+    monkeypatch.setattr(monitor, "_wizard_notification_images_dependency_available", lambda: False)
+    asks = Mock(side_effect=[False])
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", asks)
+    installs = Mock(return_value=True)
+    monkeypatch.setattr(monitor, "_wizard_install_notification_images_dependency", installs)
+
+    assert monitor._wizard_collect_notification_images("Attach artwork?") is False
+    assert asks.call_count == 1
+    assert installs.call_count == 0
+
+
+# A refused installation must leave the setting off rather than enabling artwork that cannot be produced
+def test_wizard_artwork_setting_stays_off_when_installation_fails(monkeypatch):
+    monkeypatch.setattr(monitor, "_wizard_notification_images_dependency_available", lambda: False)
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", Mock(side_effect=[True, True]))
+    monkeypatch.setattr(monitor, "_wizard_install_notification_images_dependency", Mock(return_value=False))
+
+    assert monitor._wizard_collect_notification_images("Attach artwork?") is False
+
+
+# The install must take effect in the running process, or the wizard enables a setting this run cannot honor
+@requires_pillow
+def test_refresh_restores_artwork_availability_after_installation(monkeypatch):
+    monkeypatch.setattr(monitor, "PILImage", None)
+    monkeypatch.setattr(monitor, "NOTIFICATION_IMAGES_AVAILABLE", False)
+
+    assert monitor.refresh_notification_images_availability() is True
+    assert monitor.NOTIFICATION_IMAGES_AVAILABLE is True
+    assert monitor.PILImage is not None
+
+
+# Both artwork settings belong to the wizard sections that own them, or re-running setup leaves a stale value
+def test_wizard_sections_own_their_artwork_settings():
+    assert "EMAIL_IMAGES" in monitor.WIZARD_EMAIL_CONFIG_KEYS
+    assert "NTFY_IMAGES" in monitor.WIZARD_WEBHOOK_CONFIG_KEYS
+
+
 # Verifies webhook delivery honors VERIFY_SSL like every other request, so a TLS-inspecting proxy works
 def test_webhook_delivery_honors_the_verification_setting(monkeypatch):
     configure_webhook(monkeypatch)
