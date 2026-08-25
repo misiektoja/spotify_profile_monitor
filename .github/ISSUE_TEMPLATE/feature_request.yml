@@ -1,0 +1,50 @@
+name: Feature request
+description: Ask for a capability that spotify_profile_monitor does not have yet
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The [README](https://github.com/misiektoja/spotify_profile_monitor#table-of-contents) describes what is already supported, including token sources, notification channels, playlist export and output formats. Check the [configuration section](https://github.com/misiektoja/spotify_profile_monitor#configuration) before asking for a setting that may already exist.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What you are trying to do and where the tool gets in the way today.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like it to do
+      description: The behavior you want, including the command-line option or configuration setting you imagine.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the tool this concerns
+      options:
+        - Profile and follower monitoring
+        - Playlist monitoring
+        - Playlist export and listing tools
+        - Notifications (email, Discord, ntfy)
+        - Setup wizard and configuration
+        - Authentication and tokens
+        - Log and CSV output
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Existing settings or workarounds you tried and why they were not enough.
+    validations:
+      required: false
