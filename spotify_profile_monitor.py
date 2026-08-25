@@ -50,7 +50,7 @@ TARGET_USER_URI_ID = ""
 #   Firefox import needs no extra dependency. Chrome, Brave and Chromium are also supported on macOS and Linux
 #   through the optional browser extra. Imported cookies are validated before the dotenv file changes.
 # - Manual fallback: follow the cookie extraction guide:
-#   https://github.com/misiektoja/spotify_profile_monitor#manual-cookie-extraction
+#   https://misiektoja.github.io/spotify_profile_monitor/configuration/#manual-cookie-extraction
 # - Provide the SP_DC_COOKIE secret using one of the following methods:
 #   - Recommended manual entry: run --set-sp-dc to use a hidden prompt, validate the cookie and save it to ".env"
 #   - Add it directly to a ".env" file for persistent use
@@ -469,7 +469,7 @@ TOKEN_RETRY_TIMEOUT = 0.5  # 0.5 second
 # example 'Bad credentials' or repeated token refresh errors) even though your sp_dc cookie is still valid.
 # To refresh them:
 #   - Run the spotify_monitor_secret_grabber tool to extract the current version and cipher bytes from the
-#     live web-player bundle (see the "Secret Key Extraction from Spotify Web Player Bundles" README section)
+#     live web-player bundle (see https://misiektoja.github.io/spotify_profile_monitor/debugging/)
 #   - Set TOTP_VERSION to the extracted version identifier (a positive integer)
 #   - Set TOTP_SECRET_CIPHER_BYTES to the extracted cipher bytes (a non-empty sequence of integers)
 TOTP_VERSION = 61
@@ -782,22 +782,23 @@ CHROMIUM_USER_DATA_DIRS = {
 }
 
 PROJECT_URL = "https://github.com/misiektoja/spotify_profile_monitor"
-QUICK_START_GUIDE_URL = PROJECT_URL + "#quick-start"
-INSTALLATION_GUIDE_URL = PROJECT_URL + "#installation"
-CONFIG_GUIDE_URL = PROJECT_URL + "#configuration-file"
-COOKIE_GUIDE_URL = PROJECT_URL + "#spotify-sp_dc-cookie"
-MANUAL_COOKIE_GUIDE_URL = PROJECT_URL + "#manual-cookie-extraction"
-CLIENT_GUIDE_URL = PROJECT_URL + "#spotify-desktop-client"
-TARGET_GUIDE_URL = PROJECT_URL + "#how-to-find-a-friends-spotify-profile-url"
-SMTP_GUIDE_URL = PROJECT_URL + "#smtp-settings"
-WEBHOOK_GUIDE_URL = PROJECT_URL + "#webhook-settings"
-SECRETS_GUIDE_URL = PROJECT_URL + "#storing-secrets"
-INTERVALS_GUIDE_URL = PROJECT_URL + "#check-intervals"
-DOCTOR_GUIDE_URL = PROJECT_URL + "#doctor-self-check"
-OAUTH_GUIDE_URL = PROJECT_URL + "#spotify-oauth-app"
-OAUTH_USER_GUIDE_URL = PROJECT_URL + "#spotify-oauth-user"
-BROWSER_COOKIE_GUIDE_URL = PROJECT_URL + "#browser-cookie-import"
-SETUP_GUIDE_URL = PROJECT_URL + "#setup-wizard"
+DOCUMENTATION_URL = "https://misiektoja.github.io/spotify_profile_monitor"
+QUICK_START_GUIDE_URL = DOCUMENTATION_URL + "/setup-and-first-run/"
+INSTALLATION_GUIDE_URL = DOCUMENTATION_URL + "/installation/#requirements"
+CONFIG_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#configuration-file"
+COOKIE_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-sp_dc-cookie"
+MANUAL_COOKIE_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#manual-cookie-extraction"
+CLIENT_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-desktop-client"
+TARGET_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#how-to-find-a-friends-spotify-profile-url"
+SMTP_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#smtp-settings"
+WEBHOOK_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#webhook-settings"
+SECRETS_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#storing-secrets"
+INTERVALS_GUIDE_URL = DOCUMENTATION_URL + "/usage/#check-intervals"
+DOCTOR_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#doctor-preflight"
+OAUTH_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-oauth-app"
+OAUTH_USER_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-oauth-user"
+BROWSER_COOKIE_GUIDE_URL = DOCUMENTATION_URL + "/setup-and-first-run/#browser-cookie-import"
+SETUP_GUIDE_URL = DOCUMENTATION_URL + "/setup-and-first-run/#setup-wizard"
 SPOTIFY_WEB_BASE_URL = "https://open.spotify.com"
 SPOTIFY_WEB_LOGIN_URL = SPOTIFY_WEB_BASE_URL + "/"
 SPOTIFY_API_BASE_URL = "https://api.spotify.com/v1"
