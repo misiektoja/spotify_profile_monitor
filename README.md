@@ -103,8 +103,7 @@ spotify_profile_monitor --setup
 9. [Security](#security)
 10. [Maintainers](#maintainers)
 11. [License](#license)
-12. [Citation](#citation)
-13. [Support](#support)
+12. [Support](#support)
 
 <a id="requirements"></a>
 ## Requirements
@@ -1390,11 +1389,6 @@ Report a suspected vulnerability privately through [GitHub security advisories](
 ## License
 
 Licensed under GPLv3. See [LICENSE](https://github.com/misiektoja/spotify_profile_monitor/blob/main/LICENSE). Dependency licenses are listed in [THIRD_PARTY_NOTICES.md](https://github.com/misiektoja/spotify_profile_monitor/blob/main/THIRD_PARTY_NOTICES.md).
-
-<a id="citation"></a>
-## Citation
-
-If you use spotify_profile_monitor in research or writing, cite it with the metadata in [CITATION.cff](https://github.com/misiektoja/spotify_profile_monitor/blob/main/CITATION.cff). GitHub renders it as **Cite this repository** on the repository page and exports it as BibTeX or APA.
 
 <a id="support"></a>
 ## Support
