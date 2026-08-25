@@ -4,7 +4,7 @@ spotify_profile_monitor is a real-time OSINT tool for tracking Spotify profile, 
 
 ## Before contributing
 
-Open an issue or a [discussion](https://github.com/misiektoja/spotify_profile_monitor/discussions) before starting substantial work, so an approach is agreed before you write it. Suspected vulnerabilities go through [SECURITY.md](SECURITY.md), never a public issue.
+Open an issue or a [discussion](https://github.com/misiektoja/spotify_profile_monitor/discussions) before starting substantial work, so an approach is agreed before you write it. [SUPPORT.md](SUPPORT.md) lists where usage questions and bug reports belong. Suspected vulnerabilities go through [SECURITY.md](SECURITY.md), never a public issue.
 
 Contribute only code you have the right to license under GPL-3.0-or-later.
 
@@ -27,8 +27,17 @@ pip install -e '.[test,browser]'
 ## Development checks
 
 ```sh
+python -m ruff check spotify_profile_monitor.py tests
 python -m pytest
 ```
+
+The linter comes from a pinned extra so a new ruff release cannot fail your build on a rule that did not exist yet:
+
+```sh
+pip install -e '.[lint]'
+```
+
+It selects defect rules only (pyflakes and bugbear). Formatting and import order are deliberately not enforced, so keep following the surrounding code.
 
 The default suite is offline. It never contacts Spotify and network functions are replaced with local test doubles. See [tests/README.md](tests/README.md) for what each test file covers.
 
@@ -48,3 +57,12 @@ Pull requests target `dev`. The pull request template lists the checks to report
 ## Code style
 
 The codebase favors complete implementations over minimal patches, explicit validation of anything Spotify supplies and one concise summary comment directly above each shared function. Follow the surrounding code rather than introducing a new style.
+
+Optional local hooks run the same linter, the whitespace rules and a private-key check before a commit is written:
+
+```sh
+pip install pre-commit
+pre-commit install
+```
+
+[.editorconfig](.editorconfig) records the whitespace rules the repository already follows: UTF-8, LF line endings, a final newline, no trailing whitespace, four-space indentation for Python and two spaces for YAML and TOML. Most editors apply it automatically, a few need a plugin. The test suite checks tracked files against the same rules, so a change made in an editor that ignores them will fail CI.
