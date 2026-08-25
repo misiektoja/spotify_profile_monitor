@@ -1,0 +1,102 @@
+name: Bug report
+description: Report incorrect or unexpected behavior
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report a suspected vulnerability here. Follow [SECURITY.md](https://github.com/misiektoja/spotify_profile_monitor/blob/main/SECURITY.md) instead.
+
+        Never paste your `sp_dc` cookie, a Protobuf login file, Spotify OAuth client credentials, a refresh token, an SMTP password, a webhook URL or an ntfy token into an issue. Logs and `--doctor` output can name the profiles you monitor, so redact anything you do not want public.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you expected and what happened instead. Include the exact error text when there is one.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce
+      description: The steps, including the command you ran and the relevant settings from your configuration file. Redact targets, credentials and webhook URLs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: Doctor output
+      description: "Output of `spotify_profile_monitor --doctor`, redacted. It reports the token source, connectivity, configured files and target reachability."
+      render: shell
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output
+      description: The lines around the failure, redacted. Run with `--debug` when the cause is unclear.
+      render: shell
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: spotify_profile_monitor version
+      description: "Output of `spotify_profile_monitor --version`."
+      placeholder: "3.7.1"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install-method
+    attributes:
+      label: How it is installed
+      options:
+        - PyPI (pip install spotify_profile_monitor)
+        - Standalone script
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and Python version
+      description: "For example: macOS 15.5, Python 3.13.2."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: token-source
+    attributes:
+      label: Token source in use
+      options:
+        - Cookie (sp_dc)
+        - Desktop client (captured Protobuf login file)
+        - OAuth app credentials
+        - OAuth user credentials
+        - Not sure
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the tool this concerns
+      options:
+        - Profile and follower monitoring
+        - Playlist monitoring
+        - Playlist export and listing tools
+        - Notifications (email, Discord, ntfy)
+        - Setup wizard and configuration
+        - Authentication and tokens
+        - Log and CSV output
+        - Other
+    validations:
+      required: false
