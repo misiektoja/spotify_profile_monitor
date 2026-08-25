@@ -1,6 +1,5 @@
 import ast
 import inspect
-import os
 import re
 import signal
 import time
@@ -32,10 +31,6 @@ def http_calls_with_verification():
         yield node.lineno, ast.unparse(node.func.value), None if verify is None else ast.unparse(verify)
 
 
-POSIX_ALARMS = pytest.mark.skipif(os.name != "posix" or not hasattr(signal, "setitimer"), reason="POSIX interval timers only")
-POSIX_SIGHUP = pytest.mark.skipif(not hasattr(signal, "SIGHUP"), reason="SIGHUP is POSIX-only")
-
-
 @contextmanager
 # Arms a real interval timer for the test and always clears it, so a failure cannot leak a pending SIGALRM
 def real_alarm(delay):
@@ -49,9 +44,10 @@ def real_alarm(delay):
         signal.signal(signal.SIGALRM, previous_handler)
 
 
-@POSIX_ALARMS
 # Confirms a nested request alarm restores the enclosing loop deadline instead of discarding it
 def test_nested_timeout_alarm_restores_outer_deadline(monkeypatch):
+    if not hasattr(monitor.signal, "setitimer"):
+        pytest.skip("POSIX interval timers are unavailable on Windows")
     get_handler = Mock(side_effect=["original-handler", monitor.timeout_handler])
     get_timer = Mock(side_effect=[(0.0, 0.0), (28.0, 0.0)])
     set_handler = Mock()
@@ -78,9 +74,10 @@ def test_nested_timeout_alarm_restores_outer_deadline(monkeypatch):
     assert set_handler.call_args_list[-2:] == [call(monitor.signal.SIGALRM, monitor.timeout_handler), call(monitor.signal.SIGALRM, "original-handler")]
 
 
-@POSIX_ALARMS
 # Confirms a longer nested timeout is clamped down so it cannot postpone the enclosing watchdog
 def test_nested_alarm_never_extends_the_enclosing_deadline(monkeypatch):
+    if not hasattr(monitor.signal, "setitimer"):
+        pytest.skip("POSIX interval timers are unavailable on Windows")
     set_timer = Mock()
     monkeypatch.setattr(monitor.platform, "system", lambda: "Linux")
     monkeypatch.setattr(monitor.signal, "getsignal", lambda sig: "original-handler")
@@ -93,9 +90,10 @@ def test_nested_alarm_never_extends_the_enclosing_deadline(monkeypatch):
     assert set_timer.call_args_list == [call(monitor.signal.ITIMER_REAL, 4.0)]
 
 
-@POSIX_ALARMS
 # Confirms a restore never resurrects an expired deadline as a disabled timer
 def test_restore_keeps_an_overrun_deadline_armed(monkeypatch):
+    if not hasattr(monitor.signal, "setitimer"):
+        pytest.skip("POSIX interval timers are unavailable on Windows")
     set_timer = Mock()
     monotonic = Mock(side_effect=[100.0, 400.0])
     monkeypatch.setattr(monitor.platform, "system", lambda: "Linux")
@@ -110,9 +108,10 @@ def test_restore_keeps_an_overrun_deadline_armed(monkeypatch):
     assert set_timer.call_args_list[-1] == call(monitor.signal.ITIMER_REAL, 0.000001, 0.0)
 
 
-@POSIX_ALARMS
 # Confirms no enclosing deadline means the timer is cleared rather than left running
 def test_restore_clears_the_timer_when_nothing_enclosed_it(monkeypatch):
+    if not hasattr(monitor.signal, "setitimer"):
+        pytest.skip("POSIX interval timers are unavailable on Windows")
     set_timer = Mock()
     monkeypatch.setattr(monitor.platform, "system", lambda: "Linux")
     monkeypatch.setattr(monitor.signal, "getsignal", lambda sig: "original-handler")
@@ -145,9 +144,10 @@ def test_timeout_alarm_is_noop_without_setitimer(monkeypatch):
     monitor._restore_timeout_alarm(None)
 
 
-@POSIX_ALARMS
 # Confirms the real regression: a token helper's own alarm no longer cancels the main-loop watchdog
 def test_token_helper_leaves_the_loop_watchdog_armed(monkeypatch):
+    if not hasattr(monitor.signal, "setitimer"):
+        pytest.skip("POSIX interval timers are unavailable on Windows")
     monkeypatch.setattr(monitor, "TOKEN_SOURCE", "cookie")
     monkeypatch.setattr(monitor.req, "get", Mock(return_value=Mock(status_code=200)))
 
@@ -159,9 +159,10 @@ def test_token_helper_leaves_the_loop_watchdog_armed(monkeypatch):
     assert remaining <= 30
 
 
-@POSIX_ALARMS
 # Confirms a token helper that fails still restores the enclosing deadline through its finally
 def test_failed_token_helper_leaves_the_loop_watchdog_armed(monkeypatch):
+    if not hasattr(monitor.signal, "setitimer"):
+        pytest.skip("POSIX interval timers are unavailable on Windows")
     monkeypatch.setattr(monitor, "TOKEN_SOURCE", "cookie")
     monkeypatch.setattr(monitor.req, "get", Mock(side_effect=Exception("connection reset")))
 
@@ -172,9 +173,10 @@ def test_failed_token_helper_leaves_the_loop_watchdog_armed(monkeypatch):
     assert remaining > 0
 
 
-@POSIX_ALARMS
 # Confirms the restored deadline still fires, so a wedged request cannot hang the loop forever
 def test_restored_watchdog_still_fires(monkeypatch):
+    if not hasattr(monitor.signal, "setitimer"):
+        pytest.skip("POSIX interval timers are unavailable on Windows")
     monkeypatch.setattr(monitor, "TOKEN_SOURCE", "cookie")
     monkeypatch.setattr(monitor.req, "get", Mock(return_value=Mock(status_code=200)))
 
@@ -184,9 +186,10 @@ def test_restored_watchdog_still_fires(monkeypatch):
             time.sleep(1.5)
 
 
-@POSIX_ALARMS
 # Confirms an unnested arm and restore leaves no stray timer behind for the next loop iteration
 def test_unnested_alarm_leaves_no_pending_timer():
+    if not hasattr(monitor.signal, "setitimer"):
+        pytest.skip("POSIX interval timers are unavailable on Windows")
     monitor._restore_timeout_alarm(monitor._start_timeout_alarm(30))
 
     assert signal.getitimer(signal.ITIMER_REAL)[0] == 0.0
@@ -218,9 +221,10 @@ def test_main_loop_arms_the_watchdog_with_alarm_timeout():
     assert re.search(r"except TimeoutException[\s\S]{0,400}?time\.sleep\(ALARM_RETRY\)", source), "a watchdog timeout must retry on the alarm delay"
 
 
-@POSIX_SIGHUP
 # Confirms a SIGHUP reload picks up rotated secrets from the dotenv file
 def test_sighup_reloads_rotated_secrets(monkeypatch, tmp_path, capsys):
+    if not hasattr(monitor.signal, "SIGHUP"):
+        pytest.skip("SIGHUP is unavailable on Windows")
     env_file = tmp_path / "rotated.env"
     env_file.write_text("SP_DC_COOKIE=rotated-cookie-value\n", encoding="utf-8")
     monkeypatch.setattr(monitor, "DOTENV_FILE", str(env_file))
@@ -240,9 +244,10 @@ def test_sighup_reloads_rotated_secrets(monkeypatch, tmp_path, capsys):
     assert "rotated-cookie-value" not in output, "a reloaded secret must never be echoed"
 
 
-@POSIX_SIGHUP
 # Confirms an unchanged dotenv leaves the cached token in place so SIGHUP is not a forced re-auth
 def test_sighup_without_changes_keeps_the_cached_token(monkeypatch, tmp_path):
+    if not hasattr(monitor.signal, "SIGHUP"):
+        pytest.skip("SIGHUP is unavailable on Windows")
     env_file = tmp_path / "unchanged.env"
     env_file.write_text("SP_DC_COOKIE=same-cookie-value\n", encoding="utf-8")
     monkeypatch.setattr(monitor, "DOTENV_FILE", str(env_file))
@@ -256,9 +261,10 @@ def test_sighup_without_changes_keeps_the_cached_token(monkeypatch, tmp_path):
     assert monitor.SP_CACHED_ACCESS_TOKEN == "live-token"
 
 
-@POSIX_SIGHUP
 # Confirms DOTENV_FILE set to none disables the reload rather than scanning for a stray .env
 def test_sighup_honors_disabled_dotenv(monkeypatch, tmp_path):
+    if not hasattr(monitor.signal, "SIGHUP"):
+        pytest.skip("SIGHUP is unavailable on Windows")
     monkeypatch.setattr(monitor, "DOTENV_FILE", "none")
     monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
     monkeypatch.setattr(monitor, "TOKEN_SOURCE", "cookie")
