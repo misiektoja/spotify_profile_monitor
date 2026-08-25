@@ -2,7 +2,9 @@ import argparse
 import contextlib
 import inspect
 import os
+import re
 import sqlite3
+import sys
 import tempfile
 from pathlib import Path
 
@@ -198,10 +200,37 @@ def test_no_stray_added_removed_prints():
 
 # Confirms requirements.txt declares the same lower bounds as the package metadata
 def test_requirements_match_project_metadata():
-    requirements = (PROJECT_ROOT / "requirements.txt").read_text(encoding="utf-8").split()
+    lines = (PROJECT_ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
+    # Commented lines document the optional extras, which carry their own markers and are asserted separately
+    requirements = [line.strip() for line in lines if line.strip() and not line.strip().startswith("#")]
     pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
 
     assert requirements, "requirements.txt must not be empty"
     for requirement in requirements:
         assert ">=" in requirement, f"{requirement} has no lower bound"
         assert f'"{requirement}"' in pyproject, f"{requirement} is missing from pyproject dependencies"
+
+
+# Verifies artwork support ships as an optional extra that keeps Python 3.9 on the last Pillow it supports
+def test_artwork_support_is_an_optional_extra():
+    pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    requirements = (PROJECT_ROOT / "requirements.txt").read_text(encoding="utf-8")
+
+    runtime_block = re.search(r"^dependencies = \[(.*?)^\]", pyproject, re.M | re.S)
+    assert runtime_block is not None and "Pillow" not in runtime_block.group(1)
+    assert "notification-images = [\"Pillow>=11.3.0,<12; python_version < '3.10'\", \"Pillow>=12.0.0; python_version >= '3.10'\"]" in pyproject
+    assert not any(line.strip().startswith("Pillow") for line in requirements.splitlines())
+    assert '# Pillow>=12.0.0; python_version >= "3.10"' in requirements
+
+
+# The requirement must track the interpreter, since Pillow 12 refuses to install on Python 3.9
+def test_artwork_requirement_follows_the_running_interpreter():
+    requirement = monitor.notification_images_requirement()
+
+    assert requirement == ("Pillow>=11.3.0,<12" if sys.version_info < (3, 10) else "Pillow>=12.0.0")
+
+
+# A user who enabled artwork without Pillow needs the exact install command, not only the missing-feature notice
+def test_artwork_install_command_names_the_extra():
+    assert "spotify_profile_monitor[notification-images]" in monitor.notification_images_install_command("pip")
+    assert monitor.notification_images_requirement() in monitor.notification_images_install_command("manual")
