@@ -4,8 +4,8 @@ contact_links:
     url: https://github.com/misiektoja/spotify_profile_monitor/security/advisories/new
     about: Report privately through GitHub. Never open a public issue for a suspected vulnerability.
   - name: Documentation
-    url: https://github.com/misiektoja/spotify_profile_monitor#table-of-contents
-    about: Installation, setup, token sources, configuration, usage and troubleshooting.
+    url: https://misiektoja.github.io/spotify_profile_monitor/
+    about: Installation, setup, configuration, usage, debugging and troubleshooting.
   - name: Question or idea
     url: https://github.com/misiektoja/spotify_profile_monitor/discussions
     about: Ask about usage or discuss an approach before opening an issue.
