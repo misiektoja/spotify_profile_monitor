@@ -1046,6 +1046,19 @@ except ImportError:
 NOTIFICATION_IMAGES_AVAILABLE = PILImage is not None
 
 
+# Reimports optional Pillow support after an installation and reports whether artwork is available
+def refresh_notification_images_availability() -> bool:
+    global PILImage, NOTIFICATION_IMAGES_AVAILABLE
+    importlib.invalidate_caches()
+    try:
+        from PIL import Image as reloaded_image_module
+        PILImage = reloaded_image_module
+    except ImportError:
+        PILImage = None
+    NOTIFICATION_IMAGES_AVAILABLE = PILImage is not None
+    return NOTIFICATION_IMAGES_AVAILABLE
+
+
 # Stores one stable recovery category with secret-safe user guidance
 @dataclass(frozen=True)
 class RecoveryAdvice:
@@ -7421,6 +7434,47 @@ def notification_images_install_command(method: Optional[str] = None) -> str:
     return _wizard_render_command([executable, "-m", "pip", "install", requirement])
 
 
+# Returns whether optional artwork support is installed in the active environment
+def _wizard_notification_images_dependency_available() -> bool:
+    try:
+        return importlib.util.find_spec("PIL") is not None
+    except (AttributeError, ImportError, ValueError):
+        return False
+
+
+# Installs optional email and ntfy artwork support after user approval
+def _wizard_install_notification_images_dependency(method: str) -> bool:
+    requirement = "spotify_profile_monitor[notification-images]" if method == "pip" else notification_images_requirement()
+    executable = sys.executable or ("python" if platform.system() == "Windows" else "python3")
+    command = [executable, "-m", "pip", "install", requirement]
+    print(f"Installing artwork support with:\n    {_wizard_render_command(command)}\n")
+    try:
+        result = subprocess.run(command, check=False)
+    except OSError as exc:
+        print(f"  Installation could not start: {exc}")
+        return False
+    if result.returncode == 0 and refresh_notification_images_availability():
+        print("\nArtwork support was installed successfully.")
+        return True
+    print("\nArtwork support could not be installed. Keeping alerts text-only.")
+    return False
+
+
+# Offers artwork attachments for one channel and installs the shared Pillow dependency on request
+def _wizard_collect_notification_images(question: str) -> bool:
+    available = _wizard_notification_images_dependency_available()
+    if not available:
+        print("  Artwork attachments need the optional Pillow package, which is not installed.")
+    if not _wizard_ask_yes_no(question, default=available):
+        return False
+    if available:
+        return True
+    if not _wizard_ask_yes_no("Install Pillow now?", default=True):
+        print("  Keeping alerts text-only. Install Pillow later then enable the setting.")
+        return False
+    return _wizard_install_notification_images_dependency(_wizard_install_method())
+
+
 # Returns command arguments using friendly names or exact runtime paths
 def _wizard_local_command_args(method: str, exact: bool = False) -> List[str]:
     if exact:
@@ -8531,7 +8585,7 @@ def _wizard_validate_smtp(values: dict, password: str) -> Optional[str]:
 # Collects SMTP settings and profile-monitor notification choices
 def _wizard_collect_email(config_values: dict, secret_updates: dict, env_path: Path) -> List[str]:
     if not _wizard_ask_yes_no("Configure email notifications?", default=False):
-        config_values.update({"PROFILE_NOTIFICATION": False, "FOLLOWERS_FOLLOWINGS_NOTIFICATION": False, "ERROR_NOTIFICATION": False})
+        config_values.update({"PROFILE_NOTIFICATION": False, "FOLLOWERS_FOLLOWINGS_NOTIFICATION": False, "ERROR_NOTIFICATION": False, "EMAIL_IMAGES": False})
         return []
     while True:
         smtp_values = {
@@ -8563,6 +8617,7 @@ def _wizard_collect_email(config_values: dict, secret_updates: dict, env_path: P
     if not selected["PROFILE_NOTIFICATION"]:
         selected["FOLLOWERS_FOLLOWINGS_NOTIFICATION"] = False
     config_values.update(selected)
+    config_values["EMAIL_IMAGES"] = _wizard_collect_notification_images("Attach playlist and album artwork to email notifications?") if selected["PROFILE_NOTIFICATION"] else False
     labels = {"PROFILE_NOTIFICATION": "profile", "FOLLOWERS_FOLLOWINGS_NOTIFICATION": "followers/followings", "ERROR_NOTIFICATION": "errors"}
     return [labels[name] for name in labels if selected[name]]
 
@@ -8595,7 +8650,7 @@ def _wizard_collect_ntfy_access_token(secret_updates: dict, env_path: Path) -> N
 # Collects hidden webhook details and profile-monitor alert choices
 def _wizard_collect_webhook(config_values: dict, secret_updates: dict, env_path: Path) -> List[str]:
     if not _wizard_ask_yes_no("Set up webhook alerts (Discord, ntfy etc.)?", default=False):
-        config_values.update({"WEBHOOK_ENABLED": False, "WEBHOOK_PROFILE_NOTIFICATION": False, "WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION": False, "WEBHOOK_ERROR_NOTIFICATION": False})
+        config_values.update({"WEBHOOK_ENABLED": False, "WEBHOOK_PROFILE_NOTIFICATION": False, "WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION": False, "WEBHOOK_ERROR_NOTIFICATION": False, "NTFY_IMAGES": False})
         return []
     provider_choice = _wizard_ask_choice("Which webhook service should receive alerts?", [("Discord", "Sends a Discord embed to one channel webhook."), ("ntfy", "Sends a native notification to one ntfy topic URL.")])
     provider = "discord" if provider_choice == 0 else "ntfy"
@@ -8633,13 +8688,14 @@ def _wizard_collect_webhook(config_values: dict, secret_updates: dict, env_path:
     if not selected["WEBHOOK_PROFILE_NOTIFICATION"]:
         selected["WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION"] = False
     config_values.update(selected)
+    config_values["NTFY_IMAGES"] = _wizard_collect_notification_images("Attach profile and playlist artwork to ntfy alerts?") if provider == "ntfy" else False
     labels = {"WEBHOOK_PROFILE_NOTIFICATION": "profile", "WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION": "followers/followings", "WEBHOOK_ERROR_NOTIFICATION": "errors"}
     return [labels[name] for name in labels if selected[name]]
 
 
 WIZARD_AUTH_CONFIG_KEYS = ("TOKEN_SOURCE", "LOGIN_REQUEST_BODY_FILE", "DEVICE_ID", "SYSTEM_ID", "USER_URI_ID")
-WIZARD_EMAIL_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL", "PROFILE_NOTIFICATION", "FOLLOWERS_FOLLOWINGS_NOTIFICATION", "ERROR_NOTIFICATION")
-WIZARD_WEBHOOK_CONFIG_KEYS = ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "WEBHOOK_PROFILE_NOTIFICATION", "WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION")
+WIZARD_EMAIL_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL", "PROFILE_NOTIFICATION", "FOLLOWERS_FOLLOWINGS_NOTIFICATION", "ERROR_NOTIFICATION", "EMAIL_IMAGES")
+WIZARD_WEBHOOK_CONFIG_KEYS = ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "WEBHOOK_PROFILE_NOTIFICATION", "WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION", "NTFY_IMAGES")
 
 
 # Holds editable setup answers until the user saves them
