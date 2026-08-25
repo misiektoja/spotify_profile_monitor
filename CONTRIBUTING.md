@@ -18,6 +18,8 @@ cd spotify_profile_monitor
 pip install -e '.[test]'
 ```
 
+The test extra already installs Pillow, so the artwork tests run without the `notification-images` extra.
+
 Add the optional extra when you touch browser cookie import:
 
 ```sh
