@@ -2,9 +2,9 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 3.7.1 (TBD)
+# Changes in 3.8 (TBD)
 
-Version **3.7.1** is a maintenance release that restores **Python 3.9 support**, makes **config-file polling and connectivity settings take effect**, hardens **profile-picture emails and the anti-hang watchdog** and clarifies **ntfy webhook customization**. Spotify-supplied names and descriptions can no longer drive your terminal, carry a formula into an exported CSV or break out of a link in an email notification. It also fixes **playlist link parsing** that could abort a full playlist export, makes **`-s` search terms** work with spaces and punctuation, bounds **profile-picture downloads** and keeps **webhook alerts on the destination you configured**. Configuration files are now **read as data instead of executed**, and paginated Spotify requests stay bound to Spotify hosts.
+Version **3.8** restores **Python 3.9 support**, makes **config-file polling and connectivity settings take effect** and hardens **profile-picture emails and the anti-hang watchdog**. Spotify-supplied names and descriptions can no longer drive your terminal, carry a formula into an exported CSV or break out of a link in an email notification, and replacing a configuration file no longer leaves a **world-readable backup** beside it. It also fixes **playlist link parsing** that could abort a full playlist export, makes **`-s` search terms** work with spaces and punctuation, bounds **profile-picture downloads** and keeps **webhook alerts on the destination you configured**. Configuration files are now **read as data instead of executed**, and paginated Spotify requests stay bound to Spotify hosts. The project itself gains a published **security policy** with private vulnerability reporting, guided **issue and pull request templates**, contribution and dependency licensing documentation, and a **PyPI release that cannot publish until the full test suite passes**.
 
 **Features and improvements**:
 
