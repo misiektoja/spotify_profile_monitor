@@ -1382,8 +1382,8 @@ Report a suspected vulnerability privately through [GitHub security advisories](
 <a id="maintainers"></a>
 ## Maintainers
 
-[![Maintainer: misiektoja](https://img.shields.io/badge/maintainer-misiektoja-blue)](https://github.com/misiektoja)
-[![Maintainer: tomballgithub](https://img.shields.io/badge/maintainer-tomballgithub-blue)](https://github.com/tomballgithub)
+- **misiektoja** ([@misiektoja](https://github.com/misiektoja))
+- **tomballgithub** ([@tomballgithub](https://github.com/tomballgithub))
 
 <a id="license"></a>
 ## License
