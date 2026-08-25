@@ -233,6 +233,8 @@ Run `spotify_profile_monitor --setup` in an interactive terminal. Press Enter to
 
 If the selected config file already exists, setup asks before replacement or lets you choose another destination. An approved replacement creates a timestamped `.bak` copy and validates the new Python config before atomically installing it. A manually entered `sp_dc` value is validated before it is queued for saving. Setup can then run Doctor and optionally start monitoring.
 
+When you enable email or ntfy alerts, setup offers artwork attachments. If the optional Pillow package is missing it says so and can install the `notification-images` extra for you, then enables the matching setting only when the install succeeds. Declining keeps the alerts text-only.
+
 Polling intervals accept seconds or readable durations such as `90`, `2m`, `1.5h` or `1h 30m`.
 
 Generated Doctor, browser import and monitoring commands use the active Python interpreter. They also carry explicit `--config-file` and `--env-file` paths so virtual environments and custom destinations remain intact.
