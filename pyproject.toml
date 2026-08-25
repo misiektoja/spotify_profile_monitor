@@ -40,7 +40,7 @@ classifiers = [
 keywords = ["spotify", "monitoring", "tracking", "real-time", "playlists", "osint"]
 
 [project.optional-dependencies]
-test = ["pytest>=7.0"]
+test = ["pytest>=7.0", "pyyaml>=6.0"]
 # Needed only to import Chrome/Brave/Chromium cookies (--import-browser-cookie); macOS and Linux only
 browser = ["pycookiecheat>=0.8"]
 
