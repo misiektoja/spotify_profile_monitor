@@ -128,11 +128,11 @@ You can provide `SP_DC_COOKIE` in these ways:
 * Pass it for one run with `-u` or `--spotify-dc-cookie`. This is not recommended because the value may appear in shell history or process listings.
 * Store it in the configuration file or source code as a last resort. This is not recommended because it is easier to expose or commit accidentally.
 
-If your `sp_dc` cookie expires, the tool will notify you via the console and email. In that case, you'll need to grab the new `sp_dc` cookie value.
+If your `sp_dc` cookie expires, the tool reports the error in the console and sends it through each enabled notification channel: email, Discord or ntfy. In that case, you'll need to grab the new `sp_dc` cookie value.
 
 If you store the `SP_DC_COOKIE` in a dotenv file you can update its value and send a `SIGHUP` signal to reload the file with the new `sp_dc` cookie without restarting the tool. More info in [Storing Secrets](#storing-secrets) and [Signal Controls (macOS/Linux/Unix)](usage.md#signal-controls-macoslinuxunix).
 
-> **NOTE:** Spotify still requires TOTP parameters for web-player token requests. The web player continues to select v61 which was first published in January 2026. Version 3.5 embeds v61 directly and no longer downloads a third-party secret dictionary. The version and cipher bytes are exposed as the `TOTP_VERSION` and `TOTP_SECRET_CIPHER_BYTES` config options, so if Spotify resumes rotation you can patch them from the config file without a code release. Use [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) to extract the current bundle values then update those two options.
+> **NOTE:** Spotify still requires TOTP parameters for web-player token requests. The web player continues to select v61 which was first published in January 2026. Version 3.5 embeds v61 directly and no longer downloads a third-party secret dictionary. The version and cipher bytes are exposed as the `TOTP_VERSION` and `TOTP_SECRET_CIPHER_BYTES` config options, so if Spotify resumes rotation you can patch them from the config file without a code release. Use [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/main/debug/spotify_monitor_secret_grabber.py) to extract the current bundle values then update those two options.
 
 <a id="spotify-desktop-client"></a>
 ### Spotify Desktop Client
@@ -180,7 +180,7 @@ The same applies to `--token-source client` flag - you can persist it via `TOKEN
 
 The tool will automatically refresh both the access token and client token using the intercepted refresh token.
 
-If your refresh token expires, the tool will notify you via the console and email. In that case, you'll need to re-export the login request body.
+If your refresh token expires, the tool reports the error in the console and sends it through each enabled notification channel: email, Discord or ntfy. In that case, you'll need to re-export the login request body.
 
 If you re-export the login request body to the same file name, you can send a `SIGHUP` signal to reload the file with the new refresh token without restarting the tool. More info in [Signal Controls (macOS/Linux/Unix)](usage.md#signal-controls-macoslinuxunix).
 
@@ -483,6 +483,8 @@ NTFY_ACCESS_TOKEN="tk_your_ntfy_access_token"
 ```
 
 By default the tool will auto-search for dotenv file named `.env` in current directory and then upward from it.
+
+Commands that write a secret do not use that upward search when choosing a destination. Without `--env-file`, `--set-sp-dc`, `--set-webhook-url` and browser cookie import all write to `.env` in the current directory.
 
 You can specify a custom file with `DOTENV_FILE` or `--env-file` flag:
 
