@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.7.1
+v3.8
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -21,7 +21,7 @@ pathvalidate (optional, needed by --export-all-playlists)
 Pillow (needed for email and ntfy artwork attachments)
 """
 
-VERSION = "3.7.1"
+VERSION = "3.8"
 
 # ---------------------------
 # CONFIGURATION SECTION START
