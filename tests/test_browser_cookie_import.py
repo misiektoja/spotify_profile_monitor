@@ -56,8 +56,9 @@ def test_pycookiecheat_adapter_call_shape(tmp_path):
     get_cookies = Mock(return_value={"sp_dc": "secret-cookie"})
     browser_types = types.SimpleNamespace(CHROME="chrome-type", BRAVE="brave-type", CHROMIUM="chromium-type")
     module = types.ModuleType("pycookiecheat")
-    setattr(module, "BrowserType", browser_types)
-    setattr(module, "get_cookies", get_cookies)
+    # A synthetic module cannot declare these attributes, so setattr keeps the type checker quiet
+    setattr(module, "BrowserType", browser_types)  # noqa: B010
+    setattr(module, "get_cookies", get_cookies)  # noqa: B010
 
     with patch.dict(sys.modules, {"pycookiecheat": module}):
         result = monitor.read_chromium_sp_dc("brave", cookie_file, system_name="Linux")
