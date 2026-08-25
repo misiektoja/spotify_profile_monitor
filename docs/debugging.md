@@ -1,16 +1,16 @@
 # Debugging Tools
 
-To help with troubleshooting and development, two debug utilities are available in the [debug](https://github.com/misiektoja/spotify_monitor/tree/dev/debug) directory of the related [spotify_monitor](https://github.com/misiektoja/spotify_monitor) project.
+The [debug directory](https://github.com/misiektoja/spotify_monitor/tree/main/debug) of the related [spotify_monitor](https://github.com/misiektoja/spotify_monitor) project contains two utilities for testing Spotify token retrieval and reading current TOTP values. Both work with Spotify Profile Monitor because the two tools share the same web-player token flow. Most users do not need these tools.
 
 <a id="access-token-retrieval-via-sp_dc-cookie-and-totp"></a>
 ## Access Token Retrieval via sp_dc Cookie and TOTP
 
-The [spotify_monitor_totp_test](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_totp_test.py) tool retrieves a Spotify access token using a Web Player `sp_dc` cookie and TOTP parameters.
+The [spotify_monitor_totp_test](https://github.com/misiektoja/spotify_monitor/blob/main/debug/spotify_monitor_totp_test.py) requests a Spotify access token with a Web Player `sp_dc` cookie and TOTP parameters.
 
-Download from [here](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_totp_test.py) or:
+Download the file in a browser or run:
 
 ```sh
-wget https://raw.githubusercontent.com/misiektoja/spotify_monitor/refs/heads/dev/debug/spotify_monitor_totp_test.py
+curl -fsSLO https://raw.githubusercontent.com/misiektoja/spotify_monitor/refs/heads/main/debug/spotify_monitor_totp_test.py
 ```
 
 Install requirements:
@@ -25,32 +25,39 @@ Run:
 python3 spotify_monitor_totp_test.py --sp-dc "your_sp_dc_cookie_value"
 ```
 
-You should get a valid Spotify access token, example output:
+The command prints the access token response. Example output:
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/spotify_monitor/refs/heads/main/assets/spotify_monitor_totp_test.png" alt="spotify_monitor_totp_test" width="100%"/>
 </p>
 
-> **NOTE:** Spotify still requires TOTP but continues to select v61. If the embedded values stop working, `spotify_monitor_totp_test` offers two recovery methods. `--fetch-secrets` launches a headless browser and extracts current values from Spotify Web Player. It requires Playwright plus its browser files. `--download-secrets` reads `SECRET_CIPHER_DICT_URL`, which may point to a remote URL or a local `file:` URL. The default remote source is [xyloflake/spot-secrets-go](https://github.com/xyloflake/spot-secrets-go). These options affect only the test utility during that run. Spotify Profile Monitor v3.5 uses `TOTP_VERSION` and `TOTP_SECRET_CIPHER_BYTES` instead.
+The optional `--token-validity-url` accepts only HTTPS Spotify API hosts. Redirects are rejected so the bearer token cannot be forwarded to a different destination. The utility returns a nonzero exit status when token retrieval, requested secret updates or token validation fails.
+
+> **If the included TOTP values stop working:** `--fetch-secrets` opens Spotify Web Player in a headless Playwright browser and extracts current values. `--download-secrets` reads `SECRET_CIPHER_DICT_URL` from an HTTP URL or local `file:` URL. Its default source is [xyloflake/spot-secrets-go](https://github.com/xyloflake/spot-secrets-go). These options affect only this test utility. Spotify Profile Monitor uses `TOTP_VERSION` and `TOTP_SECRET_CIPHER_BYTES` instead.
 
 ```sh
 python3 spotify_monitor_totp_test.py --sp-dc "your_sp_dc_cookie_value" --fetch-secrets
+```
+
+```sh
 python3 spotify_monitor_totp_test.py --sp-dc "your_sp_dc_cookie_value" --download-secrets
 ```
 
 <a id="secret-key-extraction-from-spotify-web-player-bundles"></a>
 ## Secret Key Extraction from Spotify Web Player Bundles
 
-The [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) tool automatically extracts secret keys used for TOTP generation in Spotify Web Player JavaScript bundles. Version 1.3 scans the loaded bundle source for the inline object-literal format used by the current web player and retains the original runtime property hook as a fallback for older formats.
+The [spotify_monitor_secret_grabber](https://github.com/misiektoja/spotify_monitor/blob/main/debug/spotify_monitor_secret_grabber.py) reads TOTP keys from Spotify Web Player JavaScript bundles. It scans the loaded source first and keeps the older runtime hook as a fallback.
 
-The restored extractor returns v59, v60 and v61 directly from Spotify's current web-player bundle even when the original runtime hook reports no captures.
+The extractor can return v59, v60 and v61 from the current web-player bundle even when the older runtime hook finds nothing.
 
-> **Quick tip:** The easiest and recommended way to run this tool is via Docker. Jump directly to the [Docker usage section below](#-secret-key-extraction-via-docker-recommended-easiest-way).
+The extractor returns a nonzero exit status when it finds no usable secrets, extraction fails or `--all` cannot write every requested output file.
 
-Download from [here](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber.py) or:
+> **Recommended:** Use the [Docker method](#secret-key-extraction-via-docker) if you do not already have Playwright and its browser files installed.
+
+Download the file in a browser or run:
 
 ```sh
-wget https://raw.githubusercontent.com/misiektoja/spotify_monitor/refs/heads/dev/debug/spotify_monitor_secret_grabber.py
+curl -fsSLO https://raw.githubusercontent.com/misiektoja/spotify_monitor/refs/heads/main/debug/spotify_monitor_secret_grabber.py
 ```
 
 Install requirements:
@@ -60,20 +67,19 @@ pip install playwright
 playwright install
 ```
 
-Run interactively using the default output mode:
+Run interactively (default output mode):
 
 ```sh
 python3 spotify_monitor_secret_grabber.py
 ```
 
-You should get output similar to below:
+Example output:
 
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/spotify_monitor/refs/heads/main/assets/spotify_monitor_secret_grabber.png" alt="spotify_monitor_secret_grabber" width="100%"/>
 </p>
 
 Show help:
-
 ```sh
 python3 spotify_monitor_secret_grabber.py -h
 ```
@@ -83,22 +89,22 @@ python3 spotify_monitor_secret_grabber.py -h
 <a id="cli-output-modes"></a>
 ## CLI Output Modes
 
-The script supports several output modes for different use cases:
+Choose the output format with one of these options:
 
 | Flag | Description | Output |
-|------|-------------|--------|
+|------|--------------|--------|
 | `--secret` | Prints plain JSON array of extracted secrets | `[{"version": X, "secret": "..."}, ...]` |
 | `--secretbytes` | Prints JSON array with ASCII byte values | `[{"version": X, "secret": [..]}, ...]` |
-| `--secretdict` | Prints JSON object/dict mapping version -> byte list | `{"X": [..], "Y": [..]}` |
-| `--all` | Extracts secrets and writes all three outputs to local files | `secrets.json`, `secretBytes.json`, `secretDict.json` |
+| `--secretdict` | Prints JSON object/dict mapping version → byte list | `{"X": [..], "Y": [..]}` |
+| `--all` | Extracts secrets and **writes all three outputs** to local files | `secrets.json`, `secretBytes.json`, `secretDict.json` |
 
-Print extracted secrets in a specific format. For example you can create a Python-friendly secret byte mapping and save it to a file:
+Save the version-to-byte mapping as JSON:
 
 ```sh
 python3 spotify_monitor_secret_grabber.py --secretdict > secretDict.json
 ```
 
-Generate and save all secret formats at once:
+Generate all three output files at once:
 
 ```sh
 python3 spotify_monitor_secret_grabber.py --all
@@ -108,53 +114,69 @@ Default file paths and names can be configured directly in the `OUTPUT_FILES` di
 
 ---
 
-<a id="-secret-key-extraction-via-docker-recommended-easiest-way"></a>
-## Secret Key Extraction via Docker (Recommended Easiest Way)
+<a id="secret-key-extraction-via-docker"></a>
+## Secret Key Extraction via Docker
 
 A prebuilt multi-architecture image is available on Docker Hub: [`misiektoja/spotify-secrets-grabber`](https://hub.docker.com/r/misiektoja/spotify-secrets-grabber)
 
+The examples use the `latest` tag. `--pull=always` in direct commands and `pull_policy: always` in Compose make Docker check for a newer image before each run. To stay on one release, add a version such as `:1.3` to the image name.
+
+Image tags follow the extractor's own version, so `:1.4` is the image built from `spotify_monitor_secret_grabber.py` v1.4. The image is published whenever the extractor or its container files change, and rebuilt weekly so a published tag keeps picking up Debian and Chromium security updates. `latest` always points at the newest build.
+
+The image runs as a non-root user with UID and GID 1000 by default. This prevents root-owned output on typical native Linux hosts.
+
 This image works on:
 
-- macOS (Intel and Apple Silicon)
+- macOS (Intel & Apple Silicon)
 - Linux (x86_64 and ARM64)
-- Windows (Docker Desktop or WSL2)
+- Windows with a Docker-compatible runtime
 - Raspberry Pi 4/5 (64-bit OS)
 
-Run interactively using the default output mode:
+Run interactively (default output mode):
 
 ```sh
-docker run --rm misiektoja/spotify-secrets-grabber
+docker run --rm --pull=always misiektoja/spotify-secrets-grabber
 ```
 
 Show help:
-
 ```sh
-docker run --rm misiektoja/spotify-secrets-grabber -h
+docker run --rm --pull=always misiektoja/spotify-secrets-grabber -h
 ```
 
-Print a Python-friendly secret byte mapping and save it to a file:
-
+Save the version-to-byte mapping as JSON:
 ```sh
-docker run --rm misiektoja/spotify-secrets-grabber --secretdict > secretDict.json
+docker run --rm --pull=always misiektoja/spotify-secrets-grabber --secretdict > secretDict.json
 ```
 
-Generate and save all secret formats at once:
+Generate all three output files at once:
 
 ```sh
-docker run --rm -v .:/work -w /work misiektoja/spotify-secrets-grabber --all
+docker run --rm --pull=always -v .:/work -w /work misiektoja/spotify-secrets-grabber --all
 ```
 
-For SELinux hosts such as Fedora or RHEL use `-v .:/work:Z`.
+On native Linux hosts whose user does not use UID and GID 1000, map the direct container to the current account and give its browser a writable home directory:
+
+```sh
+docker run --rm --pull=always --user "$(id -u):$(id -g)" -e HOME=/tmp -v .:/work -w /work misiektoja/spotify-secrets-grabber --all
+```
+
+*For SELinux hosts (Fedora/RHEL), use `-v .:/work:Z`.*
 
 <a id="optional-use-docker-compose-one-command-for-all-oss"></a>
-You can optionally use Docker Compose with the preconfigured [compose.yaml](https://github.com/misiektoja/spotify_monitor/blob/dev/debug/spotify_monitor_secret_grabber_docker/compose.yaml) file included in the repository:
+To use Docker Compose, run the included [compose.yaml](https://github.com/misiektoja/spotify_monitor/blob/main/debug/spotify_monitor_secret_grabber_docker/compose.yaml):
 
 ```sh
 docker compose run --rm spotify-secrets-grabber --all
 ```
 
-This saves all files into the current directory on macOS, Linux or Windows.
+Run the command from the directory that contains `compose.yaml`. The `.:/work` mount saves generated files in that host directory.
+
+On native Linux hosts whose user does not use UID and GID 1000, map Compose to the current account:
+
+```sh
+SPOTIFY_SECRET_GRABBER_UID="$(id -u)" SPOTIFY_SECRET_GRABBER_GID="$(id -g)" docker compose run --rm spotify-secrets-grabber --all
+```
 
 ---
 
-You can use the generated `secretDict.json` with `spotify_monitor_totp_test` and `spotify_monitor`. `spotify_profile_monitor` v3.5 embeds v61 directly and no longer depends on an external dictionary. If Spotify selects a new TOTP version later then update the `TOTP_VERSION` and `TOTP_SECRET_CIPHER_BYTES` config options with the values from the current web-player bundle. No code change is required.
+Use the generated `secretDict.json` with `spotify_monitor_totp_test`. Spotify Profile Monitor reads its values from `TOTP_VERSION` and `TOTP_SECRET_CIPHER_BYTES`. If Spotify selects a new TOTP version, update those settings with the values from the current web-player bundle.
