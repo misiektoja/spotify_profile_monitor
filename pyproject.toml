@@ -41,6 +41,8 @@ keywords = ["spotify", "monitoring", "tracking", "real-time", "playlists", "osin
 
 [project.optional-dependencies]
 test = ["pytest>=7.0", "pyyaml>=6.0"]
+# Pinned so a new ruff release cannot fail CI on a rule that did not exist when the change was written
+lint = ["ruff==0.16.4"]
 # Needed only to import Chrome/Brave/Chromium cookies (--import-browser-cookie); macOS and Linux only
 browser = ["pycookiecheat>=0.8"]
 
@@ -55,6 +57,16 @@ spotify_profile_monitor = "spotify_profile_monitor:main"
 [tool.setuptools]
 py-modules = ["spotify_profile_monitor"]
 include-package-data = true
+
+[tool.ruff]
+target-version = "py39"
+
+[tool.ruff.lint]
+# Defect rules only: syntax errors, pyflakes and bugbear. Formatting and import order are left
+# to the surrounding code, which keeps each function definition on one physical line
+select = ["E9", "F", "B"]
+# Both are style preferences that would rewrite hundreds of existing lines without fixing a defect
+ignore = ["F541", "B904"]
 
 [tool.pytest.ini_options]
 # Run the in-repo source, never an installed copy, by putting the project root first on sys.path
