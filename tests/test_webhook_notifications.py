@@ -8,9 +8,15 @@ from unittest.mock import Mock, mock_open, patch
 
 import pytest
 from dotenv import dotenv_values
-from PIL import Image
+# Pillow ships as the optional notification-images extra, so only the artwork tests below depend on it
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
 import spotify_profile_monitor as monitor
+
+requires_pillow = pytest.mark.skipif(Image is None, reason="Pillow is the optional notification-images extra")
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -293,6 +299,7 @@ def test_ntfy_access_token_uses_bearer_authentication(monkeypatch):
 
 
 # Verifies ntfy artwork is downloaded with bounds and converted in memory
+@requires_pillow
 def test_ntfy_image_is_bounded_and_built_in_memory(monkeypatch):
     source = BytesIO()
     Image.new("RGB", (320, 640), (12, 34, 56)).save(source, format="PNG")
@@ -309,6 +316,7 @@ def test_ntfy_image_is_bounded_and_built_in_memory(monkeypatch):
 
 
 # Verifies email artwork is downloaded with bounds and resized in memory
+@requires_pillow
 def test_email_artwork_is_bounded_and_built_in_memory(monkeypatch):
     source = BytesIO()
     Image.new("RGB", (640, 320), (12, 34, 56)).save(source, format="PNG")
@@ -487,6 +495,7 @@ def test_email_images_setting_preserves_profile_picture_attachment(monkeypatch):
 
 
 # Verifies inline artwork uses a related MIME container around text alternatives
+@requires_pillow
 def test_send_email_builds_related_inline_artwork_message(monkeypatch):
     source = BytesIO()
     Image.new("RGB", (16, 16), (12, 34, 56)).save(source, format="JPEG")
@@ -604,7 +613,8 @@ def test_generated_config_includes_webhook_settings():
     assert namespace["WEBHOOK_TEMPLATE"]["allowed_mentions"] == {"parse": []}
     assert namespace["WEBHOOK_TRANSFORMS"] == []
     assert namespace["NTFY_ACCESS_TOKEN"] == ""
-    assert namespace["NTFY_IMAGES"] is True
+    # Artwork ships disabled because Pillow is now an optional extra rather than a runtime dependency
+    assert namespace["NTFY_IMAGES"] is False
     assert namespace["EMAIL_IMAGES"] is False
     assert namespace["DETECT_CHANGED_PROFILE_PIC"] is True
 
