@@ -15,6 +15,8 @@ The browser extra is needed only for the Chromium cookie import path. Without it
 pip install -e '.[test,browser]'
 ```
 
+The `notification-images` extra needs no separate install. The test extra already brings in Pillow, so the artwork tests covering email and ntfy attachments run from a plain `.[test]` install. If Pillow is missing anyway, those tests skip instead of failing.
+
 A pinned [Ruff](https://docs.astral.sh/ruff/) lint pass runs alongside the suite. It selects defect rules only, pyflakes and bugbear, so it reports unused names, undefined names and common bug patterns without enforcing formatting or import order:
 
 ```sh
