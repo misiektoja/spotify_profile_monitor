@@ -1,14 +1,35 @@
+import ast
 import inspect
 import os
 import re
 import signal
 import time
 from contextlib import contextmanager
+from pathlib import Path
 from unittest.mock import Mock, call
 
 import pytest
 
 import spotify_profile_monitor as monitor
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "request"}
+
+
+# Collects every outgoing HTTP call in the module together with the verify argument it passes
+def http_calls_with_verification():
+    tree = ast.parse((PROJECT_ROOT / "spotify_profile_monitor.py").read_text(encoding="utf-8"))
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr not in HTTP_METHODS:
+            continue
+        keywords = {keyword.arg: keyword.value for keyword in node.keywords if keyword.arg}
+        if "timeout" not in keywords and "verify" not in keywords:
+            continue
+        verify = keywords.get("verify")
+        yield node.lineno, ast.unparse(node.func.value), None if verify is None else ast.unparse(verify)
 
 
 POSIX_ALARMS = pytest.mark.skipif(os.name != "posix" or not hasattr(signal, "setitimer"), reason="POSIX interval timers only")
@@ -239,3 +260,14 @@ def test_sighup_honors_disabled_dotenv(monkeypatch, tmp_path):
     monitor.reload_secrets_signal_handler(signal.SIGHUP, None)
 
     assert monitor.SP_DC_COOKIE == "configured-cookie-value"
+
+
+# TLS verification must always come from the documented setting, since a call that hardcodes it either
+# cannot be turned off for a TLS-inspecting proxy or cannot be turned back on for everyone else
+def test_every_http_call_verifies_through_the_configured_setting():
+    calls = list(http_calls_with_verification())
+    offenders = [(line, receiver, verify) for line, receiver, verify in calls if verify not in ("VERIFY_SSL", "verify")]
+
+    # A refactor that renames the sessions must not quietly leave this test matching nothing
+    assert len(calls) >= 25
+    assert offenders == []
