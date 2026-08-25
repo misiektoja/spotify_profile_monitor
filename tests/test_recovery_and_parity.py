@@ -1,4 +1,5 @@
 from pathlib import Path
+import os
 import re
 import subprocess
 import sys
@@ -260,3 +261,19 @@ def test_generate_config_force_order_is_safe(tmp_path, monkeypatch):
     assert "SENTINEL" not in destination.read_text(encoding="utf-8")
     assert len(backups) == 1
     assert backups[0].read_text(encoding="utf-8") == "SENTINEL = True\n"
+
+
+# Verifies a backup does not widen access to a configuration holding device identifiers
+@pytest.mark.skipif(os.name != "posix", reason="file modes are POSIX-only")
+def test_config_backup_keeps_the_owner_only_mode_of_its_source(tmp_path):
+    destination = tmp_path / "private.conf"
+    destination.write_text("SENTINEL = True\n", encoding="utf-8")
+    os.chmod(destination, 0o600)
+
+    monitor.write_config_file(destination, 'LOCAL_TIMEZONE = "Auto"\n')
+
+    backups = list(tmp_path.glob("private.conf.*.bak"))
+    assert len(backups) == 1
+    assert backups[0].read_text(encoding="utf-8") == "SENTINEL = True\n"
+    assert backups[0].stat().st_mode & 0o077 == 0
+    assert destination.stat().st_mode & 0o077 == 0
