@@ -1,0 +1,32 @@
+# EditorConfig helps keep one coding style across editors: https://editorconfig.org
+# The rules below describe the style the repository already uses.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Monitor module and tests
+[*.py]
+indent_size = 4
+
+# Workflows, issue forms and Dependabot configuration
+[*.{yml,yaml}]
+indent_size = 2
+
+[*.toml]
+indent_size = 2
+
+# Two trailing spaces are a line break in Markdown, so leave them alone
+[*.md]
+trim_trailing_whitespace = false
+
+# Verbatim upstream text that must never be reformatted
+[LICENSE]
+insert_final_newline = unset
+trim_trailing_whitespace = unset
