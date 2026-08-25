@@ -49,7 +49,7 @@ body:
     attributes:
       label: spotify_profile_monitor version
       description: "Output of `spotify_profile_monitor --version`."
-      placeholder: "3.7.1"
+      placeholder: "3.8"
     validations:
       required: true
 
