@@ -32,7 +32,7 @@ would see.
 | --- | --- |
 | `test_target_inputs.py` | Target normalization, rejection of unsafe forms, CLI and config precedence |
 | `test_config_effects.py` | Config-file settings reaching their consumers, including polling cadence, playlist cache and connectivity |
-| `test_recovery_and_parity.py` | Atomic config loading, refusal of executable config content, recovery advice and in-app guide links matching README anchors |
+| `test_recovery_and_parity.py` | Atomic config loading, refusal of executable config content, recovery advice, in-app guide links matching published documentation anchors and the documentation site contract |
 | `test_setup_and_startup.py` | Setup wizard flow, startup banner rendering and terminal screen preparation |
 | `test_private_sp_dc.py` | `--set-sp-dc` validation, atomic dotenv updates and refusal to write on a bad cookie |
 | `test_browser_cookie_import.py` | Firefox and Chromium profile discovery, cookie selection, deceptive-domain rejection and dotenv preservation |
