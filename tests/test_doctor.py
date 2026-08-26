@@ -1,6 +1,8 @@
 from io import StringIO
 from unittest.mock import Mock
 
+import pytest
+
 import requests
 import spotify_profile_monitor as monitor
 
@@ -286,3 +288,32 @@ def test_load_config_reports_syntax_line(tmp_path):
     assert loaded is False
     assert errors[0].status == "FAIL"
     assert "line 1" in errors[0].detail
+
+
+# Exported secrets are a documented alternative to a dotenv file, so they must apply when no file is loaded
+def test_environment_secrets_apply_without_a_dotenv_file(monkeypatch):
+    monkeypatch.setattr(monitor.sys, "argv", ["spotify_profile_monitor", "--doctor", "--env-file", "none"])
+    monkeypatch.setattr(monitor, "run_doctor", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(monitor, "NTFY_ACCESS_TOKEN", "", raising=False)
+    monkeypatch.setenv("NTFY_ACCESS_TOKEN", "tk_from_environment")
+
+    with pytest.raises(SystemExit):
+        monitor.main()
+
+    assert monitor.NTFY_ACCESS_TOKEN == "tk_from_environment"
+
+
+# Each secret is attributed to the source it actually came from, so the report can name the dotenv path
+def test_secret_sources_split_by_origin(monkeypatch, tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("SMTP_PASSWORD=from-file\n", encoding="utf-8")
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "from-file", raising=False)
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", "https://ntfy.sh/topic", raising=False)
+    monkeypatch.setattr(monitor, "SP_DC_COOKIE", "your_sp_dc_cookie_value", raising=False)
+    monkeypatch.setenv("WEBHOOK_URL", "https://ntfy.sh/topic")
+
+    from_file, from_environment, from_settings = monitor.doctor_secret_sources(str(env_file))
+
+    assert "SMTP_PASSWORD" in from_file
+    assert "WEBHOOK_URL" in from_environment
+    assert "SP_DC_COOKIE" not in from_file + from_environment + from_settings
