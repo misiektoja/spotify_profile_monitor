@@ -2,6 +2,7 @@ import csv
 import tempfile
 from io import StringIO
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -77,6 +78,29 @@ def test_terminal_stream_sanitizes_and_forwards_attributes():
     assert "\x1b" not in output and "\r" not in output
     assert "dropped" not in output
     assert stream.getvalue() == output
+
+
+# Confirms a one-shot search sanitizes Spotify text before its early process exit
+def test_search_cli_sanitizes_spotify_text_before_exit(monkeypatch, capsys):
+    payload = {"data": {"searchV2": {"users": {"totalCount": 1, "items": [{"data": {"displayName": HOSTILE_NAME, "uri": "spotify:user:hostile", "id": "hostile"}}]}}}}
+    response = SimpleNamespace(status_code=200, raise_for_status=lambda: None, json=lambda: payload)
+    monkeypatch.setattr(monitor.sys, "argv", ["spotify_profile_monitor", "--search-username", "hostile", "--spotify-dc-cookie", "test-cookie", "--env-file", "none"])
+    monkeypatch.setattr(monitor, "CLEAR_SCREEN", False)
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor, "SP_SHA256", "test-search-hash")
+    monkeypatch.setattr(monitor, "USER_AGENT", "test-agent")
+    monkeypatch.setattr(monitor, "find_config_file", lambda path=None: None)
+    monkeypatch.setattr(monitor, "check_internet", lambda: True)
+    monkeypatch.setattr(monitor, "spotify_get_access_token_from_sp_dc", lambda cookie: "test-token")
+    monkeypatch.setattr(monitor.SESSION, "get", lambda *args, **kwargs: response)
+
+    with pytest.raises(SystemExit) as error:
+        monitor.main()
+
+    output = capsys.readouterr().out
+    assert error.value.code == 0
+    assert "OVERWRITTEN" in output
+    assert "\x1b" not in output and "\r" not in output and "\x07" not in output and "\x9b" not in output
 
 
 # Confirms the progress bar drops control characters from the playlist name it writes directly to the terminal
