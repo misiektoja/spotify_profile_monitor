@@ -74,13 +74,16 @@ def test_doctor_progress_redraws_through_terminal_stream(monkeypatch):
     terminal = TTYBuffer()
     monkeypatch.setattr(monitor.sys, "stdout", monitor.TerminalStream(terminal))
 
-    monitor._doctor_progress("environment")
-    monitor._doctor_progress("configuration")
-    monitor._doctor_progress_clear()
+    monitor._doctor_progress("Spotify authentication")
+    authentication = "* Checking Spotify authentication ..."
+    assert terminal.getvalue() == "\r" + authentication
 
-    environment = "* Checking environment ..."
-    configuration = "* Checking configuration ..."
-    assert terminal.getvalue() == "\r" + environment + "\r" + configuration + "\r" + (" " * len(configuration)) + "\r"
+    monitor._doctor_progress("metadata")
+    metadata = "* Checking metadata ..."
+    assert terminal.getvalue() == "\r" + authentication + "\r" + (" " * len(authentication)) + "\r" + "\r" + metadata
+
+    monitor._doctor_progress_clear()
+    assert terminal.getvalue().endswith("\r" + metadata + "\r" + (" " * len(metadata)) + "\r")
 
 
 # Verifies missing cookie authentication remains actionable and secret-safe
