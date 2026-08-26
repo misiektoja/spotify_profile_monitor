@@ -5272,6 +5272,36 @@ def spotify_format_playlist_reference(uri):
         return f"[ {playlist_url} ]"
 
 
+# Converts one optional profile follower count to an integer when possible
+def _safe_profile_followers_count(raw_value: Any) -> Optional[int]:
+    if raw_value is None:
+        return None
+    try:
+        return int(raw_value)
+    except (TypeError, ValueError):
+        return None
+
+
+# Builds metadata-only playlist data from profile and cached values
+def _build_restricted_playlist_data(playlist: Dict[str, Any], cached_entry: Dict[str, Any]) -> Dict[str, Any]:
+    fallback_name = playlist.get("name", "") or cached_entry.get("name", "")
+    fallback_owner = playlist.get("owner_name", "") or cached_entry.get("owner", "")
+    fallback_owner_uri = playlist.get("owner_uri", "") or cached_entry.get("owner_uri", "")
+    fallback_likes = _safe_profile_followers_count(playlist.get("followers_count"))
+    return {
+        "sp_playlist_name": fallback_name,
+        "sp_playlist_description": "",
+        "sp_playlist_followers_count": fallback_likes,
+        "sp_playlist_tracks_count": 0,
+        "sp_playlist_tracks_count_before_filtering": 0,
+        "sp_playlist_tracks": [],
+        "sp_playlist_owner": fallback_owner,
+        "sp_playlist_owner_uri": fallback_owner_uri,
+        "sp_playlist_image_url": playlist.get("image_url", "") or cached_entry.get("image_url", ""),
+        "sp_playlist_restricted": True
+    }
+
+
 # Displays a progress bar with percentage and current playlist name
 def _display_progress(current, total, playlist_name: str = "", bar_length: int = 40, is_final: bool = False) -> None:
     if total == 0:
@@ -5443,37 +5473,9 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     restricted_playlist = False
                     cached_entry = PLAYLIST_INFO_CACHE.get(p_uri, {})
 
-                    def _safe_profile_followers_count(raw_value):
-                        if raw_value is None:
-                            return None
-                        try:
-                            return int(raw_value)
-                        except (TypeError, ValueError):
-                            return None
-
-                    # Binding the loop variables as defaults keeps this helper independent of later iterations
-                    def _build_restricted_playlist_data(playlist=playlist, cached_entry=cached_entry):
-                        fallback_name = playlist.get("name", "") or cached_entry.get("name", "")
-                        fallback_owner = playlist.get("owner_name", "") or cached_entry.get("owner", "")
-                        fallback_owner_uri = playlist.get("owner_uri", "") or cached_entry.get("owner_uri", "")
-                        fallback_likes = _safe_profile_followers_count(playlist.get("followers_count"))
-
-                        return {
-                            "sp_playlist_name": fallback_name,
-                            "sp_playlist_description": "",
-                            "sp_playlist_followers_count": fallback_likes,
-                            "sp_playlist_tracks_count": 0,
-                            "sp_playlist_tracks_count_before_filtering": 0,
-                            "sp_playlist_tracks": [],
-                            "sp_playlist_owner": fallback_owner,
-                            "sp_playlist_owner_uri": fallback_owner_uri,
-                            "sp_playlist_image_url": playlist.get("image_url", "") or cached_entry.get("image_url", ""),
-                            "sp_playlist_restricted": True
-                        }
-
                     if cached_entry.get("status") == "restricted":
                         debug_print(f"playlist loop: uri={p_uri} served from restricted cache")
-                        sp_playlist_data = _build_restricted_playlist_data()
+                        sp_playlist_data = _build_restricted_playlist_data(playlist, cached_entry)
                         restricted_playlist = True
                         PLAYLIST_INFO_CACHE[p_uri].update({
                             "timestamp": time.time(),
@@ -5495,7 +5497,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                             }
                         except PlaylistRestrictedError:
                             debug_print(f"playlist loop: uri={p_uri} marked restricted (404)")
-                            sp_playlist_data = _build_restricted_playlist_data()
+                            sp_playlist_data = _build_restricted_playlist_data(playlist, cached_entry)
                             restricted_playlist = True
                             PLAYLIST_INFO_CACHE[p_uri] = {
                                 "status": "restricted",
@@ -10297,6 +10299,10 @@ def main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, VERBOSE_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, EMAIL_IMAGES, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, CLEAN_OUTPUT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TARGET_USER_URI_ID, TRUNCATE_CHARS, NTFY_IMAGES
     global EXPORT_ALL, EXPORT_ALL_FORCE, PLAYLIST_INFO_CACHE_TTL
 
+    stdout_bck = sys.stdout
+    if not isinstance(sys.stdout, TerminalStream):
+        sys.stdout = TerminalStream(sys.stdout)
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
@@ -10997,8 +11003,6 @@ def main():
             CLEAN_OUTPUT = True
 
     if not CLEAN_OUTPUT:
-        stdout_bck = sys.stdout
-
         prepare_startup_screen()
 
         print_startup_banner()
@@ -11415,7 +11419,6 @@ def main():
         sys.stdout = Logger(FINAL_LOG_PATH)
     else:
         FINAL_LOG_PATH = None
-        sys.stdout = TerminalStream(sys.stdout)
 
     if args.profile_notification is True:
         PROFILE_NOTIFICATION = True
