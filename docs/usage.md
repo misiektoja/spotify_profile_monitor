@@ -415,6 +415,23 @@ Recoverable failures use a short `Error`, `To fix` and relevant guide format. Re
 
 Cookies, tokens, passwords, authorization headers and webhook URLs are redacted from verbose and debug output.
 
+<a id="coloured-terminal-output"></a>
+### Coloured Terminal Output
+
+Spotify Profile Monitor colours live terminal output by default. Usernames, Spotify IDs, playlist, track and album names, dates, durations, follower and playlist counters, links and change headers each get their own colour, and errors, warnings and received signals are highlighted as a whole line.
+
+Colour never reaches saved output: log files are written with the escape sequences stripped, so `grep`, `tail` and any log viewer see plain text.
+
+Turn it off for one run with `--no-color`, or permanently with `COLORED_OUTPUT = False` in the configuration file. The setting is read before the startup banner is printed, so a configured value applies to the very first line of output. Colour also switches itself off when it cannot be displayed safely: when output is redirected or piped, when `TERM` is unset or `dumb`, and when the standard [`NO_COLOR`](https://no-color.org/) environment variable is set. On Windows, install the optional `colorama` package for the best results in the classic Command Prompt.
+
+Override individual colours with `COLOR_THEME`. It is merged over the built-in theme, so you only name the parts you want to change:
+
+```ini
+COLOR_THEME = { "playlist": "bright_magenta bold", "username": "green" }
+```
+
+See [Terminal Colours](configuration.md#terminal-colours) for every theme key and the accepted colour and style names.
+
 <a id="signal-controls-macoslinuxunix"></a>
 ## Signal Controls (macOS/Linux/Unix)
 
@@ -440,7 +457,7 @@ As Windows supports limited number of signals, this functionality is available o
 <a id="coloring-log-output-with-grc"></a>
 ## Coloring Log Output with GRC
 
-You can use [GRC](https://github.com/garabik/grc) to color logs.
+Spotify Profile Monitor colours live terminal output through `COLORED_OUTPUT` and `COLOR_THEME`. To colour saved log files when you view them later, you can use [GRC](https://github.com/garabik/grc).
 
 Add to your GRC config (`~/.grc/grc.conf`):
 
