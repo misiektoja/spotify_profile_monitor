@@ -51,6 +51,7 @@ For the manual single-file method, optional extras and upgrade commands, see [In
 
 ### 🔔 Notifications and History
 - Receive alerts in the terminal, by email, through Discord or through ntfy.
+- Read coloured terminal output with a customizable theme, while log files stay plain text.
 - Keep a timestamped CSV history of profile and playlist changes.
 - Include profile pictures and optional playlist or album artwork in notifications.
 
