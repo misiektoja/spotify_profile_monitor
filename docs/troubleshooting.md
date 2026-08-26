@@ -11,7 +11,7 @@ Run Doctor before unattended monitoring:
 spotify_profile_monitor --doctor <spotify_target>
 ```
 
-Doctor shows the current check phase then reports the Python environment and required dependencies, config and dotenv files, numeric settings, output destinations, Spotify authentication, metadata backend, connectivity, one optional target and notification settings.
+Doctor shows the current check phase then reports the Python environment and required dependencies, config and dotenv files, numeric settings, output destinations, Spotify authentication, metadata backend, connectivity, one optional target and notification settings. It names the dotenv file it loaded and lists which secrets are in effect and whether each one came from the dotenv file, an environment variable or the configuration file. Secret names are listed, never their values.
 
 When a terminal is interactive and passive checks pass, Doctor separately offers one real email test and one real webhook test. Each prompt defaults to No. Warnings do not fail the command. A failed check or approved delivery test returns a nonzero exit status.
 
