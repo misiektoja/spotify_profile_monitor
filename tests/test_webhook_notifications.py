@@ -4,15 +4,18 @@ from email import message_from_string
 from email.message import Message
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock, mock_open, patch
 
 import pytest
 from dotenv import dotenv_values
 # Pillow ships as the optional notification-images extra, so only the artwork tests below depend on it
+Image: Any = None
 try:
-    from PIL import Image
+    from PIL import Image as PillowImageModule
+    Image = PillowImageModule
 except ImportError:
-    Image = None
+    pass
 
 import spotify_profile_monitor as monitor
 
