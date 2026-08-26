@@ -8239,9 +8239,14 @@ def build_doctor_report(target_value=None, config_path=None, env_path=None, star
     return report
 
 
+# Prints what Doctor will and will not do, before the checks start
+def render_doctor_notice() -> None:
+    print("Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.\n")
+
+
 # Renders one sectioned ASCII Doctor report with recovery actions
 def render_doctor_report(report: DoctorReport) -> str:
-    lines = ["Doctor", "", "Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval."]
+    lines = ["Doctor"]
     for section in ("Environment", "Configuration", "Authentication", "Metadata", "Connectivity", "Target", "Notifications"):
         section_checks = [item for item in report.checks if item.section == section]
         if not section_checks:
@@ -8267,6 +8272,7 @@ def render_doctor_report(report: DoctorReport) -> str:
 
 # Runs Doctor preflight plus approved delivery tests
 def run_doctor(target_value=None, config_path=None, env_path=None, startup_checks: Sequence[DoctorCheck] = ()) -> int:
+    render_doctor_notice()
     try:
         report = build_doctor_report(target_value, config_path, env_path, startup_checks, progress=_doctor_progress)
     finally:
