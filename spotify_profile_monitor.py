@@ -417,8 +417,9 @@ COLORED_OUTPUT = True
 # Valid colour names: black, red, green, yellow, blue, magenta, cyan, white,
 # and their bright_ variants (bright_red, bright_green, ...).
 COLOR_THEME = {
-    # Startup banner
+    # Headings and commands the wizard tells you to run
     "header": "bright_cyan",
+    "section": "bright_white",
     # Identity
     "username": "blue underline",
     "user_uri_id": "bright_magenta",
@@ -1273,8 +1274,9 @@ _COLOR_STYLES: dict = {}
 
 # Default built-in colour theme. Values can be overridden via COLOR_THEME in config
 DEFAULT_COLOR_THEME = {
-    # Startup banner
+    # Headings and commands the wizard tells you to run
     "header": "bright_cyan",
+    "section": "bright_white",
     # Identity
     "username": "blue underline",
     "user_uri_id": "bright_magenta",
@@ -1671,7 +1673,9 @@ def _colorize_line(line):
     is_signal = "* signal" in lowered and "received" in lowered
     is_info = "* info:" in lowered
 
-    if is_error:
+    if lowered.startswith("to fix:"):
+        line = _apply_style_nested(line, "info")
+    elif is_error:
         line = _apply_style_nested(line, "error")
     elif is_warning:
         line = _apply_style_nested(line, "warning")
@@ -8086,7 +8090,7 @@ def _wizard_validate_destination(path, label: str) -> Path:
 # Prints one labelled setup or recovery command
 def _wizard_print_command(label: str, command: str, suffix: str = "") -> None:
     print(label)
-    print(f"    {command}{suffix}\n")
+    print(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n")
 
 
 # Builds one action command with portable interpreter and explicit file paths
@@ -8144,7 +8148,7 @@ def _wizard_set_webhook_url_cmd(method: str, env_path=None, exact: bool = False,
 def _wizard_print_monitor_after_doctor(config_path, env_path, target: Optional[str] = None, target_is_saved: bool = False) -> None:
     command_target = None if target_is_saved else target or "SPOTIFY_TARGET"
     command = _wizard_action_command(_wizard_install_method(), "", config_path, env_path, command_target)
-    print("\nNext steps\n")
+    print(colorize('header', "\nNext steps\n"))
     _wizard_print_command("After Doctor passes, start monitoring:", command)
 
 
@@ -8191,7 +8195,7 @@ def _wizard_welcome() -> None:
     setup_suffix = "   (or just answer Y below)" if interactive else ""
     _wizard_print_command("Easiest start (guided setup wizard):", f"{prefix} --setup", setup_suffix)
     _wizard_print_command("Check setup before monitoring:", f"{prefix} --doctor <spotify_target>")
-    print(f"Full options: {prefix} --help")
+    print(f"Full options: {colorize('section', prefix + ' --help')}")
     print(f"\nGuide:        {QUICK_START_GUIDE_URL}\n")
     if interactive and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True):
         print()
@@ -8857,12 +8861,12 @@ def render_doctor_notice() -> None:
 
 # Renders one sectioned ASCII Doctor report with recovery actions
 def render_doctor_report(report: DoctorReport) -> str:
-    lines = ["Doctor"]
+    lines = [colorize("header", "Doctor")]
     for section in ("Environment", "Configuration", "Authentication", "Metadata", "Connectivity", "Target", "Notifications"):
         section_checks = [item for item in report.checks if item.section == section]
         if not section_checks:
             continue
-        lines.extend(("", section))
+        lines.extend(("", colorize("section", section)))
         for check in section_checks:
             lines.append(f"[{check.status}] {check.label}")
             if check.detail and (check.advice is None or DEBUG_MODE):
@@ -8872,12 +8876,12 @@ def render_doctor_report(report: DoctorReport) -> str:
     failures = sum(check.status == "FAIL" for check in report.checks)
     warnings = sum(check.status == "WARN" for check in report.checks)
     if failures:
-        summary_line = f"  {failures} check(s) failed, {warnings} warning(s). Fix the failures above before relying on the tool."
+        summary_line = colorize("error", f"  {failures} check(s) failed, {warnings} warning(s). Fix the failures above before relying on the tool.")
     elif warnings:
-        summary_line = f"  All critical checks passed with {warnings} warning(s). Review the warnings above."
+        summary_line = colorize("warning", f"  All critical checks passed with {warnings} warning(s). Review the warnings above.")
     else:
-        summary_line = "  All checks passed. You are good to go!"
-    lines.extend(("", "Summary", summary_line, "", f"Guide: {DOCTOR_GUIDE_URL}"))
+        summary_line = colorize("boolean_true", "  All checks passed. You are good to go!")
+    lines.extend(("", colorize("header", "Summary"), summary_line, "", f"Guide: {DOCTOR_GUIDE_URL}"))
     return sanitize_error_text("\n".join(lines))
 
 
@@ -8896,7 +8900,7 @@ def run_doctor(target_value=None, config_path=None, env_path=None, startup_check
 # Reads one setup line and exits cleanly when input is cancelled
 def _wizard_input(prompt_text: str) -> str:
     try:
-        return input(prompt_text)
+        return input(colorize("info", prompt_text))
     except (EOFError, KeyboardInterrupt):
         print("\nSetup cancelled.")
         raise SystemExit(1) from None
@@ -8934,7 +8938,7 @@ def _wizard_ask_choice(question: str, options, default_index: int = 0) -> int:
     for index, option in enumerate(options, start=1):
         label, description = option
         marker = " (default)" if index - 1 == default_index else ""
-        print(f"  {index}. {label}{marker}")
+        print(f"  {colorize('username', str(index))}. {label}{colorize('info', marker)}")
         if description:
             for line in description.splitlines():
                 print(f"     {line}")
@@ -9058,6 +9062,13 @@ def _wizard_install_chromium_dependency(method: str) -> bool:
         return True
     print("\nChromium browser support could not be installed. Choose Firefox or another authentication method.")
     return False
+
+
+# Prints the installation method and output files shared by the setup wizard
+def _wizard_print_setup_destinations(method: str, config_path, env_path) -> None:
+    print(f"Detected install method: {colorize('username', method)}")
+    print(f"Configuration:          {config_path}")
+    print(f"Dotenv:                 {env_path}\n")
 
 
 # Explains the setup prompt defaults shared with Spotify Monitor
@@ -9441,7 +9452,7 @@ def _wizard_collect_destination_section(state: WizardSetupState, method: str) ->
 
 # Prints current editable answers without exposing secrets
 def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
-    print("\nSetup summary\n")
+    print(colorize('header', "\nSetup summary\n"))
     print(f"  Target: {state.target}")
     print(f"  Persist target: {'yes' if state.persist_target else 'no'}")
     print(f"  Polling interval: {state.config_values['SPOTIFY_CHECK_INTERVAL']} seconds")
@@ -9570,14 +9581,12 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
         print(f"Setup cannot start: {exc}")
         raise SystemExit(1) from None
     method = _wizard_install_method()
-    print("Setup Wizard\n")
+    print(colorize('header', "Setup Wizard\n"))
     print("This asks a few questions and writes a ready-to-run configuration.")
     _wizard_print_default_guidance()
     print("Secrets go to the dotenv file. Non-secret settings go to the config file.")
     print("Cookie mode is recommended. Client mode is advanced.\n")
-    print(f"Detected install method: {method}")
-    print(f"Configuration:          {config_path}")
-    print(f"Dotenv:                 {env_path}\n")
+    _wizard_print_setup_destinations(method, config_path, env_path)
     config_path = _wizard_choose_config_destination(config_path)
     baseline_values = dict(globals())
     config_values = dict(baseline_values)
@@ -9601,7 +9610,7 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
         print(f"Setup could not write configuration file '{state.config_path}': {sanitize_error_text(exc)}")
         print("No dotenv changes were attempted.")
         raise SystemExit(1) from None
-    print("\nSaved files\n")
+    print(colorize('header', "\nSaved files\n"))
     print(f"  Configuration: {write_status['path']}")
     if write_status["backup_path"]:
         print(f"  Backup:        {write_status['backup_path']}")
@@ -9629,7 +9638,7 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
     command_target = None if state.persist_target else state.target
     doctor_command = _wizard_action_command(method, "--doctor", state.config_path, state.env_path, command_target)
     monitor_command = _wizard_action_command(method, "", state.config_path, state.env_path, command_target)
-    print("\nNext steps\n")
+    print(colorize('header', "\nNext steps\n"))
     if not state.auth["complete"]:
         print("Setup was saved. Authentication still needs to be completed.\n")
         if state.config_values["TOKEN_SOURCE"] == "cookie":
