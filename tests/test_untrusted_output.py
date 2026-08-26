@@ -16,6 +16,12 @@ ARTIFACT_ROOT = PROJECT_ROOT / "local" / "untrusted_output_test_artifacts"
 HOSTILE_NAME = "Playlist\x1b[2J\x1b[8mhidden\rOVERWRITTEN\x07\x9bA\ttab"
 
 
+# Asserts no cursor, screen or title control sequence survived, allowing only the inert SGR colour codes this tool emits
+def assert_no_terminal_controls(output: str) -> None:
+    assert "\r" not in output and "\x07" not in output and "\x9b" not in output
+    assert monitor.SGR_SEQUENCE_RE.sub("", output).count("\x1b") == 0
+
+
 # Creates one disposable output test directory under the project local directory
 def make_test_directory():
     ARTIFACT_ROOT.mkdir(parents=True, exist_ok=True)
@@ -57,11 +63,9 @@ def test_logger_sanitizes_terminal_and_log_file():
         terminal_output = terminal.getvalue()
         log_output = log_path.read_text(encoding="utf-8")
 
+    assert "\x1b" not in log_output
     for output in (terminal_output, log_output):
-        assert "\x1b" not in output
-        assert "\r" not in output
-        assert "\x07" not in output
-        assert "\x9b" not in output
+        assert_no_terminal_controls(output)
         assert "OVERWRITTEN" in output
 
 
@@ -75,7 +79,7 @@ def test_terminal_stream_sanitizes_and_forwards_attributes():
     stream.flush()
 
     output = terminal.getvalue()
-    assert "\x1b" not in output and "\r" not in output
+    assert_no_terminal_controls(output)
     assert "dropped" not in output
     assert stream.getvalue() == output
 
@@ -100,7 +104,7 @@ def test_search_cli_sanitizes_spotify_text_before_exit(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert error.value.code == 0
     assert "OVERWRITTEN" in output
-    assert "\x1b" not in output and "\r" not in output and "\x07" not in output and "\x9b" not in output
+    assert_no_terminal_controls(output)
 
 
 # Confirms the progress bar drops control characters from the playlist name it writes directly to the terminal
