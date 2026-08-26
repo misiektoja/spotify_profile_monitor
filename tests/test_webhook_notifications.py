@@ -122,6 +122,12 @@ def test_webhook_url_validation(url, expected):
     assert monitor.validate_webhook_url(url) is expected
 
 
+@pytest.mark.parametrize("provider,expected", [("discord", "Discord"), ("DISCORD", "Discord"), (" Discord ", "Discord"), ("ntfy", "ntfy"), ("NTFY", "ntfy"), ("slack", ""), ("", "")])
+# Verifies user-facing text spells each provider the way its service brands it
+def test_webhook_provider_display_name(provider, expected):
+    assert monitor.webhook_provider_display_name(provider) == expected
+
+
 # Verifies SIGHUP adopts rotated client credentials, clears auth caches and redetects ntfy
 def test_sighup_reload_clears_auth_caches_and_updates_webhook_provider(monkeypatch):
     if not hasattr(monitor.signal, "SIGHUP"):
