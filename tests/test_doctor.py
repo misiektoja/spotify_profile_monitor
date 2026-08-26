@@ -220,6 +220,18 @@ def test_doctor_report_rendering_redacts_secrets(monkeypatch):
     assert "COOKIE-SECRET-SENTINEL" not in rendered
 
 
+# Verifies the preflight notice reaches the user before any check runs rather than inside the report
+def test_doctor_preflight_notice_precedes_the_report(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "build_doctor_report", lambda *args, **kwargs: monitor.DoctorReport(checks=[monitor.make_doctor_check("Environment", "PASS", "ok")]))
+    monkeypatch.setattr(monitor.sys, "stdin", Mock(isatty=lambda: False))
+
+    monitor.run_doctor()
+
+    output = capsys.readouterr().out
+    assert "Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval." in output
+    assert output.index("Running preflight checks.") < output.index("Doctor\n")
+
+
 # Verifies Doctor visually attaches explanatory details to their check rows
 def test_doctor_report_indents_check_details():
     report = monitor.DoctorReport(checks=[monitor.make_doctor_check("Configuration", "PASS", "Log destination appears writable", "Path: spotify_profile_monitor")])
