@@ -795,6 +795,10 @@ WEBHOOK_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#webhook-settings"
 SECRETS_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#storing-secrets"
 INTERVALS_GUIDE_URL = DOCUMENTATION_URL + "/usage/#check-intervals"
 DOCTOR_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#doctor-preflight"
+
+# Labels of the two Doctor checks that gate the optional delivery tests, matched by prefix so each can name its channel
+SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
+WEBHOOK_READY_CHECK_LABEL = "Webhook URL and alert choices look valid"
 OAUTH_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-oauth-app"
 OAUTH_USER_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-oauth-user"
 BROWSER_COOKIE_GUIDE_URL = DOCUMENTATION_URL + "/setup-and-first-run/#browser-cookie-import"
@@ -8111,7 +8115,7 @@ def doctor_check_notifications() -> List[DoctorCheck]:
             smtp_object = None
             try:
                 smtp_object = smtp_connect_and_login(SMTP_SSL, smtp_timeout=5)
-                checks.append(make_doctor_check("Notifications", "PASS", "SMTP connection and login succeeded", "No email was sent during this passive check"))
+                checks.append(make_doctor_check("Notifications", "PASS", SMTP_READY_CHECK_LABEL, "No email was sent during this passive check"))
             except Exception as exc:
                 advice = classify_recovery_error(exc, "smtp_connection")
                 checks.append(make_doctor_check("Notifications", "FAIL", advice.summary, advice.detail, advice.fix, advice))
@@ -8137,7 +8141,7 @@ def doctor_check_notifications() -> List[DoctorCheck]:
         elif not _startup_webhook_notification_categories():
             checks.append(make_doctor_check("Notifications", "WARN", "Webhook alerts are on but no alert types are selected", "No webhook was sent", "Enable at least one webhook alert or turn WEBHOOK_ENABLED off"))
         else:
-            checks.append(make_doctor_check("Notifications", "PASS", "Webhook URL and alert choices look valid", "The private link was not displayed. No webhook was sent"))
+            checks.append(make_doctor_check("Notifications", "PASS", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", "The private link was not displayed. No webhook was sent"))
     return checks
 
 
@@ -8160,8 +8164,8 @@ def _doctor_ask_yes_no(question: str) -> bool:
 def _doctor_offer_notification_tests(report: DoctorReport) -> List[DoctorCheck]:
     if not sys.stdin.isatty() or not sys.stdout.isatty():
         return []
-    email_ready = any(check.status == "PASS" and check.label == "SMTP connection and login succeeded" for check in report.checks)
-    webhook_ready = any(check.status == "PASS" and check.label == "Webhook URL and alert choices look valid" for check in report.checks)
+    email_ready = any(check.status == "PASS" and check.label.startswith(SMTP_READY_CHECK_LABEL) for check in report.checks)
+    webhook_ready = any(check.status == "PASS" and check.label.startswith(WEBHOOK_READY_CHECK_LABEL) for check in report.checks)
     if not email_ready and not webhook_ready:
         return []
     print("\nOptional delivery tests\n")
