@@ -8192,11 +8192,13 @@ def _doctor_terminal_stream():
 def _doctor_progress(label: str) -> None:
     terminal = _doctor_terminal_stream()
     if terminal.isatty():
+        previous_width = int(getattr(_doctor_progress, "last_width", 0))
+        if previous_width:
+            terminal.write("\r" + (" " * previous_width) + "\r")
         message = f"* Checking {sanitize_terminal_text(label)} ..."
-        width = max(len(message), int(getattr(_doctor_progress, "last_width", 0)))
         # Function attributes hold this transient state, so the assignment stays dynamic for the type checker
-        setattr(_doctor_progress, "last_width", width)  # noqa: B010
-        terminal.write("\r" + message.ljust(width))
+        setattr(_doctor_progress, "last_width", len(message))  # noqa: B010
+        terminal.write("\r" + message)
         terminal.flush()
 
 
