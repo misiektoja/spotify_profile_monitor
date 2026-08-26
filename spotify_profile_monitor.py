@@ -8180,22 +8180,34 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> List[DoctorCheck]:
     return results
 
 
+# Returns the raw terminal stream for trusted Doctor cursor movement
+def _doctor_terminal_stream():
+    stream = sys.stdout
+    while isinstance(stream, (Logger, TerminalStream)):
+        stream = stream.terminal
+    return stream
+
+
 # Prints one transient Doctor progress update in interactive terminals
 def _doctor_progress(label: str) -> None:
-    if sys.stdout.isatty():
-        message = f"* Checking {label} ..."
+    terminal = _doctor_terminal_stream()
+    if terminal.isatty():
+        message = f"* Checking {sanitize_terminal_text(label)} ..."
         width = max(len(message), int(getattr(_doctor_progress, "last_width", 0)))
         # Function attributes hold this transient state, so the assignment stays dynamic for the type checker
         setattr(_doctor_progress, "last_width", width)  # noqa: B010
-        print("\r" + message.ljust(width), end="", flush=True)
+        terminal.write("\r" + message.ljust(width))
+        terminal.flush()
 
 
 # Clears the transient Doctor progress line before permanent output
 def _doctor_progress_clear() -> None:
-    if sys.stdout.isatty():
+    terminal = _doctor_terminal_stream()
+    if terminal.isatty():
         width = int(getattr(_doctor_progress, "last_width", 0))
         if width:
-            print("\r" + (" " * width) + "\r", end="", flush=True)
+            terminal.write("\r" + (" " * width) + "\r")
+            terminal.flush()
     setattr(_doctor_progress, "last_width", 0)  # noqa: B010
 
 
@@ -10916,6 +10928,9 @@ def main():
             print_recovery_error(exc, "set_webhook_url")
             sys.exit(1)
         sys.exit(0)
+
+    if args.doctor:
+        print_startup_banner()
 
     apply_webhook_cli_overrides(args, parser)
 
