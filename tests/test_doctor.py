@@ -1,7 +1,14 @@
+from io import StringIO
 from unittest.mock import Mock
 
 import requests
 import spotify_profile_monitor as monitor
+
+
+# Provides one in-memory stream that behaves like an interactive terminal
+class TTYBuffer(StringIO):
+    def isatty(self):
+        return True
 
 
 # Verifies Doctor classifies supported Python and missing dependencies
@@ -60,6 +67,20 @@ def test_doctor_reports_invalid_ascii_separator_setting(monkeypatch):
     checks = monitor.doctor_check_configuration()
 
     assert any(check.status == "FAIL" and check.label == "ASCII_LOG_SEPARATORS is invalid" for check in checks)
+
+
+# Verifies Doctor keeps trusted redraw controls when stdout has the runtime sanitizer wrapper
+def test_doctor_progress_redraws_through_terminal_stream(monkeypatch):
+    terminal = TTYBuffer()
+    monkeypatch.setattr(monitor.sys, "stdout", monitor.TerminalStream(terminal))
+
+    monitor._doctor_progress("environment")
+    monitor._doctor_progress("configuration")
+    monitor._doctor_progress_clear()
+
+    environment = "* Checking environment ..."
+    configuration = "* Checking configuration ..."
+    assert terminal.getvalue() == "\r" + environment + "\r" + configuration + "\r" + (" " * len(configuration)) + "\r"
 
 
 # Verifies missing cookie authentication remains actionable and secret-safe
