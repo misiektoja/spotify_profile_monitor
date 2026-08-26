@@ -19,6 +19,7 @@ Version **3.8** restores **Python 3.9 support**, applies the check interval and 
 - **IMPROVE:** **Automated checks on every change** - A pinned Ruff lint pass now runs in CI ahead of the test suite, which now covers Python 3.9 through 3.14 plus a Windows job. Optional pre-commit hooks and a shared `.editorconfig` catch the same issues before you commit
 - **IMPROVE:** **Continuous security scanning** - Dependencies and source are scanned on every change and weekly, with a published SBOM, Dependabot coverage for Python dependencies and a public OpenSSF Scorecard rating
 - **IMPROVE:** **Security policy and support guidance** - Added private vulnerability reporting, [SUPPORT.md](https://github.com/misiektoja/spotify_profile_monitor/blob/main/SUPPORT.md), contribution guidance, a code of conduct, a dependency licensing notice, issue and pull request templates and a test suite guide
+- **IMPROVE:** Corrected and improved wording in setup wizard and doctor preflight
 
 **Bug fixes**:
 
