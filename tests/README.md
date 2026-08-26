@@ -40,7 +40,7 @@ would see.
 | `test_playlist_snapshot_baseline.py` | Playlist baseline advancement on partial failure, removal confirmation and membership acceptance |
 | `test_webhook_notifications.py` | Webhook URL validation, provider detection, startup rollups and `SIGHUP` reload |
 | `test_notification_escaping.py` | Source-level sweep proving every HTML email body escapes Spotify-supplied text |
-| `test_untrusted_output.py` | Terminal control-character stripping across the logger and output streams |
+| `test_untrusted_output.py` | Terminal control-character stripping across the logger, output streams and early-exit listing modes |
 | `test_url_and_download_safety.py` | Spotify URI and URL conversion boundaries, host allowlists and bounded downloads |
 | `test_runtime_deadlines.py` | Nested request alarms restoring the enclosing watchdog deadline, and the POSIX-only guard |
 | `test_cleanup_and_compatibility.py` | Case-sensitive ID handling, UTF-8 CSV writes and export round-trips |
