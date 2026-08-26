@@ -4,7 +4,7 @@ This is a high-level summary of the most important changes.
 
 # Changes in 3.8 (26 Aug 2026)
 
-Version **3.8** restores **Python 3.9 support**, applies the check interval and connectivity settings from the config file and escapes Spotify text in **profile-picture emails, CSV exports and email links**. **Pillow is now optional**, **config files are parsed instead of executed**, `--debug` output is redacted and the project adds a **documentation site**, a **security policy** plus releases with a checksum file and a signed build attestation.
+Version **3.8** restores **Python 3.9 support**, applies the check interval and connectivity settings from the config file and escapes Spotify text in **profile-picture emails, CSV exports and email links**. **Pillow is now optional**, **config files are parsed instead of executed**, `--debug` output is redacted, environment-variable secrets work without a dotenv file and the project adds a **documentation site**, a **security policy** plus releases with a checksum file and a signed build attestation.
 
 **Features and improvements**:
 
@@ -22,6 +22,7 @@ Version **3.8** restores **Python 3.9 support**, applies the check interval and 
 
 **Bug fixes**:
 
+- **BUGFIX:** **Environment variables work without a dotenv file** - Secrets exported as environment variables, such as `SP_DC_COOKIE`, `SMTP_PASSWORD`, `WEBHOOK_URL` or `NTFY_ACCESS_TOKEN`, were applied only when a dotenv file also existed, so an export-only setup silently fell back to the shipped defaults. They are now honored on their own, including with `--env-file none`. **`--doctor`** now also names the dotenv file it loaded and lists which secrets are in effect and whether each one came from that file, an environment variable or the configuration file, so a secret that never arrived is visible at a glance
 - **BUGFIX:** **Python 3.9 startup restored** - The tool starts again on Python 3.9, the documented minimum runtime
 - **BUGFIX:** **Config-file check interval honored** - `SPOTIFY_CHECK_INTERVAL` set in the config file now correctly scales the liveness check cadence and playlist cache lifetime
 - **BUGFIX:** **Reliable playlist and search references** - `-l` / `--list-tracks-for-playlist` now accepts a URL, URI or bare ID reliably instead of misparsing values containing `user`, `track` or `album`. `-s` / `--search-username` encodes the search term so spaces and punctuation no longer break the request. `PLAYLISTS_TO_SKIP_FILE` entries are matched with their original case, since Spotify IDs are case sensitive
