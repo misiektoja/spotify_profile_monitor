@@ -576,6 +576,23 @@
     </span>
   </a>
   
+    <nav class="md-nav" aria-label="Terminal Output Modes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#coloured-terminal-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coloured Terminal Output
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
 </li>
       
         <li class="md-nav__item">
@@ -888,6 +905,23 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Terminal Output Modes">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#coloured-terminal-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coloured Terminal Output
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -1227,6 +1261,15 @@
 </code></pre></div>
 <p>Recoverable failures use a short <code>Error</code>, <code>To fix</code> and relevant guide format. Repeated monitoring failures keep the short error visible but suppress unchanged recovery instructions until the operation succeeds or the failure category changes. Raw exception detail is shown only in debug mode.</p>
 <p>Cookies, tokens, passwords, authorization headers and webhook URLs are redacted from verbose and debug output.</p>
+<p><a id="coloured-terminal-output"></a></p>
+<h3 id="coloured-terminal-output">Coloured Terminal Output<a class="headerlink" href="#coloured-terminal-output" title="Permanent link">&para;</a></h3>
+<p>Spotify Profile Monitor colours live terminal output by default. Usernames, Spotify IDs, playlist, track and album names, dates, durations, follower and playlist counters, links and change headers each get their own colour, and errors, warnings and received signals are highlighted as a whole line.</p>
+<p>Colour never reaches saved output: log files are written with the escape sequences stripped, so <code>grep</code>, <code>tail</code> and any log viewer see plain text.</p>
+<p>Turn it off for one run with <code>--no-color</code>, or permanently with <code>COLORED_OUTPUT = False</code> in the configuration file. The setting is read before the startup banner is printed, so a configured value applies to the very first line of output. Colour also switches itself off when it cannot be displayed safely: when output is redirected or piped, when <code>TERM</code> is unset or <code>dumb</code>, and when the standard <a href="https://no-color.org/"><code>NO_COLOR</code></a> environment variable is set. On Windows, install the optional <code>colorama</code> package for the best results in the classic Command Prompt.</p>
+<p>Override individual colours with <code>COLOR_THEME</code>. It is merged over the built-in theme, so you only name the parts you want to change:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a><span class="na">COLOR_THEME = { "playlist"</span><span class="o">:</span><span class="w"> </span><span class="s">"bright_magenta bold"</span><span class="na">, "username"</span><span class="o">:</span><span class="w"> </span><span class="s">"green"</span><span class="w"> </span><span class="na">}</span>
+</code></pre></div>
+<p>See <a href="../configuration/#terminal-colours">Terminal Colours</a> for every theme key and the accepted colour and style names.</p>
 <p><a id="signal-controls-macoslinuxunix"></a></p>
 <h2 id="signal-controls-macoslinuxunix">Signal Controls (macOS/Linux/Unix)<a class="headerlink" href="#signal-controls-macoslinuxunix" title="Permanent link">&para;</a></h2>
 <p>The tool has several signal handlers implemented which allow to change behavior of the tool without a need to restart it with new configuration options / flags.</p>
@@ -1258,20 +1301,20 @@
 </tbody>
 </table>
 <p>Send signals with <code>kill</code> or <code>pkill</code>, e.g.:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>pkill<span class="w"> </span>-USR1<span class="w"> </span>-f<span class="w"> </span><span class="s2">"spotify_profile_monitor &lt;spotify_target&gt;"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a>pkill<span class="w"> </span>-USR1<span class="w"> </span>-f<span class="w"> </span><span class="s2">"spotify_profile_monitor &lt;spotify_target&gt;"</span>
 </code></pre></div>
 <p>As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.</p>
 <p><a id="coloring-log-output-with-grc"></a></p>
 <h2 id="coloring-log-output-with-grc">Coloring Log Output with GRC<a class="headerlink" href="#coloring-log-output-with-grc" title="Permanent link">&para;</a></h2>
-<p>You can use <a href="https://github.com/garabik/grc">GRC</a> to color logs.</p>
+<p>Spotify Profile Monitor colours live terminal output through <code>COLORED_OUTPUT</code> and <code>COLOR_THEME</code>. To colour saved log files when you view them later, you can use <a href="https://github.com/garabik/grc">GRC</a>.</p>
 <p>Add to your GRC config (<code>~/.grc/grc.conf</code>):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a># monitoring log file
-<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a>.*_monitor_.*\.log
-<a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a>conf.monitor_logs
+<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a># monitoring log file
+<a id="__codelineno-35-2" name="__codelineno-35-2" href="#__codelineno-35-2"></a>.*_monitor_.*\.log
+<a id="__codelineno-35-3" name="__codelineno-35-3" href="#__codelineno-35-3"></a>conf.monitor_logs
 </code></pre></div>
 <p>Now copy the <a href="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/grc/conf.monitor_logs">conf.monitor_logs</a> to your <code>~/.grc/</code> and log files should be nicely colored when using <code>grc</code> tool.</p>
 <p>Example:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a>grc<span class="w"> </span>tail<span class="w"> </span>-F<span class="w"> </span>-n<span class="w"> </span><span class="m">100</span><span class="w"> </span>spotify_profile_monitor_&lt;user_id/file_suffix&gt;.log
+<div class="highlight"><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a>grc<span class="w"> </span>tail<span class="w"> </span>-F<span class="w"> </span>-n<span class="w"> </span><span class="m">100</span><span class="w"> </span>spotify_profile_monitor_&lt;user_id/file_suffix&gt;.log
 </code></pre></div>
 
 

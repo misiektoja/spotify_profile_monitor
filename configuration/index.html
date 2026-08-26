@@ -586,6 +586,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#terminal-colours" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Terminal Colours
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#storing-secrets" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -945,6 +956,17 @@
         
       </ul>
     </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#terminal-colours" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Terminal Colours
+      
+    </span>
+  </a>
   
 </li>
       
@@ -1322,41 +1344,151 @@
 </code></pre></div>
 <p>Email and webhook delivery are independent. A failure in one channel does not stop the other channel.</p>
 <p>Webhook requests do not follow redirects, so <code>WEBHOOK_HEADERS</code> credentials and alert content can never be handed to a host you did not configure. If your destination answers with a redirect, delivery fails with a message telling you to save the final URL. Save it with <code>--set-webhook-url</code> then confirm with <code>--send-test-webhook</code>.</p>
+<p><a id="terminal-colours"></a></p>
+<h2 id="terminal-colours">Terminal Colours<a class="headerlink" href="#terminal-colours" title="Permanent link">&para;</a></h2>
+<p><code>COLORED_OUTPUT</code> controls whether live terminal output is coloured. It defaults to <code>True</code> and is read before the startup banner is printed, so a configured value applies to the first line of output. <code>--no-color</code> disables colour for one run. Colour also switches itself off when output is redirected or piped, when <code>TERM</code> is unset or <code>dumb</code> and when the standard <a href="https://no-color.org/"><code>NO_COLOR</code></a> environment variable is set. Log files are always written with the escape sequences stripped.</p>
+<p><code>COLOR_THEME</code> overrides individual colours. It is merged over the built-in theme, so name only the parts you want to change:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="na">COLOR_THEME = { "playlist"</span><span class="o">:</span><span class="w"> </span><span class="s">"bright_magenta bold"</span><span class="na">, "username"</span><span class="o">:</span><span class="w"> </span><span class="s">"green"</span><span class="w"> </span><span class="na">}</span>
+</code></pre></div>
+<p>A value combines one colour with any number of style attributes, separated by spaces or <code>+</code>, for example <code>"bright_cyan bold"</code>, <code>"red underline"</code> or <code>"bright_magenta bold underline"</code>. An empty string leaves that part uncoloured.</p>
+<table>
+<thead>
+<tr>
+<th>Colours</th>
+<th>Styles</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>black</code>, <code>red</code>, <code>green</code>, <code>yellow</code>, <code>blue</code>, <code>magenta</code>, <code>cyan</code>, <code>white</code> and the matching <code>bright_</code> variants such as <code>bright_red</code></td>
+<td><code>bold</code>, <code>dim</code>, <code>underline</code>, <code>blink</code></td>
+</tr>
+</tbody>
+</table>
+<p>Parts with the same name mean the same thing in <a href="https://github.com/misiektoja/spotify_monitor">spotify_monitor</a>, so a <code>COLOR_THEME</code> block can be shared between the two tools. Each tool lists only the parts it actually colours, so a few names appear in one and not the other.</p>
+<table>
+<thead>
+<tr>
+<th>Theme key</th>
+<th>Colours</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>header</code></td>
+<td>The startup banner plus the Setup Wizard and Doctor headings</td>
+</tr>
+<tr>
+<td><code>section</code></td>
+<td>Commands the wizard tells you to run, and the Doctor section names</td>
+</tr>
+<tr>
+<td><code>username</code></td>
+<td>Spotify display names and quoted user names</td>
+</tr>
+<tr>
+<td><code>user_uri_id</code></td>
+<td>Spotify user IDs and URIs</td>
+</tr>
+<tr>
+<td><code>status_active</code></td>
+<td><code>ACTIVE</code> and <code>PRIVATE MODE</code> status words</td>
+</tr>
+<tr>
+<td><code>status_inactive</code></td>
+<td><code>INACTIVE</code> status words</td>
+</tr>
+<tr>
+<td><code>status_offline</code></td>
+<td><code>OFFLINE</code> status words</td>
+</tr>
+<tr>
+<td><code>status_other</code></td>
+<td>Any other reported status word</td>
+</tr>
+<tr>
+<td><code>track</code></td>
+<td>Track names in listings and other quoted names</td>
+</tr>
+<tr>
+<td><code>playlist</code></td>
+<td>Playlist names</td>
+</tr>
+<tr>
+<td><code>duration</code></td>
+<td>Playlist durations and elapsed times</td>
+</tr>
+<tr>
+<td><code>timestamp_label</code></td>
+<td>The <code>Timestamp:</code> label. Empty by default, so the label stays plain like in the sibling monitors</td>
+</tr>
+<tr>
+<td><code>timestamp_value</code></td>
+<td>The timestamp value</td>
+</tr>
+<tr>
+<td><code>info</code>, <code>warning</code>, <code>error</code>, <code>signal</code></td>
+<td>Informational, warning, error and received-signal lines</td>
+</tr>
+<tr>
+<td><code>email</code>, <code>webhook</code></td>
+<td>Notification delivery lines</td>
+</tr>
+<tr>
+<td><code>date</code>, <code>date_range</code></td>
+<td>Single dates and times, and date or hour ranges</td>
+</tr>
+<tr>
+<td><code>boolean_true</code>, <code>boolean_false</code></td>
+<td><code>True</code> / <code>Enabled</code> and <code>False</code> / <code>Disabled</code></td>
+</tr>
+<tr>
+<td><code>count_up</code>, <code>count_down</code></td>
+<td>Reported changes only, such as <code>from 10 to 12</code> and the <code>(+2)</code> / <code>(-2)</code> differences. A static count is left plain</td>
+</tr>
+<tr>
+<td><code>link</code></td>
+<td>URLs</td>
+</tr>
+</tbody>
+</table>
+<p>On Windows, install the optional <code>colorama</code> package for the best results in the classic Command Prompt. Windows Terminal needs nothing extra.</p>
+<p>To colour saved log files when you view them later, see <a href="../usage/#coloring-log-output-with-grc">Coloring Log Output with GRC</a>.</p>
 <p><a id="storing-secrets"></a></p>
 <h2 id="storing-secrets">Storing Secrets<a class="headerlink" href="#storing-secrets" title="Permanent link">&para;</a></h2>
 <p>It is recommended to store secrets like <code>SP_DC_COOKIE</code>, <code>SP_APP_CLIENT_ID</code>, <code>SP_APP_CLIENT_SECRET</code>, <code>SP_USER_CLIENT_ID</code>, <code>SP_USER_CLIENT_SECRET</code>, <code>REFRESH_TOKEN</code>, <code>SP_SHA256</code>, <code>SMTP_PASSWORD</code>, <code>WEBHOOK_URL</code> or <code>NTFY_ACCESS_TOKEN</code> as either an environment variable or in a dotenv file. For <code>SP_DC_COOKIE</code>, prefer <code>spotify_profile_monitor --set-sp-dc</code> so the value is entered through a hidden prompt and validated before it is saved.</p>
 <p>Set the needed environment variables using <code>export</code> on <strong>Linux/Unix/macOS/WSL</strong> systems:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_DC_COOKIE</span><span class="o">=</span><span class="s2">"your_sp_dc_cookie_value"</span>
-<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_APP_CLIENT_ID</span><span class="o">=</span><span class="s2">"your_spotify_app_client_id"</span>
-<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_APP_CLIENT_SECRET</span><span class="o">=</span><span class="s2">"your_spotify_app_client_secret"</span>
-<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_USER_CLIENT_ID</span><span class="o">=</span><span class="s2">"your_spotify_user_client_id"</span>
-<a id="__codelineno-20-5" name="__codelineno-20-5" href="#__codelineno-20-5"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_USER_CLIENT_SECRET</span><span class="o">=</span><span class="s2">"your_spotify_user_client_secret"</span>
-<a id="__codelineno-20-6" name="__codelineno-20-6" href="#__codelineno-20-6"></a><span class="nb">export</span><span class="w"> </span><span class="nv">REFRESH_TOKEN</span><span class="o">=</span><span class="s2">"your_spotify_app_refresh_token"</span>
-<a id="__codelineno-20-7" name="__codelineno-20-7" href="#__codelineno-20-7"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_SHA256</span><span class="o">=</span><span class="s2">"your_spotify_client_sha256"</span>
-<a id="__codelineno-20-8" name="__codelineno-20-8" href="#__codelineno-20-8"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SMTP_PASSWORD</span><span class="o">=</span><span class="s2">"your_smtp_password"</span>
-<a id="__codelineno-20-9" name="__codelineno-20-9" href="#__codelineno-20-9"></a><span class="nb">export</span><span class="w"> </span><span class="nv">WEBHOOK_URL</span><span class="o">=</span><span class="s2">"https://discord.com/api/webhooks/your_id/your_token"</span>
-<a id="__codelineno-20-10" name="__codelineno-20-10" href="#__codelineno-20-10"></a><span class="nb">export</span><span class="w"> </span><span class="nv">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s2">"tk_your_ntfy_access_token"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_DC_COOKIE</span><span class="o">=</span><span class="s2">"your_sp_dc_cookie_value"</span>
+<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_APP_CLIENT_ID</span><span class="o">=</span><span class="s2">"your_spotify_app_client_id"</span>
+<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_APP_CLIENT_SECRET</span><span class="o">=</span><span class="s2">"your_spotify_app_client_secret"</span>
+<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_USER_CLIENT_ID</span><span class="o">=</span><span class="s2">"your_spotify_user_client_id"</span>
+<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_USER_CLIENT_SECRET</span><span class="o">=</span><span class="s2">"your_spotify_user_client_secret"</span>
+<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a><span class="nb">export</span><span class="w"> </span><span class="nv">REFRESH_TOKEN</span><span class="o">=</span><span class="s2">"your_spotify_app_refresh_token"</span>
+<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_SHA256</span><span class="o">=</span><span class="s2">"your_spotify_client_sha256"</span>
+<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SMTP_PASSWORD</span><span class="o">=</span><span class="s2">"your_smtp_password"</span>
+<a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a><span class="nb">export</span><span class="w"> </span><span class="nv">WEBHOOK_URL</span><span class="o">=</span><span class="s2">"https://discord.com/api/webhooks/your_id/your_token"</span>
+<a id="__codelineno-21-10" name="__codelineno-21-10" href="#__codelineno-21-10"></a><span class="nb">export</span><span class="w"> </span><span class="nv">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s2">"tk_your_ntfy_access_token"</span>
 </code></pre></div>
 <p>On <strong>Windows Command Prompt</strong> use <code>set</code> instead of <code>export</code> and on <strong>Windows PowerShell</strong> use <code>$env</code>.</p>
 <p>Alternatively store them persistently in a dotenv file (recommended). Create a plain text file named <code>.env</code> in the directory where you run Spotify Profile Monitor then add only the values you use:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="na">SP_DC_COOKIE</span><span class="o">=</span><span class="s">"your_sp_dc_cookie_value"</span>
-<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="na">SP_APP_CLIENT_ID</span><span class="o">=</span><span class="s">"your_spotify_app_client_id"</span>
-<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="na">SP_APP_CLIENT_SECRET</span><span class="o">=</span><span class="s">"your_spotify_app_client_secret"</span>
-<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="na">SP_USER_CLIENT_ID</span><span class="o">=</span><span class="s">"your_spotify_user_client_id"</span>
-<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a><span class="na">SP_USER_CLIENT_SECRET</span><span class="o">=</span><span class="s">"your_spotify_user_client_secret"</span>
-<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a><span class="na">REFRESH_TOKEN</span><span class="o">=</span><span class="s">"your_spotify_app_refresh_token"</span>
-<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a><span class="na">SP_SHA256</span><span class="o">=</span><span class="s">"your_spotify_client_sha256"</span>
-<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a><span class="na">SMTP_PASSWORD</span><span class="o">=</span><span class="s">"your_smtp_password"</span>
-<a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a><span class="na">WEBHOOK_URL</span><span class="o">=</span><span class="s">"https://discord.com/api/webhooks/your_id/your_token"</span>
-<a id="__codelineno-21-10" name="__codelineno-21-10" href="#__codelineno-21-10"></a><span class="na">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s">"tk_your_ntfy_access_token"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="na">SP_DC_COOKIE</span><span class="o">=</span><span class="s">"your_sp_dc_cookie_value"</span>
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="na">SP_APP_CLIENT_ID</span><span class="o">=</span><span class="s">"your_spotify_app_client_id"</span>
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="na">SP_APP_CLIENT_SECRET</span><span class="o">=</span><span class="s">"your_spotify_app_client_secret"</span>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="na">SP_USER_CLIENT_ID</span><span class="o">=</span><span class="s">"your_spotify_user_client_id"</span>
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a><span class="na">SP_USER_CLIENT_SECRET</span><span class="o">=</span><span class="s">"your_spotify_user_client_secret"</span>
+<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a><span class="na">REFRESH_TOKEN</span><span class="o">=</span><span class="s">"your_spotify_app_refresh_token"</span>
+<a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a><span class="na">SP_SHA256</span><span class="o">=</span><span class="s">"your_spotify_client_sha256"</span>
+<a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a><span class="na">SMTP_PASSWORD</span><span class="o">=</span><span class="s">"your_smtp_password"</span>
+<a id="__codelineno-22-9" name="__codelineno-22-9" href="#__codelineno-22-9"></a><span class="na">WEBHOOK_URL</span><span class="o">=</span><span class="s">"https://discord.com/api/webhooks/your_id/your_token"</span>
+<a id="__codelineno-22-10" name="__codelineno-22-10" href="#__codelineno-22-10"></a><span class="na">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s">"tk_your_ntfy_access_token"</span>
 </code></pre></div>
 <p>By default the tool will auto-search for dotenv file named <code>.env</code> in current directory and then upward from it.</p>
 <p>Commands that write a secret do not use that upward search when choosing a destination. Without <code>--env-file</code>, <code>--set-sp-dc</code>, <code>--set-webhook-url</code> and browser cookie import all write to <code>.env</code> in the current directory.</p>
 <p>You can specify a custom file with <code>DOTENV_FILE</code> or <code>--env-file</code> flag:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>--env-file<span class="w"> </span>/path/.env-spotify_profile_monitor
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>--env-file<span class="w"> </span>/path/.env-spotify_profile_monitor
 </code></pre></div>
 <p>You can also disable <code>.env</code> auto-search with <code>DOTENV_FILE = "none"</code> or <code>--env-file none</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>--env-file<span class="w"> </span>none
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>--env-file<span class="w"> </span>none
 </code></pre></div>
 <p>As a fallback, you can also store secrets in the configuration file or source code.</p>
 
