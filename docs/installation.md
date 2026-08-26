@@ -11,6 +11,7 @@ If you are new to Python or unsure whether Python is ready on your machine, foll
 * Libraries: `requests`, `python-dateutil`, `urllib3`, `pyotp`, `pytz`, `tzlocal`, `python-dotenv`, [Spotipy](https://github.com/spotipy-dev/spotipy), `wcwidth`, `pathvalidate`
 * Optional for Chrome, Brave or Chromium cookie import: [pycookiecheat](https://github.com/n8henrie/pycookiecheat)
 * Optional for email and ntfy artwork attachments: [Pillow](https://github.com/python-pillow/Pillow)
+* Optional for better coloured output in the classic Windows Command Prompt: [colorama](https://github.com/tartley/colorama)
 
 Tested on:
 
