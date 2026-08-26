@@ -90,6 +90,25 @@ def test_recovery_actions_preserve_terminal_history(arguments, runner_name, exit
     prepare_mock.assert_not_called()
 
 
+# Verifies direct Doctor startup prints the product banner before running checks
+def test_doctor_action_prints_banner_before_checks(monkeypatch):
+    events = []
+    monkeypatch.setattr(monitor.sys, "argv", ["spotify_profile_monitor", "--doctor", "--config-file", "none", "--env-file", "none"])
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", None)
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "")
+    monkeypatch.setattr(monitor, "TARGET_USER_URI_ID", "")
+    monkeypatch.setattr(monitor, "TOKEN_SOURCE", "cookie")
+    monkeypatch.setattr(monitor, "USER_AGENT", "test-agent")
+    monkeypatch.setattr(monitor, "print_startup_banner", lambda: events.append("banner"))
+    monkeypatch.setattr(monitor, "run_doctor", lambda *args, **kwargs: events.append("doctor") or 1)
+
+    with pytest.raises(SystemExit) as error:
+        monitor.main()
+
+    assert error.value.code == 1
+    assert events == ["banner", "doctor"]
+
+
 # Verifies the webhook delivery test uses the same clean-screen flow as the email test
 def test_webhook_delivery_test_prepares_startup_screen(monkeypatch):
     prepare_mock = Mock()
