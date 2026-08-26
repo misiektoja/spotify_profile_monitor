@@ -4,48 +4,39 @@ This is a high-level summary of the most important changes.
 
 # Changes in 3.8 (26 Aug 2026)
 
-Version **3.8** restores **Python 3.9 support**, makes **config-file polling and connectivity settings take effect** and hardens **profile-picture emails, CSV export, playlist links and the anti-hang watchdog**. Configuration files are now **read as data instead of executed**, artwork attachments became an optional extra and debug output is redacted centrally. The project also gained a published **security policy**, verifiable release downloads and a new **documentation site** at [misiektoja.github.io/spotify_profile_monitor](https://misiektoja.github.io/spotify_profile_monitor/).
+Version **3.8** restores **Python 3.9 support**, applies the check interval and connectivity settings from the config file and escapes Spotify text in **profile-picture emails, CSV exports and email links**. **Pillow is now optional**, **config files are parsed instead of executed**, `--debug` output is redacted and the project adds a **documentation site**, a **security policy** plus releases with a checksum file and a signed build attestation.
 
 **Features and improvements**:
 
-- **CONFIG CHANGE:** **Artwork attachments are now an optional extra** - Pillow is no longer installed by default; email and ntfy artwork now come from the `notification-images` extra and `NTFY_IMAGES` defaults to `False`. Install with `pip install "spotify_profile_monitor[notification-images]"`, or let setup do it for you. **Users relying on ntfy artwork should install the extra and set `NTFY_IMAGES = True`**
-- **NEW:** **Searchable documentation site** - Full documentation is now published at **[misiektoja.github.io/spotify_profile_monitor](https://misiektoja.github.io/spotify_profile_monitor/)** with one page per task and full-text search; `To fix:` messages link straight to the relevant section, and the README is now a short landing page
+- **NEW:** **Searchable documentation site** - Full documentation is now published at **[misiektoja.github.io/spotify_profile_monitor](https://misiektoja.github.io/spotify_profile_monitor/)** with one page per task and full-text search
+- **CONFIG CHANGE:** **Artwork is now an optional extra** - **Pillow is no longer required**. Email and ntfy artwork moved to the `notification-images` extra and `NTFY_IMAGES` now defaults to `False`. Install with `pip install "spotify_profile_monitor[notification-images]"` or let setup do it for you. **Upgraders who use artwork should install the extra, then set `NTFY_IMAGES = True` again for ntfy alerts**
+- **IMPROVE:** **Faster follower and playlist comparisons** - Detecting added and removed followers and playlists now scales linearly instead of quadratically
+- **IMPROVE:** **Playlist exports get their own folder** - `--export-all-playlists` now writes into a dedicated directory instead of the working directory
+- **IMPROVE:** **Masked refresh token** - `-w` now prints a masked refresh token by default; add `--verbose` to show the full value
 - **IMPROVE:** **Clearer ntfy webhook customization** - `WEBHOOK_TEMPLATE`, `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` are documented as Discord-only; customize ntfy delivery through `WEBHOOK_HEADERS`
-- **IMPROVE:** **Published security and contribution policies** - Added a security policy with private vulnerability reporting, issue and pull request templates, contribution guidance, a code of conduct, a dependency licensing notice and a test suite guide
-- **IMPROVE:** **Gated and verifiable release automation** - PyPI releases can no longer publish unless the full test suite passes, new contract tests catch unsafe workflow changes, and Dependabot now tracks Python dependencies as well as actions
-- **IMPROVE:** **Verifiable release downloads** - Releases now ship a `SHA256SUMS.txt` and a signed build attestation, checkable with `gh attestation verify`
-- **IMPROVE:** **Automated defect checks on every change** - A pinned Ruff lint pass now runs in CI before the test suite, plus optional pre-commit hooks and a shared `.editorconfig`
-- **IMPROVE:** **Hardened release automation** - Release workflows now pass the tag through the environment instead of a shell command, and every Action is pinned to a commit SHA
-- **IMPROVE:** **Every supported Python version verified on each change** - The test suite now runs on Python 3.9 through 3.14 plus a Windows job on every change
-- **IMPROVE:** **Continuous security and dependency scanning** - CodeQL, OpenSSF Scorecard and a pip-audit/SBOM job now run on every change and weekly
+- **IMPROVE:** **Checksums and signed attestation for releases** - Releases now ship a `SHA256SUMS.txt` and a signed build attestation, checkable with `gh attestation verify`
+- **IMPROVE:** **Releases publish only after the tests pass** - PyPI releases can no longer publish unless the full test suite passes, every workflow action is pinned to a commit SHA, release tags reach the workflow through the environment instead of a shell command and new contract tests catch unsafe workflow changes
+- **IMPROVE:** **Automated checks on every change** - A pinned Ruff lint pass now runs in CI ahead of the test suite, which now covers Python 3.9 through 3.14 plus a Windows job. Optional pre-commit hooks and a shared `.editorconfig` catch the same issues before you commit
+- **IMPROVE:** **Continuous security scanning** - Dependencies and source are scanned on every change and weekly, with a published SBOM, Dependabot coverage for Python dependencies and a public OpenSSF Scorecard rating
+- **IMPROVE:** **Security policy and support guidance** - Added private vulnerability reporting, [SUPPORT.md](https://github.com/misiektoja/spotify_profile_monitor/blob/main/SUPPORT.md), contribution guidance, a code of conduct, a dependency licensing notice, issue and pull request templates and a test suite guide
 
 **Bug fixes**:
 
 - **BUGFIX:** **Python 3.9 startup restored** - The tool starts again on Python 3.9, the documented minimum runtime
-- **BUGFIX:** **Webhook delivery respects `VERIFY_SSL`** - Discord and ntfy now honor the same TLS setting as other requests, and a reloaded `WEBHOOK_URL` is rechecked before use
-- **BUGFIX:** **Configuration files are read as data** - The config file is now parsed instead of executed, so it can no longer run code at startup; settings dropped by older upgrades are ignored gracefully
-- **BUGFIX:** **Redacted debug output** - `--debug` output is now passed through the same redaction as error text, so a transcript can no longer carry a cookie, token or password
-- **BUGFIX:** **Faster follower and playlist comparisons** - Detecting added/removed followers and playlists now scales linearly instead of quadratically
-- **BUGFIX:** **Private configuration backups** - Config backups are now created owner-only from the start instead of with default permissions
 - **BUGFIX:** **Config-file check interval honored** - `SPOTIFY_CHECK_INTERVAL` set in the config file now correctly scales the liveness check cadence and playlist cache lifetime
-- **BUGFIX:** **Connectivity check respects configuration** - The startup internet check now honors `VERIFY_SSL`, `CHECK_INTERNET_URL` and `CHECK_INTERNET_TIMEOUT`
-- **BUGFIX:** **Hardened profile-picture emails** - The monitored account's display name is now HTML-escaped in profile-picture emails, matching other notifications
-- **BUGFIX:** **Reliable anti-hang watchdog** - The watchdog can no longer be disabled by a nested request timer, and its timeout no longer pre-empts legitimate slow requests
+- **BUGFIX:** **Reliable playlist and search references** - `-l` / `--list-tracks-for-playlist` now accepts a URL, URI or bare ID reliably instead of misparsing values containing `user`, `track` or `album`. `-s` / `--search-username` encodes the search term so spaces and punctuation no longer break the request. `PLAYLISTS_TO_SKIP_FILE` entries are matched with their original case, since Spotify IDs are case sensitive
+- **BUGFIX:** **Stable playlist output and steady memory** - Removed stray duplicate log lines and swept stale collaborator cache entries so long-running processes no longer grow unbounded
+- **BUGFIX:** **Hardened email notifications** - The monitored account's display name is now escaped in profile-picture emails, matching other notifications. Link addresses are attribute-escaped too, so a crafted identifier can no longer break out of an `href`
+- **BUGFIX:** **Webhook delivery respects `VERIFY_SSL`** - Discord and ntfy now honor the same TLS setting as other requests and follow no redirects, so alert content and headers cannot reach an unconfigured host. A reloaded `WEBHOOK_URL` is rechecked before use
+- **BUGFIX:** **Configuration files are read as data** - The config file is now parsed instead of executed, so it can no longer run code at startup. Settings dropped by older upgrades are ignored gracefully. Generated config files and backups are owner-only from the start on macOS and Linux
+- **BUGFIX:** **Connectivity check respects configuration** - The startup internet check now honors `CHECK_INTERNET_URL`, `CHECK_INTERNET_TIMEOUT` and `VERIFY_SSL`
+- **BUGFIX:** **Redacted debug output** - `--debug` output is now passed through the same redaction as error text, so a transcript can no longer carry a cookie, token or password
+- **BUGFIX:** **Spotify requests stay on Spotify** - Paginated requests now verify each page URL is an HTTPS Spotify host before sending your access token, with a cap on how many pages are followed. Profile pictures are accepted only from Spotify's own CDN hosts, capped at 5 MB, with no redirects followed
+- **BUGFIX:** **Terminal- and spreadsheet-safe Spotify text** - Spotify-supplied names and descriptions are stripped of terminal control sequences before reaching the console or log file. Text that could be read as a spreadsheet formula is escaped with a leading apostrophe in exported CSV files
+- **BUGFIX:** **Reliable anti-hang watchdog** - The watchdog can no longer be disabled by a nested request timer while its timeout no longer pre-empts legitimate slow requests
 - **BUGFIX:** **Shell-free image preview** - `IMGCAT_PATH` now launches the viewer with an argument list instead of a shell command string
-- **BUGFIX:** **Terminal-safe Spotify text** - Spotify-supplied names and descriptions are stripped of terminal control sequences before reaching the console or log file
-- **BUGFIX:** **Spreadsheet-safe CSV export** - Spotify text that could be read as a spreadsheet formula is now escaped with a leading apostrophe in exported CSV files
-- **BUGFIX:** **Escaped notification links** - Link addresses in HTML emails are now attribute-escaped, so a crafted identifier can no longer break out of an `href`
-- **BUGFIX:** **Reliable playlist references** - `-l` / `--list-tracks-for-playlist` now accepts a URL, URI or bare ID reliably instead of misparsing values containing `user`, `track` or `album`
-- **BUGFIX:** **Working search terms** - `-s` / `--search-username` now properly encodes the search term, so spaces and punctuation no longer break the request
-- **BUGFIX:** **Bounded profile-picture downloads** - Profile pictures are now accepted only from Spotify's own CDN hosts, capped at 5 MB, with no redirects followed
-- **BUGFIX:** **Webhook alerts stay on their destination** - Webhook requests no longer follow redirects, so alert content and headers cannot reach an unconfigured host
-- **IMPROVE:** **Confined playlist exports** - `--export-all-playlists` now writes into its own dedicated directory instead of the working directory
-- **BUGFIX:** **Case-sensitive playlist blacklisting** - `PLAYLISTS_TO_SKIP_FILE` entries are now matched with their original case, since Spotify IDs are case sensitive
 - **BUGFIX:** **Windows compatibility fixes** - Export writes UTF-8 explicitly and playlist artwork filenames no longer embed characters Windows rejects
-- **BUGFIX:** **Masked refresh token** - `-w` now prints a masked refresh token by default; add `--verbose` to show the full value
-- **BUGFIX:** **Cleaner playlist output and steady memory** - Removed stray duplicate log lines and swept stale collaborator cache entries so long-running processes no longer grow unbounded
-- **BUGFIX:** **Smaller fixes** - Generated config files are now owner-only on macOS/Linux, `--truncate 0` is honored, a non-string `SMTP_HOST` reports a clean error and the Firefox cookie handle is closed after import
-- **BUGFIX:** **Spotify requests stay on Spotify** - Paginated requests now verify each page URL is an HTTPS Spotify host before sending your access token, and pagination is bounded
+- **BUGFIX:** **Smaller fixes** - `--truncate 0` is honored, a non-string `SMTP_HOST` reports a clean error and the Firefox cookie handle is closed after import
 
 # Changes in 3.7 (04 Aug 2026)
 
