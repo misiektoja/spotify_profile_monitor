@@ -7630,6 +7630,7 @@ def _wizard_welcome() -> None:
     print(f"Full options: {prefix} --help")
     print(f"\nGuide:        {QUICK_START_GUIDE_URL}\n")
     if interactive and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True):
+        print()
         run_setup_wizard()
 
 
@@ -8240,7 +8241,7 @@ def build_doctor_report(target_value=None, config_path=None, env_path=None, star
 
 # Renders one sectioned ASCII Doctor report with recovery actions
 def render_doctor_report(report: DoctorReport) -> str:
-    lines = ["Doctor", "", "No files will be written. In an interactive terminal, real email and webhook tests are offered separately and run only after approval."]
+    lines = ["Doctor", "", "Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval."]
     for section in ("Environment", "Configuration", "Authentication", "Metadata", "Connectivity", "Target", "Notifications"):
         section_checks = [item for item in report.checks if item.section == section]
         if not section_checks:
@@ -8254,7 +8255,13 @@ def render_doctor_report(report: DoctorReport) -> str:
                 lines.append(f"To fix: {check.fix}")
     failures = sum(check.status == "FAIL" for check in report.checks)
     warnings = sum(check.status == "WARN" for check in report.checks)
-    lines.extend(("", "Summary", f"{failures} failure(s), {warnings} warning(s)", "", f"Guide: {DOCTOR_GUIDE_URL}"))
+    if failures:
+        summary_line = f"  {failures} check(s) failed, {warnings} warning(s). Fix the failures above before relying on the tool."
+    elif warnings:
+        summary_line = f"  All critical checks passed with {warnings} warning(s). Review the warnings above."
+    else:
+        summary_line = "  All checks passed. You are good to go!"
+    lines.extend(("", "Summary", summary_line, "", f"Guide: {DOCTOR_GUIDE_URL}"))
     return sanitize_error_text("\n".join(lines))
 
 
@@ -8438,7 +8445,7 @@ def _wizard_install_chromium_dependency(method: str) -> bool:
 
 # Explains the setup prompt defaults shared with Spotify Monitor
 def _wizard_print_default_guidance() -> None:
-    print("\nPress Enter to accept the shown default. Ctrl+C cancels.\n")
+    print("Press Enter to accept the shown default. Ctrl+C cancels.\n")
 
 
 # Resolves setup destinations without parent directory discovery
@@ -8943,7 +8950,7 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
         print(f"Setup cannot start: {exc}")
         raise SystemExit(1) from None
     method = _wizard_install_method()
-    print("\nSetup Wizard\n")
+    print("Setup Wizard\n")
     print("This asks a few questions and writes a ready-to-run configuration.")
     _wizard_print_default_guidance()
     print("Secrets go to the dotenv file. Non-secret settings go to the config file.")
@@ -8990,6 +8997,8 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
         state.auth = _wizard_finish_browser_import(state.auth, state.env_path, state.config_path, state.target)
     doctor_failed = False
     doctor_ran = False
+    if state.auth["complete"]:
+        print()
     if state.auth["complete"] and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
         doctor_ran = True
         if _wizard_load_effective_setup(state.config_path, state.env_path):
