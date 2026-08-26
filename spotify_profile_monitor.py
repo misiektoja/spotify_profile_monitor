@@ -798,7 +798,7 @@ DOCTOR_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#doctor-preflight"
 
 # Labels of the two Doctor checks that gate the optional delivery tests, matched by prefix so each can name its channel
 SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
-WEBHOOK_READY_CHECK_LABEL = "Webhook URL and alert choices look valid"
+WEBHOOK_READY_CHECK_LABEL = "Webhook URL, headers and alert choices look valid"
 OAUTH_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-oauth-app"
 OAUTH_USER_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-oauth-user"
 BROWSER_COOKIE_GUIDE_URL = DOCUMENTATION_URL + "/setup-and-first-run/#browser-cookie-import"
@@ -8141,7 +8141,7 @@ def doctor_check_notifications() -> List[DoctorCheck]:
         elif not _startup_webhook_notification_categories():
             checks.append(make_doctor_check("Notifications", "WARN", "Webhook alerts are on but no alert types are selected", "No webhook was sent", "Enable at least one webhook alert or turn WEBHOOK_ENABLED off"))
         else:
-            checks.append(make_doctor_check("Notifications", "PASS", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", "The private link was not displayed. No webhook was sent"))
+            checks.append(make_doctor_check("Notifications", "PASS", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", "The private link was not displayed. No webhook was sent during this passive check"))
     return checks
 
 
