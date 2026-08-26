@@ -48,3 +48,4 @@ Start with `--doctor`. If the suggested fix does not resolve the issue, retry wi
 | Webhook alerts never arrive | Provider mismatch or a redirecting destination | [Webhook Settings](configuration.md#webhook-settings) then run `--send-test-webhook` |
 | "null bytes" error reading the config file | PowerShell redirection wrote UTF-16 | [Configuration File](configuration.md#configuration-file) |
 | Artwork missing from alerts | The optional artwork extra is not installed | [Install from PyPI](installation.md#install-from-pypi) |
+| Escape sequences such as `[36m` printed as text, or no colour at all | The terminal cannot display ANSI colour, or colour was switched off by `--no-color`, `COLORED_OUTPUT`, `NO_COLOR`, a redirect or an unset `TERM` | [Terminal Colours](configuration.md#terminal-colours) |
