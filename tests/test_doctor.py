@@ -209,6 +209,18 @@ def test_build_log_path_preserves_custom_suffix_and_explicit_filename(monkeypatc
     assert monitor.build_log_path("logs/fixed.log", "sq58") == monitor.Path("logs/fixed.log")
 
 
+# Verifies Doctor checks the configured JSON history directory without creating it
+def test_doctor_checks_json_directory_without_writing(tmp_path, monkeypatch):
+    json_dir = tmp_path / "missing" / "json"
+    monkeypatch.setattr(monitor, "JSON_DIR", str(json_dir))
+
+    checks = monitor.doctor_check_configuration(target_value="sq58")
+    check = next(item for item in checks if item.label == "JSON directory appears writable")
+
+    assert check.detail == f"Path: {json_dir}"
+    assert not json_dir.exists()
+
+
 # Verifies Doctor renders sections and recovery lines without secrets
 def test_doctor_report_rendering_redacts_secrets(monkeypatch):
     monkeypatch.setattr(monitor, "SP_DC_COOKIE", "COOKIE-SECRET-SENTINEL")
