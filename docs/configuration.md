@@ -21,11 +21,24 @@ spotify_profile_monitor --generate-config spotify_profile_monitor.conf
 
 Edit the `spotify_profile_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 
-The configuration file is read as data, not executed. It may contain only `NAME = value` assignments where the name is one of the settings in the generated template and the value is a plain literal: a number, a quoted string, `True`, `False`, `None`, or a list, tuple or dict of those. Expressions such as `30 * 60`, imports, function calls and references to other settings are rejected with the offending line number. Write the computed value directly instead, for example `SPOTIFY_CHECK_INTERVAL = 1800`. Because the tool also picks up a config file from the current directory, this ensures a `spotify_profile_monitor.conf` you did not write cannot run code when you start the tool.
+The configuration file is read as data, not executed. It may contain only `NAME = value` assignments where the name is one of the settings in the generated template and the value is a plain literal: a number, a quoted string, `True`, `False`, `None`, a list, tuple or dict of those. Expressions such as `30 * 60`, f-strings, imports, function calls and references to other settings are rejected. The startup error shows the config path plus offending line number and reason before exiting. It does not clear the error or continue into guided setup. Write the computed value directly instead, for example `SPOTIFY_CHECK_INTERVAL = 1800`. Because the tool also picks up a config file from the current directory, this ensures a `spotify_profile_monitor.conf` you did not write cannot run code when you start the tool.
 
 When `--generate-config FILENAME` targets an existing file, an interactive run asks for confirmation. A noninteractive run refuses replacement unless `--force` is present. An approved replacement validates the generated content, writes it atomically and saves a timestamped backup beside the original. The setup wizard provides the same confirmation and backup protection.
 
 Despite its legacy name, `TARGET_USER_URI_ID` accepts a complete Spotify profile URL, a `spotify:user:` URI or a user ID. Set it to run without a positional target. A positional target in any accepted form overrides the configured value.
+
+<a id="json-history-directory"></a>
+## JSON History Directory
+
+Set `JSON_DIR` to keep the follower, following and playlist history files outside the current working directory:
+
+```ini
+JSON_DIR = "~/spotify-profile-monitor/json"
+```
+
+The directory is created when monitoring starts. The three `spotify_profile_<user_id/file_suffix>_*.json` history files are read from and written directly inside it. Leave `JSON_DIR = ""` to preserve the earlier behavior and use the current working directory.
+
+Config values cannot refer to another setting or use an f-string, so paths for logs, CSV exports, OAuth files and other destinations must each be written as complete quoted strings.
 
 <a id="spotify-access-token-source"></a>
 ## Spotify access token source
