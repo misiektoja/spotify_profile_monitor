@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.8
+v3.8.1
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -22,7 +22,7 @@ pathvalidate (optional, needed by --export-all-playlists)
 Pillow (needed for email and ntfy artwork attachments)
 """
 
-VERSION = "3.8"
+VERSION = "3.8.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -352,6 +352,10 @@ VERIFY_SSL = True
 # CSV file to write all profile changes
 # Can also be set using the -b flag
 CSV_FILE = ""
+
+# Directory for follower and following plus playlist JSON history files
+# Leave empty to keep saving them in the current working directory
+JSON_DIR = ""
 
 # Format used when exporting playlists (-l) or liked songs (-x) to CSV file:
 # 1 - default format used for activity logging ['Date', 'Type', 'Name', 'Old', 'New']
@@ -772,6 +776,7 @@ CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
 VERIFY_SSL = False
 CSV_FILE = ""
+JSON_DIR = ""
 CSV_FILE_FORMAT_EXPORT = 0
 CLEAN_OUTPUT = False
 PLAYLISTS_TO_SKIP_FILE = ""
@@ -7973,7 +7978,7 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
         summary = detail
     except ValueError as exc:
         detail = f"Config file '{config_path}' contains unsupported content: {exc}"
-        summary = "The configuration file contains unsupported content"
+        summary = f"Configuration error in '{config_path}': {exc}"
     except Exception as exc:
         detail = f"Config file '{config_path}' failed with {type(exc).__name__}: {sanitize_error_text(exc)}"
         summary = "The configuration file could not be loaded"
@@ -8552,6 +8557,18 @@ def doctor_check_configuration(config_path=None, env_path=None, startup_checks: 
     destinations = []
     if CSV_FILE:
         destinations.append(("CSV destination", Path(CSV_FILE)))
+    if not isinstance(JSON_DIR, str):
+        advice = classify_recovery_error(context="config_invalid", detail=f"JSON_DIR must be a string, not {type(JSON_DIR).__name__}")
+        checks.append(make_doctor_check("Configuration", "FAIL", "JSON_DIR is invalid", advice.detail, advice.fix, advice))
+    elif JSON_DIR:
+        json_destination = Path(JSON_DIR).expanduser()
+        if json_destination.exists():
+            writable = json_destination.is_dir() and os.access(str(json_destination), os.W_OK)
+        else:
+            parent = nearest_existing_parent(json_destination)
+            writable = parent.is_dir() and os.access(str(parent), os.W_OK)
+        advice = None if writable else classify_recovery_error(context="file_write", detail=f"JSON directory is not writable: {json_destination}")
+        checks.append(make_doctor_check("Configuration", "PASS" if writable else "FAIL", f"JSON directory {'appears writable' if writable else 'is not writable'}", f"Path: {json_destination}", advice.fix if advice else "", advice))
     if not DISABLE_LOGGING and SP_LOGFILE:
         log_suffix = FILE_SUFFIX
         if not log_suffix and target_value:
@@ -9662,6 +9679,26 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
     raise SystemExit(0)
 
 
+# Builds the three JSON history paths under the configured directory
+def build_json_history_paths(file_suffix: str, json_dir: str = "") -> Tuple[str, str, str]:
+    directory = Path(json_dir).expanduser() if json_dir else Path()
+    prefix = f"spotify_profile_{file_suffix}"
+    return str(directory / f"{prefix}_followers.json"), str(directory / f"{prefix}_followings.json"), str(directory / f"{prefix}_playlists.json")
+
+
+# Creates and normalizes the configured JSON history directory
+def prepare_json_directory(json_dir: Any) -> str:
+    if not isinstance(json_dir, str):
+        raise TypeError(f"JSON_DIR must be a string, not {type(json_dir).__name__}")
+    if not json_dir:
+        return ""
+    directory = Path(json_dir).expanduser()
+    directory.mkdir(parents=True, exist_ok=True)
+    if not directory.is_dir():
+        raise NotADirectoryError(f"JSON_DIR is not a directory: {directory}")
+    return str(directory)
+
+
 # Monitors profile changes of the specified Spotify user ID
 def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     global SP_CACHED_ACCESS_TOKEN, SP_CACHED_OAUTH_APP_TOKEN
@@ -9782,9 +9819,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
     print_cur_ts("\nTimestamp:\t\t\t")
 
-    followers_file = f"spotify_profile_{FILE_SUFFIX}_followers.json"
-    followings_file = f"spotify_profile_{FILE_SUFFIX}_followings.json"
-    playlists_file = f"spotify_profile_{FILE_SUFFIX}_playlists.json"
+    followers_file, followings_file, playlists_file = build_json_history_paths(FILE_SUFFIX, JSON_DIR)
     profile_pic_file = f"spotify_profile_{FILE_SUFFIX}_pic.jpeg"
     profile_pic_file_old = f"spotify_profile_{FILE_SUFFIX}_pic_old.jpeg"
     profile_pic_file_tmp = f"spotify_profile_{FILE_SUFFIX}_pic_tmp.jpeg"
@@ -10948,7 +10983,7 @@ def cli_action_conflicts(args, allowed: Collection[str]) -> List[str]:
 
 # Parses configuration and command-line options then runs the selected operation
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, VERBOSE_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, EMAIL_IMAGES, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, CLEAN_OUTPUT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TARGET_USER_URI_ID, TRUNCATE_CHARS, NTFY_IMAGES, COLORED_OUTPUT, COLOR_THEME
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, JSON_DIR, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, VERBOSE_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, EMAIL_IMAGES, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, CLEAN_OUTPUT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TARGET_USER_URI_ID, TRUNCATE_CHARS, NTFY_IMAGES, COLORED_OUTPUT, COLOR_THEME
     global EXPORT_ALL, EXPORT_ALL_FORCE, PLAYLIST_INFO_CACHE_TTL
 
     stdout_bck = sys.stdout
@@ -12126,6 +12161,13 @@ def main():
         signal.signal(signal.SIGTRAP, increase_check_signal_handler)
         signal.signal(signal.SIGABRT, decrease_check_signal_handler)
         signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
+
+    try:
+        JSON_DIR = prepare_json_directory(JSON_DIR)
+    except (OSError, TypeError) as exc:
+        advice = classify_recovery_error(exc, "file_write", f"JSON history directory cannot be prepared: {exc}")
+        print(render_recovery_error(RecoveryError(advice)))
+        sys.exit(1)
 
     spotify_profile_monitor_uri(args.user_id, CSV_FILE, playlists_to_skip)
 
