@@ -68,6 +68,29 @@ def test_no_argument_onboarding_prepares_screen_before_welcome(monkeypatch):
     assert events == [("screen", {"require_input": True}), ("welcome", {})]
 
 
+# Verifies an invalid discovered config remains visible and exits before no-argument onboarding
+def test_invalid_config_exits_before_no_argument_onboarding(tmp_path, monkeypatch, capsys):
+    config_path = tmp_path / "spotify_profile_monitor.conf"
+    config_path.write_text("# unsupported helper\nCUSTOM_HELPER = 'test'\n", encoding="utf-8")
+    prepare_mock = Mock()
+    welcome_mock = Mock()
+    monkeypatch.setattr(monitor.sys, "argv", ["spotify_profile_monitor"])
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", None)
+    monkeypatch.setattr(monitor, "TARGET_USER_URI_ID", "")
+    monkeypatch.setattr(monitor, "find_config_file", lambda path=None: config_path)
+    monkeypatch.setattr(monitor, "prepare_startup_screen", prepare_mock)
+    monkeypatch.setattr(monitor, "_wizard_welcome", welcome_mock)
+
+    with pytest.raises(SystemExit) as error:
+        monitor.main()
+
+    output = capsys.readouterr().out
+    assert error.value.code == 1
+    assert "Line 2: unsupported configuration setting 'CUSTOM_HELPER'" in output
+    prepare_mock.assert_not_called()
+    welcome_mock.assert_not_called()
+
+
 # Verifies recovery actions preserve terminal history instead of clearing it
 @pytest.mark.parametrize(("arguments", "runner_name", "exit_code"), ((["--import-browser-cookie", "--env-file", "none"], "run_browser_cookie_import", 0), (["--set-sp-dc", "--env-file", "none"], "run_set_sp_dc", 0), (["--set-webhook-url", "--env-file", "none"], "run_set_webhook_url", 0), (["--doctor", "--env-file", "none"], "run_doctor", 1)))
 def test_recovery_actions_preserve_terminal_history(arguments, runner_name, exit_code, monkeypatch):
