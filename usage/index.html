@@ -1052,11 +1052,13 @@
 <p>The tool normalizes every accepted target form to a Spotify user ID for output filenames. It saves its log as <code>spotify_profile_monitor_&lt;user_id/file_suffix&gt;.log</code>. The log file name can be changed via <code>SP_LOGFILE</code> and its suffix via <code>FILE_SUFFIX</code> / <code>-y</code>. Logging can be disabled with <code>DISABLE_LOGGING</code> / <code>-d</code>.</p>
 <p>The terminal shows a concise startup summary by default. The complete non-secret summary is still written to the log. Use <code>--verbose</code> to show that complete summary in the terminal plus occasional events such as token refreshes or metadata backend changes. Use <code>--debug</code> for sanitized request flow and internal state details.</p>
 <p>Set <code>ASCII_LOG_SEPARATORS</code> to <code>"Auto"</code> (default) to use ASCII separator-only lines on Windows, <code>"On"</code> to use them on every operating system or <code>"Off"</code> to preserve Unicode separators in logs everywhere. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.</p>
-<p>The tool also saves the list of followings, followers and playlists to these files:
-- <code>spotify_profile_&lt;user_id/file_suffix&gt;_followings.json</code>
-- <code>spotify_profile_&lt;user_id/file_suffix&gt;_followers.json</code>
-- <code>spotify_profile_&lt;user_id/file_suffix&gt;_playlists.json</code></p>
-<p>Thanks to this we can detect changes after the tool is restarted.</p>
+<p>The tool also saves the list of followings, followers and playlists to these files:</p>
+<ul>
+<li><code>spotify_profile_&lt;user_id/file_suffix&gt;_followings.json</code></li>
+<li><code>spotify_profile_&lt;user_id/file_suffix&gt;_followers.json</code></li>
+<li><code>spotify_profile_&lt;user_id/file_suffix&gt;_playlists.json</code></li>
+</ul>
+<p>Thanks to this we can detect changes after the tool is restarted. By default these files use the current working directory. Set <a href="../configuration/#json-history-directory"><code>JSON_DIR</code></a> to read and write all three in another directory.</p>
 <p>The tool also saves the user profile picture to <code>spotify_profile_&lt;user_id/file_suffix&gt;_pic*.jpeg</code> files.</p>
 <p><a id="listing-mode"></a></p>
 <h2 id="listing-mode">Listing Mode<a class="headerlink" href="#listing-mode" title="Permanent link">&para;</a></h2>

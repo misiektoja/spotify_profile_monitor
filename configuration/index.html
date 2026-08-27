@@ -414,6 +414,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#json-history-directory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JSON History Directory
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#spotify-access-token-source" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -788,6 +799,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#json-history-directory" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        JSON History Directory
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#spotify-access-token-source" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1022,9 +1044,16 @@
 <p><strong>IMPORTANT</strong>: On <strong>Windows PowerShell</strong>, using redirection (<code>&gt;</code>) can cause the file to be encoded in UTF-16, which will lead to "null bytes" errors when running the tool. It is highly recommended to provide the filename directly as an argument to <code>--generate-config</code> to ensure UTF-8 encoding.</p>
 </blockquote>
 <p>Edit the <code>spotify_profile_monitor.conf</code> file and change any desired configuration options (detailed comments are provided for each).</p>
-<p>The configuration file is read as data, not executed. It may contain only <code>NAME = value</code> assignments where the name is one of the settings in the generated template and the value is a plain literal: a number, a quoted string, <code>True</code>, <code>False</code>, <code>None</code>, or a list, tuple or dict of those. Expressions such as <code>30 * 60</code>, imports, function calls and references to other settings are rejected with the offending line number. Write the computed value directly instead, for example <code>SPOTIFY_CHECK_INTERVAL = 1800</code>. Because the tool also picks up a config file from the current directory, this ensures a <code>spotify_profile_monitor.conf</code> you did not write cannot run code when you start the tool.</p>
+<p>The configuration file is read as data, not executed. It may contain only <code>NAME = value</code> assignments where the name is one of the settings in the generated template and the value is a plain literal: a number, a quoted string, <code>True</code>, <code>False</code>, <code>None</code>, a list, tuple or dict of those. Expressions such as <code>30 * 60</code>, f-strings, imports, function calls and references to other settings are rejected. The startup error shows the config path plus offending line number and reason before exiting. It does not clear the error or continue into guided setup. Write the computed value directly instead, for example <code>SPOTIFY_CHECK_INTERVAL = 1800</code>. Because the tool also picks up a config file from the current directory, this ensures a <code>spotify_profile_monitor.conf</code> you did not write cannot run code when you start the tool.</p>
 <p>When <code>--generate-config FILENAME</code> targets an existing file, an interactive run asks for confirmation. A noninteractive run refuses replacement unless <code>--force</code> is present. An approved replacement validates the generated content, writes it atomically and saves a timestamped backup beside the original. The setup wizard provides the same confirmation and backup protection.</p>
 <p>Despite its legacy name, <code>TARGET_USER_URI_ID</code> accepts a complete Spotify profile URL, a <code>spotify:user:</code> URI or a user ID. Set it to run without a positional target. A positional target in any accepted form overrides the configured value.</p>
+<p><a id="json-history-directory"></a></p>
+<h2 id="json-history-directory">JSON History Directory<a class="headerlink" href="#json-history-directory" title="Permanent link">&para;</a></h2>
+<p>Set <code>JSON_DIR</code> to keep the follower, following and playlist history files outside the current working directory:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="na">JSON_DIR</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"~/spotify-profile-monitor/json"</span>
+</code></pre></div>
+<p>The directory is created when monitoring starts. The three <code>spotify_profile_&lt;user_id/file_suffix&gt;_*.json</code> history files are read from and written directly inside it. Leave <code>JSON_DIR = ""</code> to preserve the earlier behavior and use the current working directory.</p>
+<p>Config values cannot refer to another setting or use an f-string, so paths for logs, CSV exports, OAuth files and other destinations must each be written as complete quoted strings.</p>
 <p><a id="spotify-access-token-source"></a></p>
 <h2 id="spotify-access-token-source">Spotify access token source<a class="headerlink" href="#spotify-access-token-source" title="Permanent link">&para;</a></h2>
 <p>The tool supports four methods for obtaining a Spotify access token.</p>
@@ -1085,7 +1114,7 @@
 <li>Find the cookie named <code>sp_dc</code> and copy only its <strong>Value</strong>. Do not copy the cookie name or the complete table row.</li>
 <li>Run the private entry command then paste the copied value at its hidden prompt:</li>
 </ol>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>spotify_profile_monitor<span class="w"> </span>--set-sp-dc
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>spotify_profile_monitor<span class="w"> </span>--set-sp-dc
 </code></pre></div>
 <p>The command validates the cookie before atomically saving it as <code>SP_DC_COOKIE</code> in <code>.env</code>. To use another dotenv path, add <code>--env-file PATH</code>.</p>
 <p>As an alternative, <a href="https://cookie-editor.com/">Cookie-Editor by cgagnier</a> can display the <code>sp_dc</code> value. Only use a browser extension that you trust because browser extensions can access sensitive login cookies.</p>
@@ -1146,7 +1175,7 @@
 <ul>
 <li>Run the tool with <code>--token-source client -w &lt;path-to-login-request-body-file&gt;</code>:</li>
 </ul>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>spotify_profile_monitor<span class="w"> </span>--token-source<span class="w"> </span>client<span class="w"> </span>-w<span class="w"> </span>&lt;path-to-login-request-body-file&gt;<span class="w"> </span>&lt;spotify_target&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>spotify_profile_monitor<span class="w"> </span>--token-source<span class="w"> </span>client<span class="w"> </span>-w<span class="w"> </span>&lt;path-to-login-request-body-file&gt;<span class="w"> </span>&lt;spotify_target&gt;
 </code></pre></div>
 <p>If successful, the tool will automatically extract the necessary fields and begin monitoring.</p>
 <p>When <code>-w</code> is used on its own to inspect a Protobuf file, the extracted refresh token is masked. Add <code>--verbose</code> to print the full value when you need to copy it into your configuration.</p>
@@ -1180,7 +1209,7 @@
 <li>Fallback: hard-code it in the code or config file</li>
 </ul>
 <p>Optional legacy example:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>spotify_profile_monitor<span class="w"> </span>--token-source<span class="w"> </span>oauth_app<span class="w"> </span>-r<span class="w"> </span><span class="s2">"your_spotify_app_client_id:your_spotify_app_client_secret"</span><span class="w"> </span>&lt;spotify_target&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>spotify_profile_monitor<span class="w"> </span>--token-source<span class="w"> </span>oauth_app<span class="w"> </span>-r<span class="w"> </span><span class="s2">"your_spotify_app_client_id:your_spotify_app_client_secret"</span><span class="w"> </span>&lt;spotify_target&gt;
 </code></pre></div>
 <p>The tool automatically refreshes the OAuth app access token, so it remains valid indefinitely. Tokens are cached in the file specified by <code>SP_APP_TOKENS_FILE</code> configuration option (default: <code>.spotify-profile-monitor-oauth-app.json</code>).</p>
 <p>If you store the <code>SP_APP_CLIENT_ID</code> and <code>SP_APP_CLIENT_SECRET</code> in a dotenv file you can update their values and send a <code>SIGHUP</code> signal to reload the file with the new secret values without restarting the tool. More info in <a href="#storing-secrets">Storing Secrets</a> and <a href="../usage/#signal-controls-macoslinuxunix">Signal Controls (macOS/Linux/Unix)</a>.</p>
@@ -1222,7 +1251,7 @@
 <p>To use <code>PKCE</code> mode, set SP_USER_CLIENT_SECRET to an empty string ("").</p>
 <p>You can use the same client ID and secret values as those used for the <a href="#spotify-oauth-app">Spotify OAuth App</a>.</p>
 <p>Example:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>spotify_profile_monitor<span class="w"> </span>--token-source<span class="w"> </span>oauth_user<span class="w"> </span>-n<span class="w"> </span><span class="s2">"your_spotify_user_client_id:your_spotify_user_client_secret"</span><span class="w"> </span>&lt;spotify_target&gt;
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>spotify_profile_monitor<span class="w"> </span>--token-source<span class="w"> </span>oauth_user<span class="w"> </span>-n<span class="w"> </span><span class="s2">"your_spotify_user_client_id:your_spotify_user_client_secret"</span><span class="w"> </span>&lt;spotify_target&gt;
 </code></pre></div>
 <p>The tool takes care of refreshing the access token so it should remain valid indefinitely.</p>
 <p>If you store the <code>SP_USER_CLIENT_ID</code> and <code>SP_USER_CLIENT_SECRET</code> in a dotenv file you can update their values and send a <code>SIGHUP</code> signal to reload the file with the new secret values without restarting the tool. More info in <a href="#storing-secrets">Storing Secrets</a> and <a href="../usage/#signal-controls-macoslinuxunix">Signal Controls (macOS/Linux/Unix)</a>.</p>
@@ -1235,7 +1264,7 @@
 <p>You'll get a URL like <code>https://open.spotify.com/user/USER_ID?si=tracking_id</code>.</p>
 <p>Pass that profile URL directly to the tool. You do not need to extract the ID. Spotify user URIs such as <code>spotify:user:USER_ID</code> and standalone user IDs are also accepted.</p>
 <p>Alternatively you can use the built-in username search (<code>-s</code>) to find a Spotify user ID:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>spotify_profile_monitor<span class="w"> </span>-s<span class="w"> </span><span class="s2">"user name"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>spotify_profile_monitor<span class="w"> </span>-s<span class="w"> </span><span class="s2">"user name"</span>
 </code></pre></div>
 <p>It lists matching users with their Spotify user IDs and profile URLs. Any listed profile URL or ID can then be used as the monitoring target.</p>
 <p>Before using this feature make sure you followed the instructions <a href="#spotify-sha256-optional">here</a>.</p>
@@ -1267,16 +1296,16 @@
 <p><a id="time-zone"></a></p>
 <h2 id="time-zone">Time Zone<a class="headerlink" href="#time-zone" title="Permanent link">&para;</a></h2>
 <p>By default, time zone is auto-detected using <code>tzlocal</code>. You can set it manually in <code>spotify_profile_monitor.conf</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="na">LOCAL_TIMEZONE</span><span class="o">=</span><span class="s">'Europe/Warsaw'</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="na">LOCAL_TIMEZONE</span><span class="o">=</span><span class="s">'Europe/Warsaw'</span>
 </code></pre></div>
 <p>You can get the list of all time zones supported by pytz like this:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">"import pytz; print('\n'.join(pytz.all_timezones))"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>python3<span class="w"> </span>-c<span class="w"> </span><span class="s2">"import pytz; print('\n'.join(pytz.all_timezones))"</span>
 </code></pre></div>
 <p><a id="smtp-settings"></a></p>
 <h2 id="smtp-settings">SMTP Settings<a class="headerlink" href="#smtp-settings" title="Permanent link">&para;</a></h2>
 <p>If you want to use email notifications functionality, configure SMTP settings in the <code>spotify_profile_monitor.conf</code> file.</p>
 <p>Verify your SMTP settings by using <code>--send-test-email</code> flag (the tool will try to send a test email notification):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>spotify_profile_monitor<span class="w"> </span>--send-test-email
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>spotify_profile_monitor<span class="w"> </span>--send-test-email
 </code></pre></div>
 <p><a id="webhook-settings"></a></p>
 <h2 id="webhook-settings">Webhook Settings<a class="headerlink" href="#webhook-settings" title="Permanent link">&para;</a></h2>
@@ -1290,57 +1319,57 @@
 <li>Click <strong>New Webhook</strong> then choose a name and click <strong>Copy Webhook URL</strong>.</li>
 <li>Save the URL through the hidden prompt:</li>
 </ol>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>spotify_profile_monitor<span class="w"> </span>--set-webhook-url
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>spotify_profile_monitor<span class="w"> </span>--set-webhook-url
 </code></pre></div>
 <p>The command saves only <code>WEBHOOK_URL</code> in <code>.env</code> without putting the private value in shell history. Treat this URL like a password because anyone who has it can post through it.</p>
 <p>Keep the default request format in <code>spotify_profile_monitor.conf</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="na">WEBHOOK_PROVIDER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"discord"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="na">WEBHOOK_PROVIDER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"discord"</span>
 </code></pre></div>
 <h3 id="ntfy">ntfy<a class="headerlink" href="#ntfy" title="Permanent link">&para;</a></h3>
 <p>Choose a hard-to-guess topic. Public <code>ntfy.sh</code> URLs are recognized automatically. Set the provider to <code>"ntfy"</code> for a self-hosted ntfy server:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="na">WEBHOOK_PROVIDER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"ntfy"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="na">WEBHOOK_PROVIDER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"ntfy"</span>
 </code></pre></div>
 <p>Save its complete HTTPS topic URL through the same hidden prompt:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>spotify_profile_monitor<span class="w"> </span>--set-webhook-url
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>spotify_profile_monitor<span class="w"> </span>--set-webhook-url
 </code></pre></div>
 <p>For ntfy.sh the value looks like <code>https://ntfy.sh/spotify-profile-monitor-long-random-value</code>. Self-hosted ntfy servers also require a complete HTTPS topic URL.</p>
 <p>Spotify Profile Monitor sends the alert body as a native UTF-8 ntfy message and the alert subject as its title. Query parameters already in the topic URL are preserved. Long ntfy messages are visibly truncated below ntfy's 4 KB boundary so they remain notifications instead of temporary attachments.</p>
 <p>The ntfy provider needs no request template. <code>WEBHOOK_TEMPLATE</code>, <code>WEBHOOK_USERNAME</code> and <code>WEBHOOK_AVATAR_URL</code> shape the Discord embed only and are ignored when <code>WEBHOOK_PROVIDER</code> is <code>"ntfy"</code>. To customize ntfy delivery, add ntfy options such as priority or tags through <code>WEBHOOK_HEADERS</code> (for example <code>X-Priority</code> or <code>X-Tags</code>).</p>
 <p>Profile and playlist artwork is disabled by default and needs the optional artwork extra (<code>pip install "spotify_profile_monitor[notification-images]"</code>). Enable it in <code>spotify_profile_monitor.conf</code> once the extra is installed:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="na">NTFY_IMAGES</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="na">NTFY_IMAGES</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
 </code></pre></div>
 <p>If the setting is on but the extra is missing, the monitor reports it at startup and sends the affected alerts as text.</p>
 <p>The monitor accepts artwork only from Spotify HTTPS CDN hosts. It limits downloads to 5 MiB and rejects oversized decoded images before preparing each attachment in memory. If image preparation fails the alert is sent as text. If an attachment upload fails the monitor retries once as text. Self-hosted ntfy servers must allow attachments.</p>
 <p>Protected ntfy topics can use a Bearer access token stored in <code>.env</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="na">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s">"tk_your_ntfy_access_token"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="na">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s">"tk_your_ntfy_access_token"</span>
 </code></pre></div>
 <p><code>NTFY_ACCESS_TOKEN</code> takes precedence over an <code>Authorization</code> entry in <code>WEBHOOK_HEADERS</code>. Custom headers remain available for other authentication methods and compatible integrations:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="na">WEBHOOK_HEADERS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">{</span>
-<a id="__codelineno-15-2" name="__codelineno-15-2" href="#__codelineno-15-2"></a><span class="w">    </span><span class="na">"X-Webhook-Title"</span><span class="o">:</span><span class="w"> </span><span class="s">"{title}"</span><span class="na">,</span>
-<a id="__codelineno-15-3" name="__codelineno-15-3" href="#__codelineno-15-3"></a><span class="na">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="na">WEBHOOK_HEADERS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">{</span>
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="w">    </span><span class="na">"X-Webhook-Title"</span><span class="o">:</span><span class="w"> </span><span class="s">"{title}"</span><span class="na">,</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a><span class="na">}</span>
 </code></pre></div>
 <p>Header values support the same placeholders as the Discord template (<code>{title}</code>, <code>{description}</code>, <code>{version}</code>, <code>{image_url}</code>, <code>{color}</code>, <code>{timestamp}</code> and so on) and work with both providers. Headers are validated before and after placeholder expansion so formatted values cannot add invalid names, non-string values or line breaks.</p>
 <h3 id="advanced-discord-format-customization">Advanced Discord-format customization<a class="headerlink" href="#advanced-discord-format-customization" title="Permanent link">&para;</a></h3>
 <p>The settings in this section apply only when <code>WEBHOOK_PROVIDER</code> is <code>"discord"</code>. The ntfy provider ignores them.</p>
 <p><code>WEBHOOK_USERNAME</code> and <code>WEBHOOK_AVATAR_URL</code> control the sender name and HTTPS avatar for Discord-format payloads:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="na">WEBHOOK_USERNAME</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"Spotify Profile Monitor"</span>
-<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a><span class="na">WEBHOOK_AVATAR_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"https://example.com/path/avatar.png"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="na">WEBHOOK_USERNAME</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"Spotify Profile Monitor"</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="na">WEBHOOK_AVATAR_URL</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"https://example.com/path/avatar.png"</span>
 </code></pre></div>
 <p><code>WEBHOOK_TEMPLATE</code> controls the Discord-format request body. Supported placeholders are <code>title</code>, <code>description</code>, <code>version</code>, <code>image_url</code>, <code>fields</code>, <code>fields_str</code>, <code>color</code>, <code>timestamp</code>, <code>username</code> and <code>avatar_url</code>.</p>
 <p>A dictionary or list is sent as JSON. A string template is sent as a raw request body for compatible integrations. Dictionary payloads always replace <code>allowed_mentions</code> with <code>{"parse": []}</code> so alert text cannot trigger Discord mentions.</p>
 <p><code>WEBHOOK_TRANSFORMS</code> applies string methods to shared placeholder values before the template and headers are rendered:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="na">WEBHOOK_TRANSFORMS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[</span>
-<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">    </span><span class="na">("title", "upper"),</span>
-<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">    </span><span class="na">("description", "replace", "**", ""),</span>
-<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="na">]</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="na">WEBHOOK_TRANSFORMS</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">[</span>
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a><span class="w">    </span><span class="na">("title", "upper"),</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a><span class="w">    </span><span class="na">("description", "replace", "**", ""),</span>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="na">]</span>
 </code></pre></div>
 <p>The tuple format is <code>(field_to_target, method_name, *optional_arguments)</code>. Invalid templates, avatar URLs, transforms or formatted headers fail before a webhook request is attempted.</p>
 <p>For automation or one-time testing <code>--webhook-url URL</code> overrides the destination without changing <code>.env</code>. The URL may remain visible in shell history or process listings:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>spotify_profile_monitor<span class="w"> </span>--webhook-provider<span class="w"> </span>ntfy<span class="w"> </span>--webhook-url<span class="w"> </span><span class="s2">"https://ntfy.sh/your-private-topic"</span><span class="w"> </span>--send-test-webhook
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>spotify_profile_monitor<span class="w"> </span>--webhook-provider<span class="w"> </span>ntfy<span class="w"> </span>--webhook-url<span class="w"> </span><span class="s2">"https://ntfy.sh/your-private-topic"</span><span class="w"> </span>--send-test-webhook
 </code></pre></div>
 <p>For normal setup use the hidden command then send a test:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>spotify_profile_monitor<span class="w"> </span>--set-webhook-url
-<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a>spotify_profile_monitor<span class="w"> </span>--send-test-webhook
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>spotify_profile_monitor<span class="w"> </span>--set-webhook-url
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>spotify_profile_monitor<span class="w"> </span>--send-test-webhook
 </code></pre></div>
 <p>Email and webhook delivery are independent. A failure in one channel does not stop the other channel.</p>
 <p>Webhook requests do not follow redirects, so <code>WEBHOOK_HEADERS</code> credentials and alert content can never be handed to a host you did not configure. If your destination answers with a redirect, delivery fails with a message telling you to save the final URL. Save it with <code>--set-webhook-url</code> then confirm with <code>--send-test-webhook</code>.</p>
@@ -1348,7 +1377,7 @@
 <h2 id="terminal-colours">Terminal Colours<a class="headerlink" href="#terminal-colours" title="Permanent link">&para;</a></h2>
 <p><code>COLORED_OUTPUT</code> controls whether live terminal output is coloured. It defaults to <code>True</code> and is read before the startup banner is printed, so a configured value applies to the first line of output. <code>--no-color</code> disables colour for one run. Colour also switches itself off when output is redirected or piped, when <code>TERM</code> is unset or <code>dumb</code> and when the standard <a href="https://no-color.org/"><code>NO_COLOR</code></a> environment variable is set. Log files are always written with the escape sequences stripped.</p>
 <p><code>COLOR_THEME</code> overrides individual colours. It is merged over the built-in theme, so name only the parts you want to change:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="na">COLOR_THEME = { "playlist"</span><span class="o">:</span><span class="w"> </span><span class="s">"bright_magenta bold"</span><span class="na">, "username"</span><span class="o">:</span><span class="w"> </span><span class="s">"green"</span><span class="w"> </span><span class="na">}</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="na">COLOR_THEME = { "playlist"</span><span class="o">:</span><span class="w"> </span><span class="s">"bright_magenta bold"</span><span class="na">, "username"</span><span class="o">:</span><span class="w"> </span><span class="s">"green"</span><span class="w"> </span><span class="na">}</span>
 </code></pre></div>
 <p>A value combines one colour with any number of style attributes, separated by spaces or <code>+</code>, for example <code>"bright_cyan bold"</code>, <code>"red underline"</code> or <code>"bright_magenta bold underline"</code>. An empty string leaves that part uncoloured.</p>
 <table>
@@ -1458,37 +1487,37 @@
 <h2 id="storing-secrets">Storing Secrets<a class="headerlink" href="#storing-secrets" title="Permanent link">&para;</a></h2>
 <p>It is recommended to store secrets like <code>SP_DC_COOKIE</code>, <code>SP_APP_CLIENT_ID</code>, <code>SP_APP_CLIENT_SECRET</code>, <code>SP_USER_CLIENT_ID</code>, <code>SP_USER_CLIENT_SECRET</code>, <code>REFRESH_TOKEN</code>, <code>SP_SHA256</code>, <code>SMTP_PASSWORD</code>, <code>WEBHOOK_URL</code> or <code>NTFY_ACCESS_TOKEN</code> as either an environment variable or in a dotenv file. For <code>SP_DC_COOKIE</code>, prefer <code>spotify_profile_monitor --set-sp-dc</code> so the value is entered through a hidden prompt and validated before it is saved.</p>
 <p>Set the needed environment variables using <code>export</code> on <strong>Linux/Unix/macOS/WSL</strong> systems:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_DC_COOKIE</span><span class="o">=</span><span class="s2">"your_sp_dc_cookie_value"</span>
-<a id="__codelineno-21-2" name="__codelineno-21-2" href="#__codelineno-21-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_APP_CLIENT_ID</span><span class="o">=</span><span class="s2">"your_spotify_app_client_id"</span>
-<a id="__codelineno-21-3" name="__codelineno-21-3" href="#__codelineno-21-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_APP_CLIENT_SECRET</span><span class="o">=</span><span class="s2">"your_spotify_app_client_secret"</span>
-<a id="__codelineno-21-4" name="__codelineno-21-4" href="#__codelineno-21-4"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_USER_CLIENT_ID</span><span class="o">=</span><span class="s2">"your_spotify_user_client_id"</span>
-<a id="__codelineno-21-5" name="__codelineno-21-5" href="#__codelineno-21-5"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_USER_CLIENT_SECRET</span><span class="o">=</span><span class="s2">"your_spotify_user_client_secret"</span>
-<a id="__codelineno-21-6" name="__codelineno-21-6" href="#__codelineno-21-6"></a><span class="nb">export</span><span class="w"> </span><span class="nv">REFRESH_TOKEN</span><span class="o">=</span><span class="s2">"your_spotify_app_refresh_token"</span>
-<a id="__codelineno-21-7" name="__codelineno-21-7" href="#__codelineno-21-7"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_SHA256</span><span class="o">=</span><span class="s2">"your_spotify_client_sha256"</span>
-<a id="__codelineno-21-8" name="__codelineno-21-8" href="#__codelineno-21-8"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SMTP_PASSWORD</span><span class="o">=</span><span class="s2">"your_smtp_password"</span>
-<a id="__codelineno-21-9" name="__codelineno-21-9" href="#__codelineno-21-9"></a><span class="nb">export</span><span class="w"> </span><span class="nv">WEBHOOK_URL</span><span class="o">=</span><span class="s2">"https://discord.com/api/webhooks/your_id/your_token"</span>
-<a id="__codelineno-21-10" name="__codelineno-21-10" href="#__codelineno-21-10"></a><span class="nb">export</span><span class="w"> </span><span class="nv">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s2">"tk_your_ntfy_access_token"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_DC_COOKIE</span><span class="o">=</span><span class="s2">"your_sp_dc_cookie_value"</span>
+<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_APP_CLIENT_ID</span><span class="o">=</span><span class="s2">"your_spotify_app_client_id"</span>
+<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_APP_CLIENT_SECRET</span><span class="o">=</span><span class="s2">"your_spotify_app_client_secret"</span>
+<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_USER_CLIENT_ID</span><span class="o">=</span><span class="s2">"your_spotify_user_client_id"</span>
+<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_USER_CLIENT_SECRET</span><span class="o">=</span><span class="s2">"your_spotify_user_client_secret"</span>
+<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a><span class="nb">export</span><span class="w"> </span><span class="nv">REFRESH_TOKEN</span><span class="o">=</span><span class="s2">"your_spotify_app_refresh_token"</span>
+<a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SP_SHA256</span><span class="o">=</span><span class="s2">"your_spotify_client_sha256"</span>
+<a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a><span class="nb">export</span><span class="w"> </span><span class="nv">SMTP_PASSWORD</span><span class="o">=</span><span class="s2">"your_smtp_password"</span>
+<a id="__codelineno-22-9" name="__codelineno-22-9" href="#__codelineno-22-9"></a><span class="nb">export</span><span class="w"> </span><span class="nv">WEBHOOK_URL</span><span class="o">=</span><span class="s2">"https://discord.com/api/webhooks/your_id/your_token"</span>
+<a id="__codelineno-22-10" name="__codelineno-22-10" href="#__codelineno-22-10"></a><span class="nb">export</span><span class="w"> </span><span class="nv">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s2">"tk_your_ntfy_access_token"</span>
 </code></pre></div>
 <p>On <strong>Windows Command Prompt</strong> use <code>set</code> instead of <code>export</code> and on <strong>Windows PowerShell</strong> use <code>$env</code>.</p>
 <p>Alternatively store them persistently in a dotenv file (recommended). Create a plain text file named <code>.env</code> in the directory where you run Spotify Profile Monitor then add only the values you use:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="na">SP_DC_COOKIE</span><span class="o">=</span><span class="s">"your_sp_dc_cookie_value"</span>
-<a id="__codelineno-22-2" name="__codelineno-22-2" href="#__codelineno-22-2"></a><span class="na">SP_APP_CLIENT_ID</span><span class="o">=</span><span class="s">"your_spotify_app_client_id"</span>
-<a id="__codelineno-22-3" name="__codelineno-22-3" href="#__codelineno-22-3"></a><span class="na">SP_APP_CLIENT_SECRET</span><span class="o">=</span><span class="s">"your_spotify_app_client_secret"</span>
-<a id="__codelineno-22-4" name="__codelineno-22-4" href="#__codelineno-22-4"></a><span class="na">SP_USER_CLIENT_ID</span><span class="o">=</span><span class="s">"your_spotify_user_client_id"</span>
-<a id="__codelineno-22-5" name="__codelineno-22-5" href="#__codelineno-22-5"></a><span class="na">SP_USER_CLIENT_SECRET</span><span class="o">=</span><span class="s">"your_spotify_user_client_secret"</span>
-<a id="__codelineno-22-6" name="__codelineno-22-6" href="#__codelineno-22-6"></a><span class="na">REFRESH_TOKEN</span><span class="o">=</span><span class="s">"your_spotify_app_refresh_token"</span>
-<a id="__codelineno-22-7" name="__codelineno-22-7" href="#__codelineno-22-7"></a><span class="na">SP_SHA256</span><span class="o">=</span><span class="s">"your_spotify_client_sha256"</span>
-<a id="__codelineno-22-8" name="__codelineno-22-8" href="#__codelineno-22-8"></a><span class="na">SMTP_PASSWORD</span><span class="o">=</span><span class="s">"your_smtp_password"</span>
-<a id="__codelineno-22-9" name="__codelineno-22-9" href="#__codelineno-22-9"></a><span class="na">WEBHOOK_URL</span><span class="o">=</span><span class="s">"https://discord.com/api/webhooks/your_id/your_token"</span>
-<a id="__codelineno-22-10" name="__codelineno-22-10" href="#__codelineno-22-10"></a><span class="na">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s">"tk_your_ntfy_access_token"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="na">SP_DC_COOKIE</span><span class="o">=</span><span class="s">"your_sp_dc_cookie_value"</span>
+<a id="__codelineno-23-2" name="__codelineno-23-2" href="#__codelineno-23-2"></a><span class="na">SP_APP_CLIENT_ID</span><span class="o">=</span><span class="s">"your_spotify_app_client_id"</span>
+<a id="__codelineno-23-3" name="__codelineno-23-3" href="#__codelineno-23-3"></a><span class="na">SP_APP_CLIENT_SECRET</span><span class="o">=</span><span class="s">"your_spotify_app_client_secret"</span>
+<a id="__codelineno-23-4" name="__codelineno-23-4" href="#__codelineno-23-4"></a><span class="na">SP_USER_CLIENT_ID</span><span class="o">=</span><span class="s">"your_spotify_user_client_id"</span>
+<a id="__codelineno-23-5" name="__codelineno-23-5" href="#__codelineno-23-5"></a><span class="na">SP_USER_CLIENT_SECRET</span><span class="o">=</span><span class="s">"your_spotify_user_client_secret"</span>
+<a id="__codelineno-23-6" name="__codelineno-23-6" href="#__codelineno-23-6"></a><span class="na">REFRESH_TOKEN</span><span class="o">=</span><span class="s">"your_spotify_app_refresh_token"</span>
+<a id="__codelineno-23-7" name="__codelineno-23-7" href="#__codelineno-23-7"></a><span class="na">SP_SHA256</span><span class="o">=</span><span class="s">"your_spotify_client_sha256"</span>
+<a id="__codelineno-23-8" name="__codelineno-23-8" href="#__codelineno-23-8"></a><span class="na">SMTP_PASSWORD</span><span class="o">=</span><span class="s">"your_smtp_password"</span>
+<a id="__codelineno-23-9" name="__codelineno-23-9" href="#__codelineno-23-9"></a><span class="na">WEBHOOK_URL</span><span class="o">=</span><span class="s">"https://discord.com/api/webhooks/your_id/your_token"</span>
+<a id="__codelineno-23-10" name="__codelineno-23-10" href="#__codelineno-23-10"></a><span class="na">NTFY_ACCESS_TOKEN</span><span class="o">=</span><span class="s">"tk_your_ntfy_access_token"</span>
 </code></pre></div>
 <p>By default the tool will auto-search for dotenv file named <code>.env</code> in current directory and then upward from it.</p>
 <p>Commands that write a secret do not use that upward search when choosing a destination. Without <code>--env-file</code>, <code>--set-sp-dc</code>, <code>--set-webhook-url</code> and browser cookie import all write to <code>.env</code> in the current directory.</p>
 <p>You can specify a custom file with <code>DOTENV_FILE</code> or <code>--env-file</code> flag:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>--env-file<span class="w"> </span>/path/.env-spotify_profile_monitor
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>--env-file<span class="w"> </span>/path/.env-spotify_profile_monitor
 </code></pre></div>
 <p>You can also disable <code>.env</code> auto-search with <code>DOTENV_FILE = "none"</code> or <code>--env-file none</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>--env-file<span class="w"> </span>none
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>--env-file<span class="w"> </span>none
 </code></pre></div>
 <p>As a fallback, you can also store secrets in the configuration file or source code.</p>
 
