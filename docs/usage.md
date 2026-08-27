@@ -108,11 +108,12 @@ The terminal shows a concise startup summary by default. The complete non-secret
 Set `ASCII_LOG_SEPARATORS` to `"Auto"` (default) to use ASCII separator-only lines on Windows, `"On"` to use them on every operating system or `"Off"` to preserve Unicode separators in logs everywhere. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.
 
 The tool also saves the list of followings, followers and playlists to these files:
+
 - `spotify_profile_<user_id/file_suffix>_followings.json`
 - `spotify_profile_<user_id/file_suffix>_followers.json`
 - `spotify_profile_<user_id/file_suffix>_playlists.json`
 
-Thanks to this we can detect changes after the tool is restarted.
+Thanks to this we can detect changes after the tool is restarted. By default these files use the current working directory. Set [`JSON_DIR`](configuration.md#json-history-directory) to read and write all three in another directory.
 
 The tool also saves the user profile picture to `spotify_profile_<user_id/file_suffix>_pic*.jpeg` files.
 
