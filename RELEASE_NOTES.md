@@ -2,6 +2,18 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.8.1 (27 Aug 2026)
+
+Version **3.8.1** adds a dedicated **`JSON_DIR`** setting for follower and following plus playlist history files. It also makes rejected config content actionable by showing the config path plus exact line number and reason without clearing the error into guided setup.
+
+**Features and improvements**:
+
+- **IMPROVE:** **Configurable JSON history directory** - Set **`JSON_DIR`** to read and write the follower, following and playlist history files outside the current working directory. The directory is created when monitoring starts. Leaving it empty preserves the existing filenames and location
+
+**Bug fixes**:
+
+- **BUGFIX:** **Visible configuration errors** - Unsupported settings plus f-strings and other non-literal config values now report the config path plus exact line number and reason in normal output. Invalid discovered configs exit before the no-argument guided setup can clear or replace the diagnostic
+
 # Changes in 3.8 (27 Aug 2026)
 
 Version **3.8** adds **coloured terminal output** with a customizable theme, restores **Python 3.9 support**, applies the check interval and connectivity settings from the config file and escapes Spotify text in **profile-picture emails, CSV exports and email links**. **Pillow is now optional**, **config files are parsed instead of executed**, `--debug` output is redacted, environment-variable secrets work without a dotenv file and the project adds a **documentation site**, a **security policy** plus releases with a checksum file and a signed build attestation.
