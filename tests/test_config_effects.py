@@ -137,3 +137,15 @@ def test_connectivity_defaults_are_not_bound_at_import():
     defaults = monitor.check_internet.__defaults__
 
     assert defaults == (None, None, None), "resolving these at import time would freeze them before any config file loads"
+
+
+# Confirms JSON history files resolve under JSON_DIR while the empty default preserves bare filenames
+def test_json_history_paths_follow_the_configured_directory(tmp_path):
+    assert monitor.build_json_history_paths("alice") == ("spotify_profile_alice_followers.json", "spotify_profile_alice_followings.json", "spotify_profile_alice_playlists.json")
+
+    json_dir = tmp_path / "state" / "json"
+    prepared = monitor.prepare_json_directory(str(json_dir))
+
+    assert Path(prepared) == json_dir
+    assert json_dir.is_dir()
+    assert monitor.build_json_history_paths("alice", prepared) == (str(json_dir / "spotify_profile_alice_followers.json"), str(json_dir / "spotify_profile_alice_followings.json"), str(json_dir / "spotify_profile_alice_playlists.json"))
