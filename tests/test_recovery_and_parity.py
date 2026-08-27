@@ -153,6 +153,19 @@ def test_config_load_rejects_unknown_setting(tmp_path):
     assert "NOT_A_REAL_SETTING" not in namespace
 
 
+@pytest.mark.parametrize(("content", "expected"), (("# unsupported helper\nCUSTOM_HELPER = 'test'\n", "Line 2: unsupported configuration setting 'CUSTOM_HELPER'"), ("CSV_FILE = f'exports.csv'\n", "Line 1: CSV_FILE must be a plain value")))
+# Verifies config failures expose their exact line and actionable reason without debug mode
+def test_config_load_reports_exact_invalid_line(tmp_path, capsys, content, expected):
+    config_path = tmp_path / "invalid.conf"
+    config_path.write_text(content, encoding="utf-8")
+
+    assert monitor.load_config_file(config_path) is False
+    output = capsys.readouterr().out
+    assert expected in output
+    assert str(config_path) in output
+    assert "Technical detail:" not in output
+
+
 # Verifies a configuration written by an older version still loads when it carries retired settings
 def test_config_load_ignores_retired_settings(tmp_path, capsys):
     config_path = tmp_path / "legacy.conf"
