@@ -5,7 +5,7 @@
 [![GitHub Stars](https://img.shields.io/github/stars/misiektoja/spotify_profile_monitor?style=flat-square&color=magenta)](https://github.com/misiektoja/spotify_profile_monitor)
 [![Python Versions](https://img.shields.io/badge/python-3.9+-blueviolet?style=flat-square)](https://pypi.org/project/spotify-profile-monitor/)
 [![License](https://img.shields.io/github/license/misiektoja/spotify_profile_monitor?style=flat-square&color=blue)](https://github.com/misiektoja/spotify_profile_monitor/blob/main/LICENSE)
-[![OpenSSF Scorecard](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.scorecard.dev%2Fprojects%2Fgithub.com%2Fmisiektoja%2Fspotify_profile_monitor%3Fbadge_cache%3D20260826&query=%24.score&label=openssf%20scorecard&style=flat-square)](https://scorecard.dev/viewer/?uri=github.com/misiektoja/spotify_profile_monitor)
+[![OpenSSF Scorecard](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fapi.scorecard.dev%2Fprojects%2Fgithub.com%2Fmisiektoja%2Fspotify_profile_monitor&query=%24.score&label=openssf%20scorecard&style=flat-square)](https://scorecard.dev/viewer/?uri=github.com/misiektoja/spotify_profile_monitor)
 [![Last Commit](https://img.shields.io/github/last-commit/misiektoja/spotify_profile_monitor?style=flat-square&color=green)](https://github.com/misiektoja/spotify_profile_monitor/commits/main)
 [![Maintenance](https://img.shields.io/badge/maintenance-active-brightgreen?style=flat-square)](https://github.com/misiektoja/spotify_profile_monitor)
 
