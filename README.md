@@ -69,16 +69,6 @@ For the manual single-file method, optional extras and upgrade commands, see [In
 
 🛠️ For Spotify Web Player token and secret-key utilities, see [Debugging Tools](https://misiektoja.github.io/spotify_profile_monitor/debugging/).
 
-<a id="before-monitoring"></a>
-## Before Monitoring
-
-For manual setup you need two values:
-
-1. A **Spotify target** for the person you want to monitor. The easiest form is the complete profile URL copied from Spotify. A `spotify:user:` URI or bare user ID is also accepted. See [How to Find a Friend's Spotify Profile URL](https://misiektoja.github.io/spotify_profile_monitor/configuration/#how-to-find-a-friends-spotify-profile-url).
-2. The **`sp_dc` login cookie** from the Spotify account used for monitoring. Import it from a signed-in browser with `spotify_profile_monitor --import-browser-cookie --browser firefox` or follow the [manual cookie extraction steps](https://misiektoja.github.io/spotify_profile_monitor/configuration/#manual-cookie-extraction). Treat this value like a password.
-
-It is strongly recommended to use a separate Spotify account with this tool, because cookie and desktop-client access rely on internal undocumented Spotify endpoints. See [Spotify access token source](https://misiektoja.github.io/spotify_profile_monitor/configuration/#spotify-access-token-source) for all four token methods and their limitations.
-
 <a id="common-commands"></a>
 ## Common Commands
 
