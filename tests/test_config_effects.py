@@ -119,6 +119,30 @@ def test_default_configuration_keeps_tls_verification():
     assert "INSECURE_WARNINGS_DISABLED" not in result.stdout
 
 
+# Confirms a retired-setting upgrade note is printed once after the startup banner
+def test_retired_setting_note_survives_normal_startup():
+    with make_temp_directory() as directory_name:
+        config_path = write_config(directory_name, 'SECRET_CIPHER_DICT = ""\n')
+        result = run_cli(["--config-file", str(config_path)], PROBE_SETUP)
+
+    assert result.returncode == 0, result.stderr
+    note = "* Note: SECRET_CIPHER_DICT was removed in a later version and is ignored."
+    assert result.stdout.count(note) == 1
+    assert result.stdout.index(f"v{monitor.VERSION}") < result.stdout.index(note)
+
+
+# Confirms verbose CLI startup shows the effective configured JSON history destination
+def test_verbose_startup_shows_json_history_directory():
+    with make_temp_directory() as directory_name:
+        json_dir = Path(directory_name) / "state" / "json"
+        config_path = write_config(directory_name, f"JSON_DIR = {str(json_dir)!r}\n")
+        result = run_cli(["--config-file", str(config_path), "--verbose"], PROBE_SETUP)
+
+    assert result.returncode == 0, result.stderr
+    assert "* JSON history directory:" in result.stdout
+    assert str(json_dir) in result.stdout
+
+
 @pytest.mark.parametrize("url,timeout,verify", [("https://explicit.example", 3, False), ("https://other.example", 9, True)])
 # Confirms an explicit argument still wins over the resolved global, so callers keep full control
 def test_explicit_connectivity_arguments_win(monkeypatch, url, timeout, verify):
