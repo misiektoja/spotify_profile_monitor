@@ -103,7 +103,7 @@ You can monitor multiple Spotify users by running multiple copies of the script.
 
 The tool normalizes every accepted target form to a Spotify user ID for output filenames. It saves its log as `spotify_profile_monitor_<user_id/file_suffix>.log`. The log file name can be changed via `SP_LOGFILE` and its suffix via `FILE_SUFFIX` / `-y`. Logging can be disabled with `DISABLE_LOGGING` / `-d`.
 
-The terminal shows a concise startup summary by default. The complete non-secret summary is still written to the log. Use `--verbose` to show that complete summary in the terminal plus occasional events such as token refreshes or metadata backend changes. The complete view includes the effective JSON history directory alongside the other output destinations. Use `--debug` for sanitized request flow and internal state details.
+The terminal shows a concise startup summary by default. The complete non-secret summary is still written to the log. Use `--verbose` to show that complete summary in the terminal plus occasional events such as token refreshes or metadata backend changes. The complete view includes the effective JSON history directory path alongside the other output destinations, including the current working directory path when `JSON_DIR` is empty. Use `--debug` for sanitized request flow and internal state details.
 
 Set `ASCII_LOG_SEPARATORS` to `"Auto"` (default) to use ASCII separator-only lines on Windows, `"On"` to use them on every operating system or `"Off"` to preserve Unicode separators in logs everywhere. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.
 
