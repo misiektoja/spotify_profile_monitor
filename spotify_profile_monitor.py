@@ -1378,6 +1378,9 @@ _STARTUP_SUMMARY_TIMER_ROW_RE = re.compile(r"^\* error retry timer:")
 _ERROR_KEYWORD_RE = re.compile(r"\b(?:failures?|failed|forbidden|timeout|disappeared)\b(?!\s*=)")
 # A backend fallback notice reports a recovery that worked, not the failure that made the tool switch over
 _RECOVERY_NOTICE_RE = re.compile(r"\bswitched to\b")
+# A debug trace line records what the tool tried, including attempts that fail and are then handled, so it keeps
+# its own colours instead of being painted as the failure it reports
+_DEBUG_LINE_RE = re.compile(r"^\[debug \d{2}:\d{2}:\d{2}\]")
 # Doctor status markers, coloured with the same theme parts the reference tools use for them
 _DOCTOR_MARK_RE = re.compile(r"^\[(PASS|WARN|FAIL|SKIP)\]")
 _DOCTOR_MARK_STYLES = {"PASS": "boolean_true", "WARN": "warning", "FAIL": "error", "SKIP": "info"}
@@ -1681,7 +1684,8 @@ def _colorize_line(line):
     # Applied last so the internal colours above are preserved through the nesting logic
     is_summary_timer_row = bool(_STARTUP_SUMMARY_TIMER_ROW_RE.match(lowered))
     is_recovery_notice = bool(_RECOVERY_NOTICE_RE.search(lowered))
-    is_error = not is_summary_timer_row and not is_recovery_notice and (
+    is_debug_line = bool(_DEBUG_LINE_RE.match(lowered))
+    is_error = not is_summary_timer_row and not is_recovery_notice and not is_debug_line and (
         bool(_ERROR_KEYWORD_RE.search(lowered)) or "critical:" in lowered or (
             "* error" in lowered and "[errors =" not in lowered
         )
