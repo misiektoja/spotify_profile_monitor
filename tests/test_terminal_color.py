@@ -61,11 +61,12 @@ def test_startup_summary_timer_row_is_not_error_colored(colored):
     assert f"{colored['duration']}3 minutes{monitor.ANSI_RESET}" in result
 
 
-# Verifies a diagnostic detail and a fallback notice are not painted red, while a real problem still is. A
-# 'timeout=15' setting or a 'failures=3' counter names a value, and a backend switch reports a recovery
+# Verifies a debug trace line and a fallback notice are not painted red, while a real problem still is. A debug
+# line records an attempt the tool then handles, and a backend switch reports a recovery that worked
 @pytest.mark.parametrize("line", [
     "[DEBUG 15:57:30] HTTP GET https://api.spotify.com/v1 [connectivity check], timeout=5, verify_ssl=True",
     "[DEBUG 15:57:30] HTTP HEAD https://open.spotify.com/ [server time] timeout=15",
+    "[DEBUG 16:05:53] _spotify_get_playlist_info_api(): failed for uri=spotify:playlist:64038SKKJNi7GIAh16NlRr: 403 Client Error: Forbidden for url",
     "* Playlist metadata switched to the web-player backend after legacy API failures",
 ])
 def test_diagnostic_details_and_fallback_notices_are_not_error_colored(colored, line):
