@@ -1372,7 +1372,12 @@ _BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
 _NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off)(.*)$")
 # Startup summary row whose label happens to contain a problem word. It reports a configured setting, not a
 # failure, so the whole-line error style must skip it and leave its value coloured like any other row
-_STARTUP_SUMMARY_TIMER_ROW_RE = re.compile(r"^\* Error retry timer:")
+_STARTUP_SUMMARY_TIMER_ROW_RE = re.compile(r"^\* error retry timer:")
+# Words that report a problem. The same word used as a key in a 'key=value' diagnostic detail names a setting
+# such as 'timeout=15' or a counter such as 'failures=3', so it leaves its line unpainted
+_ERROR_KEYWORD_RE = re.compile(r"\b(?:failures?|failed|forbidden|timeout|disappeared)\b(?!\s*=)")
+# A backend fallback notice reports a recovery that worked, not the failure that made the tool switch over
+_RECOVERY_NOTICE_RE = re.compile(r"\bswitched to\b")
 # Doctor status markers, coloured with the same theme parts the reference tools use for them
 _DOCTOR_MARK_RE = re.compile(r"^\[(PASS|WARN|FAIL|SKIP)\]")
 _DOCTOR_MARK_STYLES = {"PASS": "boolean_true", "WARN": "warning", "FAIL": "error", "SKIP": "info"}
@@ -1674,9 +1679,10 @@ def _colorize_line(line):
 
     # Block highlighting (activity headers, errors, warnings, signals)
     # Applied last so the internal colours above are preserved through the nesting logic
-    is_summary_timer_row = bool(_STARTUP_SUMMARY_TIMER_ROW_RE.match(line))
-    is_error = not is_summary_timer_row and (
-        any(w in lowered for w in ("failure", "forbidden", "timeout", "critical:", "failed", "disappeared")) or (
+    is_summary_timer_row = bool(_STARTUP_SUMMARY_TIMER_ROW_RE.match(lowered))
+    is_recovery_notice = bool(_RECOVERY_NOTICE_RE.search(lowered))
+    is_error = not is_summary_timer_row and not is_recovery_notice and (
+        bool(_ERROR_KEYWORD_RE.search(lowered)) or "critical:" in lowered or (
             "* error" in lowered and "[errors =" not in lowered
         )
     )
