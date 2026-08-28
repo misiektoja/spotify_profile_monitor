@@ -218,6 +218,17 @@ def test_startup_summary_has_concise_and_full_views(monkeypatch, capsys):
     assert "* More details:" not in complete
 
 
+# Verifies the default JSON history destination is shown as its effective directory path
+def test_startup_summary_shows_current_json_directory_path(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(monitor, "JSON_DIR", "")
+
+    rows = monitor.build_startup_summary("target.user", None, None, None)
+    json_row = next(row for row in rows if row.label == "JSON history directory")
+
+    assert json_row.value == str(tmp_path)
+
+
 # Verifies setup review can edit one section without losing other answers
 def test_setup_review_edits_polling_without_losing_state(tmp_path, monkeypatch):
     baseline = dict(vars(monitor))
