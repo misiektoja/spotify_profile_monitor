@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.8.1
+v3.8.2
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -22,7 +22,7 @@ pathvalidate (optional, needed by --export-all-playlists)
 Pillow (needed for email and ntfy artwork attachments)
 """
 
-VERSION = "3.8.1"
+VERSION = "3.8.2"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -7217,6 +7217,14 @@ def describe_retired_settings(names: Sequence[str], path: Any = "") -> str:
     return sentence
 
 
+# Prints one deferred upgrade note for retired configuration settings
+def report_retired_settings(names: Sequence[str], path: Any = "", stream=None) -> None:
+    if not names:
+        return
+    quoted_path = f"'{path}'" if path else ""
+    print(f"* Note: {describe_retired_settings(names, quoted_path)}", file=stream or sys.stdout)
+
+
 # Returns the setting names declared by the trusted built-in config template
 def _config_allowed_names() -> FrozenSet[str]:
     template_tree = ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec")
@@ -7959,9 +7967,8 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
         selected_namespace.update(parsed_values)
         if retired_out is not None:
             retired_out.extend(retired_settings)
-        if retired_settings and report_errors:
-            quoted_path = "'" + str(config_path) + "'"
-            print(f"* Note: {describe_retired_settings(retired_settings, quoted_path)}")
+        if retired_settings and report_errors and retired_out is None:
+            report_retired_settings(retired_settings, config_path)
         return True
     except SyntaxError as exc:
         details = [f"Config file '{config_path}' has invalid Python syntax"]
@@ -8333,6 +8340,7 @@ def build_startup_summary(target: str, config_path, env_path, output_path) -> Li
         StartupSummaryRow("All public playlists", str(GET_ALL_PLAYLISTS)),
         StartupSummaryRow("Liveness output", display_time(LIVENESS_CHECK_INTERVAL) if LIVENESS_CHECK_INTERVAL else "Disabled", concise=bool(LIVENESS_CHECK_INTERVAL)),
         StartupSummaryRow("CSV output", CSV_FILE or "Disabled", concise=bool(CSV_FILE)),
+        StartupSummaryRow("JSON history directory", JSON_DIR or "Current working directory"),
         StartupSummaryRow("Ignored-playlist file", PLAYLISTS_TO_SKIP_FILE or "Disabled", concise=bool(PLAYLISTS_TO_SKIP_FILE)),
         StartupSummaryRow("Spotify playlists ignored", str(IGNORE_SPOTIFY_PLAYLISTS)),
         StartupSummaryRow("Profile picture display", imgcat_exe or "Disabled", concise=bool(imgcat_exe)),
@@ -11501,9 +11509,9 @@ def main():
             print(render_recovery_error(RecoveryError(advice)))
             sys.exit(1)
 
+    config_retired = []
     if cfg_path:
         config_errors = []
-        config_retired = []
         if not load_config_file(cfg_path, error_out=config_errors, report_errors=not args.doctor, retired_out=config_retired):
             if args.doctor:
                 doctor_startup_checks.extend(config_errors)
@@ -11515,12 +11523,14 @@ def main():
     if len(sys.argv) == 1 and not TARGET_USER_URI_ID:
         prepare_startup_screen(require_input=True)
         print_startup_banner()
+        report_retired_settings(config_retired, cfg_path)
         _wizard_welcome()
         sys.exit(0 if sys.stdin.isatty() else 1)
 
     debug_print(f"CLI override: DEBUG_MODE={DEBUG_MODE}")
 
     if args.import_browser_cookie:
+        report_retired_settings(config_retired, cfg_path)
         try:
             run_browser_cookie_import(browser=args.browser or "firefox", browser_profile=args.browser_profile, cookie_file=args.cookie_file, env_file=args.env_file or DOTENV_FILE or None, force=args.force, config_path=args.config_file, target=args.user_id or TARGET_USER_URI_ID)
         except BrowserCookieImportError as exc:
@@ -11614,6 +11624,7 @@ def main():
     init_color_output(stdout_bck)
 
     if args.set_sp_dc:
+        report_retired_settings(config_retired, cfg_path)
         try:
             run_set_sp_dc(env_file=DOTENV_FILE or None, config_path=cfg_path or CLI_CONFIG_PATH)
         except SpDcConfigurationError as exc:
@@ -11622,6 +11633,7 @@ def main():
         sys.exit(0)
 
     if args.set_webhook_url:
+        report_retired_settings(config_retired, cfg_path)
         try:
             run_set_webhook_url(env_file=DOTENV_FILE or None, config_path=cfg_path)
         except WebhookConfigurationError as exc:
@@ -11703,6 +11715,7 @@ def main():
 
     if args.send_test_webhook:
         prepare_startup_screen()
+        report_retired_settings(config_retired, cfg_path)
         print("* Sending a test webhook ...\n")
         if send_webhook("Spotify Profile Monitor test", "Your webhook alerts are set up correctly.", "profile", force=True) == 0:
             print("* Test webhook sent successfully !")
@@ -11721,6 +11734,8 @@ def main():
         prepare_startup_screen()
 
         print_startup_banner()
+
+    report_retired_settings(config_retired, cfg_path, stream=sys.stderr if CLEAN_OUTPUT else None)
 
     local_tz = None
     if LOCAL_TIMEZONE == "Auto":
@@ -12152,6 +12167,13 @@ def main():
         FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
 
+    try:
+        JSON_DIR = prepare_json_directory(JSON_DIR)
+    except (OSError, TypeError) as exc:
+        advice = classify_recovery_error(exc, "file_write", f"JSON history directory cannot be prepared: {exc}")
+        print(render_recovery_error(RecoveryError(advice)))
+        sys.exit(1)
+
     startup_rows = build_startup_summary(args.user_id, cfg_path, env_path, FINAL_LOG_PATH)
     emit_startup_summary(startup_rows, show_full=bool(VERBOSE_MODE or DEBUG_MODE))
 
@@ -12161,13 +12183,6 @@ def main():
         signal.signal(signal.SIGTRAP, increase_check_signal_handler)
         signal.signal(signal.SIGABRT, decrease_check_signal_handler)
         signal.signal(signal.SIGHUP, reload_secrets_signal_handler)
-
-    try:
-        JSON_DIR = prepare_json_directory(JSON_DIR)
-    except (OSError, TypeError) as exc:
-        advice = classify_recovery_error(exc, "file_write", f"JSON history directory cannot be prepared: {exc}")
-        print(render_recovery_error(RecoveryError(advice)))
-        sys.exit(1)
 
     spotify_profile_monitor_uri(args.user_id, CSV_FILE, playlists_to_skip)
 
