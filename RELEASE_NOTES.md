@@ -8,7 +8,7 @@ Version **3.8.2** keeps **configuration upgrade notes visible** after startup re
 
 **Bug fixes**:
 
-- **BUGFIX:** **Accurate error colouring** - Lines that only mention a problem word are no longer painted red. The **`Error retry timer`** row shown by **`--verbose`** / **`--debug`**, diagnostic details such as `timeout=15` or `failures=3` and the notice about switching to the web-player backend now keep their normal colours, while real failures stay red
+- **BUGFIX:** **Accurate error colouring** - Lines that only mention a problem word are no longer painted red. The **`Error retry timer`** row shown by **`--verbose`**, every **`[DEBUG]`** trace line, including the ones recording a retried or handled request, and the notice about switching to the web-player backend now keep their normal colours, while real failures stay red
 - **BUGFIX:** **Visible configuration upgrade notes** - Settings retired from older official config templates are still ignored so upgraded files continue to work, but their cleanup note is now deferred until after the startup screen clear. The note remains readable while monitoring continues
 - **BUGFIX:** **Reliable diagnostic flags** - Explicit **`--verbose`** and **`--debug`** flags now stay enabled after an auto-discovered or selected config file loads, even when that file leaves the matching setting disabled
 - **BUGFIX:** **JSON history destination in verbose startup** - `--verbose` and `--debug` now show the effective **`JSON_DIR`** location alongside other file destinations. The complete startup log includes it too
