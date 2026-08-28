@@ -21,6 +21,7 @@ PROBE_SETUP = (
     "runtime['urllib3'].disable_warnings = lambda *args, **kwargs: print('INSECURE_WARNINGS_DISABLED'); "
     "runtime['spotify_profile_monitor_uri'] = lambda user_id, csv_file, playlists: print(f'CHECK_INTERVAL={runtime[\"SPOTIFY_CHECK_INTERVAL\"]}') or print(f'LIVENESS_COUNTER={runtime[\"LIVENESS_CHECK_COUNTER\"]}') or print(f'CACHE_TTL={runtime[\"PLAYLIST_INFO_CACHE_TTL\"]}'); "
 )
+DIAGNOSTIC_PROBE_SETUP = PROBE_SETUP + "runtime['spotify_profile_monitor_uri'] = lambda user_id, csv_file, playlists: print(f'EFFECTIVE_DEBUG={runtime[\"DEBUG_MODE\"]}') or print(f'EFFECTIVE_VERBOSE={runtime[\"VERBOSE_MODE\"]}'); "
 
 
 # Creates a disposable test directory under the project local directory
@@ -141,6 +142,17 @@ def test_verbose_startup_shows_json_history_directory():
     assert result.returncode == 0, result.stderr
     assert "* JSON history directory:" in result.stdout
     assert str(json_dir) in result.stdout
+
+
+@pytest.mark.parametrize(("flag", "setting"), (("--verbose", "VERBOSE_MODE"), ("--debug", "DEBUG_MODE")))
+# Confirms explicit diagnostic flags win when a loaded config disables the same mode
+def test_diagnostic_flag_overrides_disabled_config(flag, setting):
+    with make_temp_directory() as directory_name:
+        config_path = write_config(directory_name, f"{setting} = False\n")
+        result = run_cli(["--config-file", str(config_path), flag], DIAGNOSTIC_PROBE_SETUP)
+
+    assert result.returncode == 0, result.stderr
+    assert probe_value(result.stdout, f"EFFECTIVE_{setting.removesuffix('_MODE')}") == "True"
 
 
 @pytest.mark.parametrize("url,timeout,verify", [("https://explicit.example", 3, False), ("https://other.example", 9, True)])
