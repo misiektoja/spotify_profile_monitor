@@ -2,6 +2,15 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.8.2 (TBD)
+
+Version **3.8.2** keeps **configuration upgrade notes visible** after startup redraws and includes the effective **`JSON_DIR`** destination in verbose startup output.
+
+**Bug fixes**:
+
+- **BUGFIX:** **Visible configuration upgrade notes** - Settings retired from older official config templates are still ignored so upgraded files continue to work, but their cleanup note is now deferred until after the startup screen clear. The note remains readable while monitoring continues
+- **BUGFIX:** **JSON history destination in verbose startup** - `--verbose` and `--debug` now show the effective **`JSON_DIR`** location alongside other file destinations. The complete startup log includes it too
+
 # Changes in 3.8.1 (27 Aug 2026)
 
 Version **3.8.1** adds a dedicated **`JSON_DIR`** setting for follower and following plus playlist history files. It also makes rejected config content actionable by showing the config path plus exact line number and reason without clearing the error into guided setup.
