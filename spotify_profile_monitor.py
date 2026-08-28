@@ -8309,6 +8309,7 @@ class DoctorCheck:
 class DoctorReport:
     checks: List[DoctorCheck] = field(default_factory=list)
     access_token: Optional[str] = field(default=None, repr=False)
+    target_profile: Optional[dict] = field(default=None, repr=False)
     authentication_error: str = ""
     authentication_advice: Optional[RecoveryAdvice] = None
 
@@ -8340,7 +8341,7 @@ def build_startup_summary(target: str, config_path, env_path, output_path) -> Li
         StartupSummaryRow("All public playlists", str(GET_ALL_PLAYLISTS)),
         StartupSummaryRow("Liveness output", display_time(LIVENESS_CHECK_INTERVAL) if LIVENESS_CHECK_INTERVAL else "Disabled", concise=bool(LIVENESS_CHECK_INTERVAL)),
         StartupSummaryRow("CSV output", CSV_FILE or "Disabled", concise=bool(CSV_FILE)),
-        StartupSummaryRow("JSON history directory", JSON_DIR or "Current working directory"),
+        StartupSummaryRow("JSON history directory", str(Path(JSON_DIR).expanduser().resolve()) if JSON_DIR else str(Path.cwd())),
         StartupSummaryRow("Ignored-playlist file", PLAYLISTS_TO_SKIP_FILE or "Disabled", concise=bool(PLAYLISTS_TO_SKIP_FILE)),
         StartupSummaryRow("Spotify playlists ignored", str(IGNORE_SPOTIFY_PLAYLISTS)),
         StartupSummaryRow("Profile picture display", imgcat_exe or "Disabled", concise=bool(imgcat_exe)),
@@ -8671,15 +8672,15 @@ def doctor_check_target(report: DoctorReport, target_value=None) -> List[DoctorC
     if not report.access_token:
         return [make_doctor_check("Target", "WARN", f"Target '{target_id}' live check was skipped", "Authentication did not produce an access token", "Fix authentication then rerun Doctor")]
     try:
-        spotify_get_user_info(report.access_token, target_id, False, 0)
+        report.target_profile = spotify_get_user_info(report.access_token, target_id, True, 0)
         return [make_doctor_check("Target", "PASS", f"Target '{target_id}' can be monitored", "A live Spotify profile request succeeded")]
     except Exception as exc:
         advice = classify_recovery_error(exc, "target", target_user_id=target_id)
         return [make_doctor_check("Target", "FAIL", advice.summary, advice.detail, advice.fix, advice)]
 
 
-# Checks optional legacy OAuth metadata credentials without writing a token cache
-def doctor_check_optional_oauth() -> List[DoctorCheck]:
+# Checks optional legacy OAuth credentials against one target playlist without writing a token cache
+def doctor_check_optional_oauth(report: Optional[DoctorReport] = None) -> List[DoctorCheck]:
     client_present = bool(SP_APP_CLIENT_ID and SP_APP_CLIENT_ID != "your_spotify_app_client_id")
     secret_present = bool(SP_APP_CLIENT_SECRET and SP_APP_CLIENT_SECRET != "your_spotify_app_client_secret")
     if not client_present and not secret_present:
@@ -8689,15 +8690,27 @@ def doctor_check_optional_oauth() -> List[DoctorCheck]:
         return [make_doctor_check("Metadata", "WARN", "Legacy OAuth metadata credentials are incomplete", "The web-player playlist backend remains available", recovery_fix_with_guide("Set both values or remove both", OAUTH_GUIDE_URL), advice)]
     global SP_APP_TOKENS_FILE
     saved_cache = SP_APP_TOKENS_FILE
+    token_issued = False
     try:
         SP_APP_TOKENS_FILE = ""
         token = spotify_get_access_token_from_oauth_app(SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET)
         if not token:
             raise RuntimeError("Spotify did not provide an OAuth app token")
-        return [make_doctor_check("Metadata", "PASS", "Legacy OAuth metadata authentication succeeded", "A memory-only token was used and no OAuth cache was written")]
+        token_issued = True
+        target_playlists = report.target_profile.get("sp_user_public_playlists_uris", []) if report is not None and isinstance(report.target_profile, dict) else []
+        playlist_uri = next((item.get("uri") for item in target_playlists if isinstance(item, dict) and item.get("uri")), None)
+        if playlist_uri is None:
+            return [make_doctor_check("Metadata", "WARN", "Legacy OAuth token issued, but playlist access was not checked", "No public target playlist was available. Normal monitoring can use the web-player backend if the legacy API is restricted")]
+        _spotify_get_playlist_info_api(token, playlist_uri, False, oauth_app=True)
+        return [make_doctor_check("Metadata", "PASS", "Legacy OAuth playlist metadata access succeeded", f"A live metadata request for {playlist_uri} succeeded with a memory-only token. No OAuth cache was written")]
     except Exception as exc:
         advice = classify_recovery_error(exc, "metadata")
-        return [make_doctor_check("Metadata", "WARN", "Legacy OAuth metadata access is unavailable", advice.detail, advice.fix, advice)]
+        detail = advice.detail
+        if detail:
+            detail = detail.rstrip(".") + ". "
+        detail += "Normal monitoring will use the web-player backend"
+        label = "Legacy OAuth token issued, but playlist metadata access is unavailable" if token_issued else "Legacy OAuth metadata access is unavailable"
+        return [make_doctor_check("Metadata", "WARN", label, detail, advice.fix, advice)]
     finally:
         SP_APP_TOKENS_FILE = saved_cache
 
@@ -8867,12 +8880,12 @@ def build_doctor_report(target_value=None, config_path=None, env_path=None, star
         progress("Spotify authentication")
     report.checks.extend(doctor_check_authentication(report))
     if progress is not None:
-        progress("metadata")
-    report.checks.extend(doctor_check_optional_oauth())
-    if progress is not None:
         progress("connectivity and target")
     report.checks.extend(doctor_check_connectivity(report))
     report.checks.extend(doctor_check_target(report, target_value))
+    if progress is not None:
+        progress("metadata")
+    report.checks.extend(doctor_check_optional_oauth(report))
     if progress is not None:
         progress("notifications")
     report.checks.extend(doctor_check_notifications())
