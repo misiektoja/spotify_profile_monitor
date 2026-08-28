@@ -200,6 +200,7 @@ def test_startup_summary_has_concise_and_full_views(monkeypatch, capsys):
     monkeypatch.setattr(monitor, "PROFILE_NOTIFICATION", False)
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", False)
     monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", False)
+    monkeypatch.setattr(monitor, "JSON_DIR", "state/json")
     rows = monitor.build_startup_summary("target.user", None, None, None)
 
     monitor.emit_startup_summary(rows, show_full=False)
@@ -209,7 +210,10 @@ def test_startup_summary_has_concise_and_full_views(monkeypatch, capsys):
 
     assert "* Target:" in concise
     assert "* More details:" in concise
+    assert "* JSON history directory:" not in concise
     assert "* Error retry timer:" not in concise
+    assert "* JSON history directory:" in complete
+    assert "state/json" in complete
     assert "* Error retry timer:" in complete
     assert "* More details:" not in complete
 
