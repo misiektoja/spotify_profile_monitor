@@ -298,7 +298,7 @@ def test_doctor_build_reports_progress(monkeypatch):
     monkeypatch.setattr(monitor, "doctor_check_environment", lambda *args: [])
     monkeypatch.setattr(monitor, "doctor_check_configuration", lambda *args: [])
     monkeypatch.setattr(monitor, "doctor_check_authentication", lambda *args: [])
-    monkeypatch.setattr(monitor, "doctor_check_optional_oauth", lambda: [])
+    monkeypatch.setattr(monitor, "doctor_check_optional_oauth", lambda report: [])
     monkeypatch.setattr(monitor, "doctor_check_connectivity", lambda *args: [])
     monkeypatch.setattr(monitor, "doctor_check_target", lambda *args: [])
     monkeypatch.setattr(monitor, "doctor_check_notifications", lambda: [])
@@ -306,7 +306,7 @@ def test_doctor_build_reports_progress(monkeypatch):
 
     monitor.build_doctor_report(progress=phases.append)
 
-    assert phases == ["environment", "configuration", "Spotify authentication", "metadata", "connectivity and target", "notifications"]
+    assert phases == ["environment", "configuration", "Spotify authentication", "connectivity and target", "metadata", "notifications"]
 
 
 # Verifies Doctor preserves a startup failure for an explicitly missing dotenv file
