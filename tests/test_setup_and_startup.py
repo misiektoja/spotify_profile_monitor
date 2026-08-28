@@ -213,7 +213,7 @@ def test_startup_summary_has_concise_and_full_views(monkeypatch, capsys):
     assert "* JSON history directory:" not in concise
     assert "* Error retry timer:" not in concise
     assert "* JSON history directory:" in complete
-    assert "state/json" in complete
+    assert str(Path("state/json").resolve()) in complete
     assert "* Error retry timer:" in complete
     assert "* More details:" not in complete
 
