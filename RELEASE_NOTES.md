@@ -4,10 +4,11 @@ This is a high-level summary of the most important changes.
 
 # Changes in 3.8.2 (28 Aug 2026)
 
-Version **3.8.2** keeps **configuration upgrade notes visible** after startup redraws, makes explicit **`--verbose` and `--debug` flags override config defaults**, shows the effective **`JSON_DIR`** path and makes **Doctor verify real legacy playlist access** instead of token issuance alone.
+Version **3.8.2** keeps **configuration upgrade notes visible** after startup redraws, makes explicit **`--verbose` and `--debug` flags override config defaults**, shows the effective **`JSON_DIR`** path, stops the startup summary from colouring the error retry setting as an error and makes **Doctor verify real legacy playlist access** instead of token issuance alone.
 
 **Bug fixes**:
 
+- **BUGFIX:** **Startup summary retry timer reads as a setting again** - The **`Error retry timer`** row shown by **`--verbose`** is no longer painted in the error colour just because its label contains a problem word. It now matches every other summary row, with a plain label and a coloured value
 - **BUGFIX:** **Visible configuration upgrade notes** - Settings retired from older official config templates are still ignored so upgraded files continue to work, but their cleanup note is now deferred until after the startup screen clear. The note remains readable while monitoring continues
 - **BUGFIX:** **Reliable diagnostic flags** - Explicit **`--verbose`** and **`--debug`** flags now stay enabled after an auto-discovered or selected config file loads, even when that file leaves the matching setting disabled
 - **BUGFIX:** **JSON history destination in verbose startup** - `--verbose` and `--debug` now show the effective **`JSON_DIR`** location alongside other file destinations. The complete startup log includes it too
