@@ -61,6 +61,23 @@ def test_startup_summary_timer_row_is_not_error_colored(colored):
     assert f"{colored['duration']}3 minutes{monitor.ANSI_RESET}" in result
 
 
+# Verifies a diagnostic detail and a fallback notice are not painted red, while a real problem still is. A
+# 'timeout=15' setting or a 'failures=3' counter names a value, and a backend switch reports a recovery
+@pytest.mark.parametrize("line", [
+    "[DEBUG 15:57:30] HTTP GET https://api.spotify.com/v1 [connectivity check], timeout=5, verify_ssl=True",
+    "[DEBUG 15:57:30] HTTP HEAD https://open.spotify.com/ [server time] timeout=15",
+    "* Playlist metadata switched to the web-player backend after legacy API failures",
+])
+def test_diagnostic_details_and_fallback_notices_are_not_error_colored(colored, line):
+    assert colored["error"] not in monitor._colorize_line(line)
+
+
+# Verifies the same words still paint a line that really reports a problem
+@pytest.mark.parametrize("line", ["Spotify follow verification failed: bad token", "* Error: request timeout after 15 seconds"])
+def test_real_problem_lines_stay_error_colored(colored, line):
+    assert monitor._colorize_line(line).startswith(colored["error"])
+
+
 # Verifies a static count stays plain and only a reported change colours its numbers
 def test_static_counts_stay_plain_and_changes_are_colored(colored):
     for line in ("Followers:\t\t\t98", "Followings:\t\t\t302", "Public playlists:\t\t41", "Number of friends:\t\t7"):
