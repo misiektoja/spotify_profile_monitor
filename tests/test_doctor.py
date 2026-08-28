@@ -114,7 +114,63 @@ def test_doctor_reuses_access_token_for_target(monkeypatch):
 
     assert auth_checks[0].status == "PASS"
     assert target_checks[0].status == "PASS"
-    profile_request.assert_called_once_with("access-token", "target.user", False, 0)
+    profile_request.assert_called_once_with("access-token", "target.user", True, 0)
+
+
+# Verifies Doctor tests legacy OAuth against the target playlist endpoint instead of token issuance alone
+def test_doctor_checks_legacy_metadata_with_target_playlist(monkeypatch):
+    monkeypatch.setattr(monitor, "SP_APP_CLIENT_ID", "legacy-client")
+    monkeypatch.setattr(monitor, "SP_APP_CLIENT_SECRET", "legacy-secret")
+    monkeypatch.setattr(monitor, "spotify_get_access_token_from_oauth_app", Mock(return_value="legacy-token"))
+    metadata_request = Mock(return_value={"sp_playlist_name": "Playlist"})
+    monkeypatch.setattr(monitor, "_spotify_get_playlist_info_api", metadata_request)
+    report = monitor.DoctorReport(target_profile={"sp_user_public_playlists_uris": [{"uri": "spotify:playlist:playlist123"}]})
+
+    check = monitor.doctor_check_optional_oauth(report)[0]
+
+    assert check.status == "PASS"
+    assert check.label == "Legacy OAuth playlist metadata access succeeded"
+    metadata_request.assert_called_once_with("legacy-token", "spotify:playlist:playlist123", False, oauth_app=True)
+
+
+# Verifies Doctor explains when token issuance succeeds but Spotify rejects actual playlist metadata
+def test_doctor_warns_when_legacy_token_cannot_read_playlist_metadata(monkeypatch):
+    monkeypatch.setattr(monitor, "SP_APP_CLIENT_ID", "legacy-client")
+    monkeypatch.setattr(monitor, "SP_APP_CLIENT_SECRET", "legacy-secret")
+    monkeypatch.setattr(monitor, "spotify_get_access_token_from_oauth_app", Mock(return_value="legacy-token"))
+    response = Mock(status_code=403)
+    monkeypatch.setattr(monitor, "_spotify_get_playlist_info_api", Mock(side_effect=requests.HTTPError("403 Client Error", response=response)))
+    report = monitor.DoctorReport(target_profile={"sp_user_public_playlists_uris": [{"uri": "spotify:playlist:playlist123"}]})
+
+    check = monitor.doctor_check_optional_oauth(report)[0]
+
+    assert check.status == "WARN"
+    assert check.label == "Legacy OAuth token issued, but playlist metadata access is unavailable"
+    assert "Normal monitoring will use the web-player backend" in check.detail
+
+
+# Verifies Doctor does not claim playlist compatibility when the target has nothing available to probe
+def test_doctor_marks_unchecked_legacy_playlist_access(monkeypatch):
+    monkeypatch.setattr(monitor, "SP_APP_CLIENT_ID", "legacy-client")
+    monkeypatch.setattr(monitor, "SP_APP_CLIENT_SECRET", "legacy-secret")
+    monkeypatch.setattr(monitor, "spotify_get_access_token_from_oauth_app", Mock(return_value="legacy-token"))
+
+    check = monitor.doctor_check_optional_oauth(monitor.DoctorReport(target_profile={"sp_user_public_playlists_uris": []}))[0]
+
+    assert check.status == "WARN"
+    assert check.label == "Legacy OAuth token issued, but playlist access was not checked"
+
+
+# Verifies Doctor does not claim token issuance when the credential exchange itself fails
+def test_doctor_preserves_legacy_token_failure_label(monkeypatch):
+    monkeypatch.setattr(monitor, "SP_APP_CLIENT_ID", "legacy-client")
+    monkeypatch.setattr(monitor, "SP_APP_CLIENT_SECRET", "legacy-secret")
+    monkeypatch.setattr(monitor, "spotify_get_access_token_from_oauth_app", Mock(side_effect=RuntimeError("invalid_client")))
+
+    check = monitor.doctor_check_optional_oauth(monitor.DoctorReport())[0]
+
+    assert check.status == "WARN"
+    assert check.label == "Legacy OAuth metadata access is unavailable"
 
 
 # Verifies cookie target checks do not evaluate OAuth-only timestamps with an unresolved automatic timezone
