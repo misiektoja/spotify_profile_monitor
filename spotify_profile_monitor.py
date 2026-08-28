@@ -1370,6 +1370,9 @@ _PERCENTAGE_RE = re.compile(r"\(\d{1,3}%")
 _BOOLEAN_TRUE_RE = re.compile(r"\bTrue\b|\bEnabled\b")
 _BOOLEAN_FALSE_RE = re.compile(r"\bFalse\b|\bDisabled\b")
 _NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off)(.*)$")
+# Startup summary row whose label happens to contain a problem word. It reports a configured setting, not a
+# failure, so the whole-line error style must skip it and leave its value coloured like any other row
+_STARTUP_SUMMARY_TIMER_ROW_RE = re.compile(r"^\* Error retry timer:")
 # Doctor status markers, coloured with the same theme parts the reference tools use for them
 _DOCTOR_MARK_RE = re.compile(r"^\[(PASS|WARN|FAIL|SKIP)\]")
 _DOCTOR_MARK_STYLES = {"PASS": "boolean_true", "WARN": "warning", "FAIL": "error", "SKIP": "info"}
@@ -1671,8 +1674,11 @@ def _colorize_line(line):
 
     # Block highlighting (activity headers, errors, warnings, signals)
     # Applied last so the internal colours above are preserved through the nesting logic
-    is_error = any(w in lowered for w in ("failure", "forbidden", "timeout", "critical:", "failed", "disappeared")) or (
-        "* error" in lowered and "[errors =" not in lowered
+    is_summary_timer_row = bool(_STARTUP_SUMMARY_TIMER_ROW_RE.match(line))
+    is_error = not is_summary_timer_row and (
+        any(w in lowered for w in ("failure", "forbidden", "timeout", "critical:", "failed", "disappeared")) or (
+            "* error" in lowered and "[errors =" not in lowered
+        )
     )
     is_warning = any(w in lowered for w in ("* warning:", "caution:")) and "[warnings =" not in lowered
     is_signal = "* signal" in lowered and "received" in lowered
