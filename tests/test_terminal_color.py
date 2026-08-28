@@ -49,6 +49,18 @@ def test_startup_summary_rows_are_not_block_colored(colored):
         assert colored["info"] not in monitor._colorize_line(line)
 
 
+# Verifies the timer row whose label names a problem word reports a setting, so it keeps the plain label and
+# green duration of every other summary row instead of turning red
+def test_startup_summary_timer_row_is_not_error_colored(colored):
+    line = "* Error retry timer:            3 minutes"
+
+    result = monitor._colorize_line(line)
+
+    assert monitor.ANSI_ESCAPE_RE.sub("", result) == line
+    assert colored["error"] not in result
+    assert f"{colored['duration']}3 minutes{monitor.ANSI_RESET}" in result
+
+
 # Verifies a static count stays plain and only a reported change colours its numbers
 def test_static_counts_stay_plain_and_changes_are_colored(colored):
     for line in ("Followers:\t\t\t98", "Followings:\t\t\t302", "Public playlists:\t\t41", "Number of friends:\t\t7"):
