@@ -1361,7 +1361,8 @@ _LABEL_STYLES = (
 _FROM_TO_COUNT_RE = re.compile(r"(from\s+)(\d+)(\s+to\s+)(\d+)")
 _DIFF_COUNT_UP_RE = re.compile(r"(\(\+\d+\))")
 _DIFF_COUNT_DOWN_RE = re.compile(r"(\(-\d+\))")
-_USER_TAG_RE = re.compile(r"((?:for user|by user|of user|Spotify user|Monitoring\s+Spotify\s+user|\* User|owned by):?)([\t ]+)((?!ID\b)[\w.:-]+)")
+# The separator is a space in prose and an equals sign in the key=value diagnostic fields
+_USER_TAG_RE = re.compile(r"((?:for user|by user|of user|Spotify user|Monitoring\s+Spotify\s+user|\* User|owned by|\buser):?)([\t ]+|=)((?!ID\b)[\w.:-]+)")
 
 # Change headers name the monitored user between "user" and whatever they report next. A Spotify display name
 # can hold spaces and emoji, so it is matched up to that boundary instead of as a single word
@@ -8009,6 +8010,8 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
         # Parsed as data rather than executed, so a config file picked up from the working directory cannot run code
         parsed_values = parse_config_content(content, str(config_path), retired_settings)
         selected_namespace.update(parsed_values)
+        if report_errors:
+            verbose_print(f"Loaded {len(parsed_values)} settings from the configuration file")
         if retired_out is not None:
             retired_out.extend(retired_settings)
         if retired_settings and report_errors and retired_out is None:
