@@ -21,7 +21,7 @@ def test_doctor_environment_checks_python_and_dependencies():
 
     assert any(check.status == "PASS" and "Python 3.12.1" in check.label for check in checks)
     assert any(check.status == "FAIL" and "pyotp" in check.label for check in checks)
-    assert any(check.status == "PASS" and check.label.startswith("Install method: ") for check in checks)
+    assert not any(check.label.startswith("Install method") for check in checks)
 
 
 # Verifies Chromium dependency guidance explicitly preserves Firefox import support
@@ -301,6 +301,28 @@ def test_doctor_preflight_notice_precedes_the_report(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval." in output
     assert output.index("Running preflight checks.") < output.index("Doctor\n")
+
+
+# Verifies the install method is stated as context instead of a check that can never fail
+def test_doctor_report_states_the_install_method_without_a_marker():
+    report = monitor.DoctorReport(checks=[monitor.make_doctor_check("Environment", "PASS", "Python 3.12.1 is supported")])
+
+    rendered = monitor.render_doctor_report(report)
+
+    assert f"Doctor\nDetected install method: {monitor._wizard_install_method()}\n" in rendered
+    assert "[PASS] Install method" not in rendered
+
+
+# Verifies disabled output destinations are stated rather than left out of the report
+def test_doctor_names_disabled_output_destinations(monkeypatch):
+    monkeypatch.setattr(monitor, "CSV_FILE", "")
+    monkeypatch.setattr(monitor, "DISABLE_LOGGING", True)
+
+    checks = monitor.doctor_check_configuration()
+
+    rows = {(check.status, check.label, check.detail) for check in checks}
+    assert ("PASS", "CSV logging is disabled", "No CSV file will be written") in rows
+    assert ("PASS", "Output logging is disabled", "No log file will be written") in rows
 
 
 # Verifies Doctor visually attaches explanatory details to their check rows

@@ -8475,7 +8475,6 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
         else:
             purpose = "Used only for importing cookies from Chromium-based browsers. Firefox cookie import does not need it" if present else "Required only for importing cookies from Chromium-based browsers. Normal monitoring is unaffected. Firefox cookie import is also unaffected"
         checks.append(make_doctor_check("Environment", "PASS" if present else "WARN", f"Optional dependency {package_name} is {'installed' if present else 'not installed'}", purpose))
-    checks.append(make_doctor_check("Environment", "PASS", f"Install method: {_wizard_install_method()}"))
     return checks
 
 
@@ -8598,6 +8597,8 @@ def doctor_check_configuration(config_path=None, env_path=None, startup_checks: 
     destinations = []
     if CSV_FILE:
         destinations.append(("CSV destination", Path(CSV_FILE)))
+    else:
+        checks.append(make_doctor_check("Configuration", "PASS", "CSV logging is disabled", "No CSV file will be written"))
     if not isinstance(JSON_DIR, str):
         advice = classify_recovery_error(context="config_invalid", detail=f"JSON_DIR must be a string, not {type(JSON_DIR).__name__}")
         checks.append(make_doctor_check("Configuration", "FAIL", "JSON_DIR is invalid", advice.detail, advice.fix, advice))
@@ -8610,7 +8611,9 @@ def doctor_check_configuration(config_path=None, env_path=None, startup_checks: 
             writable = parent.is_dir() and os.access(str(parent), os.W_OK)
         advice = None if writable else classify_recovery_error(context="file_write", detail=f"JSON directory is not writable: {json_destination}")
         checks.append(make_doctor_check("Configuration", "PASS" if writable else "FAIL", f"JSON directory {'appears writable' if writable else 'is not writable'}", f"Path: {json_destination}", advice.fix if advice else "", advice))
-    if not DISABLE_LOGGING and SP_LOGFILE:
+    if DISABLE_LOGGING:
+        checks.append(make_doctor_check("Configuration", "PASS", "Output logging is disabled", "No log file will be written"))
+    elif SP_LOGFILE:
         log_suffix = FILE_SUFFIX
         if not log_suffix and target_value:
             try:
@@ -8931,7 +8934,9 @@ def render_doctor_notice() -> None:
 
 # Renders one sectioned ASCII Doctor report with recovery actions
 def render_doctor_report(report: DoctorReport) -> str:
-    lines = [colorize("header", "Doctor")]
+    # The install method is context rather than a check: it cannot fail, so it is stated once here
+    # instead of taking a result row that no marker describes
+    lines = [colorize("header", "Doctor"), f"Detected install method: {colorize('username', _wizard_install_method())}"]
     for section in ("Environment", "Configuration", "Authentication", "Metadata", "Connectivity", "Target", "Notifications"):
         section_checks = [item for item in report.checks if item.section == section]
         if not section_checks:
