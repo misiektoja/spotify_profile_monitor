@@ -469,7 +469,7 @@ def test_an_abandoned_mail_server_answer_switches_email_off(monkeypatch, tmp_pat
     assert secret_updates == {}
 
 
-# Verifies mail server settings the validator rejects can be abandoned, which switches every email alert off
+# Verifies a mail server that refuses the sign-in can be abandoned, which switches every email alert off
 def test_rejected_mail_server_settings_can_be_abandoned(monkeypatch, tmp_path):
     config_values = {"PROFILE_NOTIFICATION": True, "FOLLOWERS_FOLLOWINGS_NOTIFICATION": True, "ERROR_NOTIFICATION": True, "EMAIL_IMAGES": True}
     labels = []
@@ -477,7 +477,7 @@ def test_rejected_mail_server_settings_can_be_abandoned(monkeypatch, tmp_path):
     monkeypatch.setattr(monitor, "_wizard_ask_text", lambda question, default="", required=False: "answer@example.test")
     monkeypatch.setattr(monitor, "_wizard_ask_positive_int", lambda question, default: default)
     monkeypatch.setattr(monitor, "_wizard_ask_secret", lambda question: "private-password")
-    monkeypatch.setattr(monitor, "_wizard_validate_smtp", lambda values, password: "SENDER_EMAIL is not a valid address")
+    monkeypatch.setattr(monitor, "_wizard_verify_smtp", lambda values, password: monitor.make_recovery_advice("smtp.invalid", "SMTP settings are invalid", "Correct SENDER_EMAIL", False, "SENDER_EMAIL is not a valid address"))
     monkeypatch.setattr(monitor, "_wizard_offer_retry", lambda label, consequence="": labels.append(label) or False)
 
     assert monitor._wizard_collect_email(config_values, {}, tmp_path / ".env") == []
