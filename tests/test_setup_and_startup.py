@@ -225,6 +225,7 @@ def test_startup_summary_reports_install_method_and_secret_origins(tmp_path, mon
     monkeypatch.setattr(monitor, "SMTP_PASSWORD", "from-file")
     monkeypatch.setattr(monitor, "SP_DC_COOKIE", "from-environment")
     monkeypatch.setenv("SP_DC_COOKIE", "from-environment")
+    monkeypatch.setattr(monitor, "SECRET_SOURCES", {"SMTP_PASSWORD": "dotenv file", "SP_DC_COOKIE": "environment"}, raising=False)
     monkeypatch.setattr(monitor.sys, "argv", ["spotify_profile_monitor.py"])
     rows = monitor.build_startup_summary("target.user", None, str(env_file), None)
 

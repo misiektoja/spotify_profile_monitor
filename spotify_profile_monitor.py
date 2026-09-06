@@ -823,6 +823,9 @@ DEFAULT_DOTENV_FILENAME = ".env"
 # List of secret keys to load from env/config
 SECRET_KEYS = ("SP_DC_COOKIE", "SP_APP_CLIENT_ID", "SP_APP_CLIENT_SECRET", "SP_USER_CLIENT_ID", "SP_USER_CLIENT_SECRET", "REFRESH_TOKEN", "SP_SHA256", "SMTP_PASSWORD", "WEBHOOK_URL", "NTFY_ACCESS_TOKEN")
 
+# Effective source name for each configured secret without storing another copy of its value
+SECRET_SOURCES = {}
+
 # Config values that retain safe template defaults in generated files
 SENSITIVE_CONFIG_KEYS = frozenset((*SECRET_KEYS, "WEBHOOK_HEADERS"))
 
@@ -3241,6 +3244,7 @@ def reload_secrets_signal_handler(sig, frame):
                 globals()[secret_key] = val
                 if secret_key == "WEBHOOK_URL":
                     webhook_url_changed = True
+                SECRET_SOURCES[secret_key] = "dotenv file reload"
                 print(f"* Reloaded {secret_key} from {env_path}{suffix}")
 
     if TOKEN_SOURCE == 'client':
@@ -8471,6 +8475,7 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
         else:
             purpose = "Used only for importing cookies from Chromium-based browsers. Firefox cookie import does not need it" if present else "Required only for importing cookies from Chromium-based browsers. Normal monitoring is unaffected. Firefox cookie import is also unaffected"
         checks.append(make_doctor_check("Environment", "PASS" if present else "WARN", f"Optional dependency {package_name} is {'installed' if present else 'not installed'}", purpose))
+    checks.append(make_doctor_check("Environment", "PASS", f"Install method: {_wizard_install_method()}"))
     return checks
 
 
@@ -8499,22 +8504,16 @@ def doctor_secret_is_set(value) -> bool:
 
 # Groups configured secret names by the source each value actually came from
 def doctor_secret_sources(env_path=None) -> Tuple[List[str], List[str], List[str]]:
-    file_keys = set()
-    if env_path:
-        try:
-            from dotenv import dotenv_values
-            file_keys = {key for key, value in dotenv_values(env_path, interpolate=False).items() if value}
-        except Exception:
-            file_keys = set()
     from_file: List[str] = []
     from_environment: List[str] = []
     from_settings: List[str] = []
     for key in SECRET_KEYS:
         if not doctor_secret_is_set(globals().get(key)):
             continue
-        if key in file_keys:
+        source = SECRET_SOURCES.get(key, "configuration file or command line")
+        if source.startswith("dotenv file"):
             from_file.append(key)
-        elif os.environ.get(key):
+        elif source == "environment":
             from_environment.append(key)
         else:
             from_settings.append(key)
@@ -10998,6 +10997,7 @@ def apply_webhook_cli_overrides(args: argparse.Namespace, parser: argparse.Argum
         if not validate_webhook_url(args.webhook_url):
             parser.error("--webhook-url must contain a complete HTTPS link without embedded credentials")
         WEBHOOK_URL = str(args.webhook_url).strip()
+        SECRET_SOURCES["WEBHOOK_URL"] = "command line"
         WEBHOOK_ENABLED = True
     if args.webhook_enabled is not None:
         WEBHOOK_ENABLED = args.webhook_enabled
@@ -11615,6 +11615,12 @@ def main():
         if DOTENV_FILE:
             DOTENV_FILE = os.path.expanduser(DOTENV_FILE)
 
+    exported_secret_keys = frozenset(secret for secret in SECRET_KEYS if os.getenv(secret) is not None)
+    SECRET_SOURCES.clear()
+    for secret in SECRET_KEYS:
+        if doctor_secret_is_set(globals().get(secret)):
+            SECRET_SOURCES[secret] = "configuration file or command line"
+
     env_path = None
     if DOTENV_FILE and DOTENV_FILE.lower() == 'none':
         env_path = None
@@ -11674,6 +11680,7 @@ def main():
         val = os.getenv(secret)
         if val is not None:
             globals()[secret] = val
+            SECRET_SOURCES[secret] = "environment" if secret in exported_secret_keys else "dotenv file"
 
     if args.no_color is True:
         COLORED_OUTPUT = False
@@ -11710,15 +11717,20 @@ def main():
         TOKEN_SOURCE = "cookie"
     if args.spotify_dc_cookie:
         SP_DC_COOKIE = args.spotify_dc_cookie
+        SECRET_SOURCES["SP_DC_COOKIE"] = "command line"
     if args.oauth_app_creds:
         try:
             SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET = args.oauth_app_creds.split(":", 1)
+            SECRET_SOURCES["SP_APP_CLIENT_ID"] = "command line"
+            SECRET_SOURCES["SP_APP_CLIENT_SECRET"] = "command line"
         except ValueError as exc:
             print_recovery_error(exc, "config_invalid", detail="--oauth-app-creds must use SP_APP_CLIENT_ID:SP_APP_CLIENT_SECRET")
             sys.exit(1)
     if args.oauth_user_creds:
         try:
             SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET = args.oauth_user_creds.split(":", 1)
+            SECRET_SOURCES["SP_USER_CLIENT_ID"] = "command line"
+            SECRET_SOURCES["SP_USER_CLIENT_SECRET"] = "command line"
         except ValueError as exc:
             print_recovery_error(exc, "config_invalid", detail="--oauth-user-creds must use SPOTIFY_USER_CLIENT_ID:SPOTIFY_USER_CLIENT_SECRET")
             sys.exit(1)
