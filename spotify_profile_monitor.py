@@ -905,7 +905,7 @@ PLAYLIST_INPUT_ERROR = f"Invalid Spotify playlist. Use {SPOTIFY_WEB_BASE_URL}/pl
 SPOTIFY_OBJECT_TYPES = frozenset({"user", "artist", "track", "album", "playlist"})
 
 # Stable machine-readable categories used by recovery output and Doctor checks
-RECOVERY_CODES = frozenset({"config.missing", "config.invalid", "config.insecure", "dependency.missing", "secret.missing", "auth.cookie_invalid", "auth.client_invalid", "auth.oauth_invalid", "auth.rejected", "network.unavailable", "network.timeout", "spotify.rate_limited", "spotify.unavailable", "target.invalid", "target.not_found", "smtp.invalid", "smtp.authentication", "smtp.connection", "webhook.invalid", "webhook.rejected", "webhook.redirected", "webhook.rate_limited", "webhook.connection", "file.unreadable", "file.unwritable", "unknown"})
+RECOVERY_CODES = frozenset({"config.missing", "config.invalid", "config.insecure", "dependency.missing", "secret.missing", "secret.entry", "auth.cookie_invalid", "auth.client_invalid", "auth.oauth_invalid", "auth.rejected", "network.unavailable", "network.timeout", "spotify.rate_limited", "spotify.unavailable", "target.invalid", "target.not_found", "smtp.invalid", "smtp.authentication", "smtp.connection", "webhook.invalid", "webhook.rejected", "webhook.redirected", "webhook.rate_limited", "webhook.connection", "file.unreadable", "file.unwritable", "unknown"})
 
 # Strings removed from track names for generating proper Genius search URLs
 re_search_str = r'remaster|extended|original mix|remix|original soundtrack|radio( |-)edit|\(feat\.|( \(.*version\))|( - .*version)'
@@ -2118,6 +2118,17 @@ def make_recovery_advice(code: str, summary: str, fix: str, retryable: bool, det
 # Adds one directly relevant documentation link to recovery instructions
 def recovery_fix_with_guide(fix: str, guide_url: str) -> str:
     return f"{fix}\nGuide: {guide_url}"
+
+
+# Returns the advice a cancelled secret entry reports, worded the same way by every one-shot secret command
+def secret_entry_cancelled_advice(subject, flag, guide_url):
+    return make_recovery_advice("secret.entry", f"{subject[:1].upper()}{subject[1:]} setup was cancelled and the dotenv file was not changed", recovery_fix_with_guide(f"Run {flag} again when you have the value ready", guide_url), False)
+
+
+# Returns the advice a declined secret replacement reports, worded the same way by every one-shot secret command
+def secret_replacement_declined_advice(subject, flag, guide_url, plural=False):
+    kept = "were left as they are" if plural else "was left as it is"
+    return make_recovery_advice("secret.entry", f"The saved {subject} {kept} and the dotenv file was not changed", recovery_fix_with_guide(f"Run {flag} again and answer y to replace the saved value", guide_url), False)
 
 
 # Returns an install-aware Firefox cookie recovery command
@@ -7955,14 +7966,16 @@ def run_set_sp_dc(env_file=None, interactive=None, input_func=None, getpass_func
         try:
             confirmed = read_interactively(prompt, f"Replace SP_DC_COOKIE in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
         except (EOFError, KeyboardInterrupt):
-            confirmed = False
+            print()
+            raise RecoveryError(secret_entry_cancelled_advice("Spotify cookie", "--set-sp-dc", MANUAL_COOKIE_GUIDE_URL)) from None
         if not confirmed:
-            raise SpDcConfigurationError("Spotify cookie setup was cancelled. The private settings file was not changed.")
+            raise RecoveryError(secret_replacement_declined_advice("Spotify cookie", "--set-sp-dc", MANUAL_COOKIE_GUIDE_URL))
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
         sp_dc = read_secret_privately(hidden_prompt, "Enter sp_dc privately (input hidden): ").strip()
     except (EOFError, KeyboardInterrupt):
-        raise SpDcConfigurationError("Spotify cookie setup was cancelled. The private settings file was not changed.") from None
+        print()
+        raise RecoveryError(secret_entry_cancelled_advice("Spotify cookie", "--set-sp-dc", MANUAL_COOKIE_GUIDE_URL)) from None
     if not sp_dc:
         raise SpDcConfigurationError("No nonempty sp_dc cookie was entered. The private settings file was not changed.")
     print("* Validating the entered Spotify cookie before changing the private settings file ...")
@@ -7992,14 +8005,16 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
         try:
             confirmed = read_interactively(prompt, f"Replace the saved webhook URL in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
         except (EOFError, KeyboardInterrupt):
-            confirmed = False
+            print()
+            raise RecoveryError(secret_entry_cancelled_advice("webhook URL", "--set-webhook-url", WEBHOOK_GUIDE_URL)) from None
         if not confirmed:
-            raise WebhookConfigurationError("Webhook setup was cancelled. The private settings file was not changed.")
+            raise RecoveryError(secret_replacement_declined_advice("webhook URL", "--set-webhook-url", WEBHOOK_GUIDE_URL))
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
         webhook_url = read_secret_privately(hidden_prompt, "Paste the Discord or ntfy webhook URL (input hidden): ").strip()
     except (EOFError, KeyboardInterrupt):
-        raise WebhookConfigurationError("Webhook setup was cancelled. The private settings file was not changed.") from None
+        print()
+        raise RecoveryError(secret_entry_cancelled_advice("webhook URL", "--set-webhook-url", WEBHOOK_GUIDE_URL)) from None
     if not validate_webhook_url(webhook_url):
         raise WebhookConfigurationError("That does not look like a complete HTTPS webhook URL. The private settings file was not changed.")
     try:
@@ -8056,15 +8071,17 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
         try:
             confirmed = str(read_interactively(prompt, f"Replace the saved SMTP password in '{destination}'? [y/N]: ")).strip().casefold() in ("y", "yes")
         except (EOFError, KeyboardInterrupt):
-            confirmed = False
+            print()
+            raise RecoveryError(secret_entry_cancelled_advice("SMTP password", "--set-smtp-password", SMTP_GUIDE_URL)) from None
         if not confirmed:
-            raise RecoveryError(classify_recovery_error(context="secret", detail="SMTP password setup was cancelled, so the dotenv file was not changed"))
+            raise RecoveryError(secret_replacement_declined_advice("SMTP password", "--set-smtp-password", SMTP_GUIDE_URL))
     print(f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent")
     hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
     try:
         smtp_password = str(read_secret_privately(hidden_prompt, "Enter the SMTP password (input hidden): ")).strip()
     except (EOFError, KeyboardInterrupt):
-        raise RecoveryError(classify_recovery_error(context="secret", detail="SMTP password setup was cancelled, so the dotenv file was not changed")) from None
+        print()
+        raise RecoveryError(secret_entry_cancelled_advice("SMTP password", "--set-smtp-password", SMTP_GUIDE_URL)) from None
     check = smtp_sign_in if sign_in is None else sign_in
     try:
         signed_in_user = check(smtp_password, timeout=5)
@@ -11998,7 +12015,7 @@ def main():
             sys.exit(1)
         sys.exit(0)
 
-    target_free_mode = any((args.set_sp_dc, args.set_webhook_url, args.doctor, args.send_test_email, args.send_test_webhook, args.list_tracks_for_playlist, args.list_liked_tracks, args.search_username, args.login_request_body_file, args.clienttoken_request_body_file))
+    target_free_mode = any((args.set_sp_dc, args.set_smtp_password, args.set_webhook_url, args.doctor, args.send_test_email, args.send_test_webhook, args.list_tracks_for_playlist, args.list_liked_tracks, args.search_username, args.login_request_body_file, args.clienttoken_request_body_file))
     try:
         if args.user_id is not None or not target_free_mode:
             args.user_id = resolve_target_user_id(args.user_id, TARGET_USER_URI_ID)
@@ -12097,7 +12114,7 @@ def main():
         report_retired_settings(config_retired, cfg_path)
         try:
             run_set_sp_dc(env_file=DOTENV_FILE or None, config_path=cfg_path or CLI_CONFIG_PATH)
-        except SpDcConfigurationError as exc:
+        except (SpDcConfigurationError, RecoveryError) as exc:
             print_recovery_error(exc, "set_sp_dc")
             sys.exit(1)
         sys.exit(0)
@@ -12116,7 +12133,7 @@ def main():
         report_retired_settings(config_retired, cfg_path)
         try:
             run_set_webhook_url(env_file=DOTENV_FILE or None, config_path=cfg_path)
-        except WebhookConfigurationError as exc:
+        except (WebhookConfigurationError, RecoveryError) as exc:
             print_recovery_error(exc, "set_webhook_url")
             sys.exit(1)
         sys.exit(0)
