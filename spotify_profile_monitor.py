@@ -7846,7 +7846,7 @@ def run_browser_cookie_import(browser="firefox", browser_profile=None, cookie_fi
     print("* Browser cookie import completed successfully\n")
     method = _wizard_install_method()
     selected_config = config_path or find_config_file()
-    _wizard_print_command("Check authentication and the target:", _wizard_action_command(method, "--doctor", selected_config, destination, target or "SPOTIFY_TARGET"))
+    _wizard_print_command("Check setup again:", _wizard_action_command(method, "--doctor", selected_config, destination, target or "SPOTIFY_TARGET"))
     _wizard_print_command("After Doctor passes, start monitoring:", _wizard_action_command(method, "", selected_config, destination, target or "SPOTIFY_TARGET"))
     return str(destination)
 
@@ -7880,9 +7880,10 @@ def run_set_sp_dc(env_file=None, interactive=None, input_func=None, getpass_func
         raise SpDcConfigurationError(f"Could not save SP_DC_COOKIE in '{destination}'. Check file permissions or choose another path with --env-file.") from None
     print("* SP_DC_COOKIE validation succeeded")
     print(f"* Updated private settings file: {destination}")
+    print()
     method = _wizard_install_method()
     recovery_target = None if TARGET_USER_URI_ID else "SPOTIFY_TARGET"
-    _wizard_print_command("Check authentication and the target:", _wizard_action_command(method, "--doctor", config_path or find_config_file(), destination, recovery_target))
+    _wizard_print_command("Check setup again:", _wizard_action_command(method, "--doctor", config_path or find_config_file(), destination, recovery_target))
     _wizard_print_command("After Doctor passes, start monitoring:", _wizard_action_command(method, "", config_path or find_config_file(), destination, recovery_target))
     return str(destination)
 
@@ -7912,10 +7913,15 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
         update_dotenv_file(destination, {"WEBHOOK_URL": webhook_url})
     except Exception:
         raise WebhookConfigurationError(f"Could not save the webhook URL in '{destination}'. Check file permissions or choose another path with --env-file.") from None
-    test_command = _wizard_action_command(_wizard_install_method(), "--send-test-webhook", config_path, destination)
+    method = _wizard_install_method()
+    selected_config = config_path or find_config_file()
+    test_command = _wizard_action_command(method, "--send-test-webhook", selected_config, destination)
+    doctor_command = _wizard_action_command(method, "--doctor", selected_config, destination, None if TARGET_USER_URI_ID else "SPOTIFY_TARGET")
     print("* Webhook URL looks valid")
     print(f"* Updated private settings file: {destination}")
-    print(f"* Send a test webhook:\n  {test_command}")
+    print()
+    _wizard_print_command("Send a test webhook:", test_command)
+    _wizard_print_command("Check setup again:", doctor_command)
     return str(destination)
 
 
@@ -8129,6 +8135,13 @@ def _wizard_validate_destination(path, label: str) -> Path:
     return destination
 
 
+# Prints one aligned label and value block, so every summary row lines up
+def _wizard_print_summary_rows(rows) -> None:
+    width = max(len(label) for label, _ in rows) + 1
+    for label, value in rows:
+        print(f"  {(label + ':'):<{width}} {value}")
+
+
 # Prints one labelled setup or recovery command
 def _wizard_print_command(label: str, command: str, suffix: str = "") -> None:
     print(label)
@@ -8238,7 +8251,7 @@ def _wizard_welcome() -> None:
     _wizard_print_command("Easiest start (guided setup wizard):", f"{prefix} --setup", setup_suffix)
     _wizard_print_command("Check setup before monitoring:", f"{prefix} --doctor <spotify_target>")
     print(f"Full options: {colorize('section', prefix + ' --help')}")
-    print(f"\nGuide:        {QUICK_START_GUIDE_URL}\n")
+    print(f"\nGuide:        {colorize('link', QUICK_START_GUIDE_URL)}\n")
     if interactive and _wizard_ask_yes_no("Run the guided setup wizard now?", default=True):
         print()
         run_setup_wizard()
@@ -8791,7 +8804,7 @@ def doctor_check_notifications() -> List[DoctorCheck]:
             smtp_object = None
             try:
                 smtp_object = smtp_connect_and_login(SMTP_SSL, smtp_timeout=5)
-                checks.append(make_doctor_check("Notifications", "PASS", SMTP_READY_CHECK_LABEL, "No email was sent during this passive check"))
+                checks.append(make_doctor_check("Notifications", "PASS", SMTP_READY_CHECK_LABEL, f"Alerts: {', '.join(_startup_email_notification_categories())}. No email was sent during this passive check"))
             except Exception as exc:
                 advice = classify_recovery_error(exc, "smtp_connection")
                 checks.append(make_doctor_check("Notifications", "FAIL", advice.summary, advice.detail, advice.fix, advice))
@@ -8817,7 +8830,7 @@ def doctor_check_notifications() -> List[DoctorCheck]:
         elif not _startup_webhook_notification_categories():
             checks.append(make_doctor_check("Notifications", "WARN", "Webhook alerts are on but no alert types are selected", "No webhook was sent", "Enable at least one webhook alert or turn WEBHOOK_ENABLED off"))
         else:
-            checks.append(make_doctor_check("Notifications", "PASS", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", "The private link was not displayed. No webhook was sent during this passive check"))
+            checks.append(make_doctor_check("Notifications", "PASS", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", f"Alerts: {', '.join(_startup_webhook_notification_categories())}. The private link was not displayed. No webhook was sent during this passive check"))
     return checks
 
 
@@ -9527,21 +9540,27 @@ def _wizard_collect_destination_section(state: WizardSetupState, method: str) ->
 
 # Prints current editable answers without exposing secrets
 def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
-    print(colorize('header', "\nSetup summary\n"))
-    print(f"  Target: {state.target}")
-    print(f"  Persist target: {'yes' if state.persist_target else 'no'}")
-    print(f"  Polling interval: {_wizard_format_duration(int(state.config_values['SPOTIFY_CHECK_INTERVAL']))}")
-    print(f"  Token source: {state.auth['source']}")
-    print(f"  Authentication status: {'complete' if state.auth['complete'] else 'incomplete'}")
+    webhook_state = f"enabled ({webhook_provider_display_name(state.config_values.get('WEBHOOK_PROVIDER'))})" if state.enabled_webhooks else "disabled"
+    rows = [
+        ("Target", state.target),
+        ("Persist target", "yes" if state.persist_target else "no"),
+        ("Polling interval", _wizard_format_duration(int(state.config_values["SPOTIFY_CHECK_INTERVAL"]))),
+        ("Token source", state.auth["source"]),
+        ("Authentication status", "complete" if state.auth["complete"] else "incomplete"),
+    ]
     if state.auth.get("browser"):
-        print(f"  Browser: {browser_label(state.auth['browser'])}")
-    print(f"  Email: {'enabled' if state.enabled_notifications else 'disabled'}")
-    print(f"  Email notifications: {', '.join(state.enabled_notifications) if state.enabled_notifications else 'none'}")
-    print(f"  Webhook: {'enabled' if state.enabled_webhooks else 'disabled'}")
-    print(f"  Webhook alerts: {', '.join(state.enabled_webhooks) if state.enabled_webhooks else 'none'}")
-    print(f"  Config destination: {state.config_path}")
-    print(f"  Dotenv destination: {state.env_path}")
-    print(f"  Install method: {method}")
+        rows.append(("Browser", browser_label(state.auth["browser"])))
+    rows.extend([
+        ("Email", "enabled" if state.enabled_notifications else "disabled"),
+        ("Email notifications", ", ".join(state.enabled_notifications) if state.enabled_notifications else "none"),
+        ("Webhook", webhook_state),
+        ("Webhook alerts", ", ".join(state.enabled_webhooks) if state.enabled_webhooks else "none"),
+        ("Config destination", state.config_path),
+        ("Dotenv destination", state.env_path),
+        ("Install method", method),
+    ])
+    print(colorize('header', "\nSetup summary\n"))
+    _wizard_print_summary_rows(rows)
 
 
 # Opens one selected setup section then returns to the summary
@@ -9726,7 +9745,7 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
     else:
         _wizard_print_command("Check setup again:", doctor_command)
     _wizard_print_command("After Doctor passes, start monitoring:" if doctor_failed or not state.auth["validated"] else "Start monitoring:", monitor_command)
-    print(f"Guide: {SETUP_GUIDE_URL}\n")
+    print(f"Guide: {colorize('link', SETUP_GUIDE_URL)}\n")
     if state.auth["complete"] and not doctor_failed and state.auth["validated"] and doctor_ran and _wizard_ask_yes_no("Start monitoring now? Monitoring will continue until Ctrl+C.", default=True):
         exec_args = _wizard_local_command_args(method, exact=True)
         if not state.persist_target:

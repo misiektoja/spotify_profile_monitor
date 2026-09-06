@@ -338,7 +338,7 @@ def test_setup_summary_and_editor_order_polling_before_authentication(tmp_path, 
     monitor._wizard_edit_setup_section(state, "pip")
 
     assert summary.index("Polling interval:") < summary.index("Token source:")
-    assert "Polling interval: 90s - 1m 30s" in summary
+    assert "Polling interval:      90s - 1m 30s" in summary
     assert labels[:3] == ["Target and persistence", "Polling interval", "Authentication"]
 
 
