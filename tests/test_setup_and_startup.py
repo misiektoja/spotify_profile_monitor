@@ -407,3 +407,179 @@ def test_a_blank_csv_answer_disables_csv_output(monkeypatch, tmp_path):
 
     assert state.config_values["DISABLE_LOGGING"] is False
     assert state.config_values["CSV_FILE"] == ""
+
+
+# Verifies the two escape wordings, so a blank answer and a rejected one are never asked the same way
+@pytest.mark.parametrize(("consequence", "question", "answer", "expected"), (("", "Try entering the webhook URL again?", "y", True), ("", "Try entering the webhook URL again?", "n", False), ("Webhook alerts stay off until one is set", "Continue without the webhook URL? Webhook alerts stay off until one is set", "y", False), ("Webhook alerts stay off until one is set", "Continue without the webhook URL? Webhook alerts stay off until one is set", "n", True)))
+def test_the_escape_wording_matches_the_kind_of_rejection(monkeypatch, consequence, question, answer, expected):
+    questions = []
+    monkeypatch.setattr(monitor, "_wizard_input", lambda prompt: questions.append(prompt) or answer)
+
+    assert monitor._wizard_offer_retry("webhook URL", consequence) is expected
+    assert question in questions[0]
+
+
+# Verifies a required answer can be abandoned instead of trapping the wizard in its own loop
+def test_a_required_text_answer_can_be_abandoned(monkeypatch):
+    monkeypatch.setattr(monitor, "_wizard_input", lambda prompt: "")
+    monkeypatch.setattr(monitor, "_wizard_offer_retry", lambda label, consequence="": False)
+
+    assert monitor._wizard_ask_text("SMTP username", required=True) == ""
+
+
+# Verifies a retried required answer is still collected
+def test_a_retried_required_text_answer_is_accepted(monkeypatch):
+    answers = iter(["", "smtp-user"])
+    monkeypatch.setattr(monitor, "_wizard_input", lambda prompt: next(answers))
+    monkeypatch.setattr(monitor, "_wizard_offer_retry", lambda label, consequence="": True)
+
+    assert monitor._wizard_ask_text("SMTP username", required=True) == "smtp-user"
+
+
+# Verifies the hidden prompt returns a blank secret instead of looping, leaving the decision to its caller
+def test_a_blank_secret_returns_instead_of_looping(monkeypatch):
+    monkeypatch.setattr(monitor.getpass, "getpass", lambda prompt: "")
+
+    assert monitor._wizard_ask_secret("SMTP password") == ""
+
+
+# Verifies a target the wizard cannot normalize can be abandoned rather than asked forever, and that an answer already abandoned is not queried twice
+@pytest.mark.parametrize(("answer", "expected_offers"), (("", []), ("not a spotify profile", ["Spotify profile"])))
+def test_an_unusable_target_can_be_abandoned(monkeypatch, answer, expected_offers):
+    offers = []
+    monkeypatch.setattr(monitor, "_wizard_ask_text", lambda question, default="", required=False: answer)
+    monkeypatch.setattr(monitor, "_wizard_offer_retry", lambda label, consequence="": offers.append(label) or False)
+
+    assert monitor._wizard_target() == ""
+    assert offers == expected_offers
+
+
+# Verifies abandoning any mail server answer switches every email alert off rather than saving half a server
+@pytest.mark.parametrize("abandoned", ["SMTP host", "SMTP username", "Sender email", "Receiver email"])
+def test_an_abandoned_mail_server_answer_switches_email_off(monkeypatch, tmp_path, abandoned):
+    config_values = {"PROFILE_NOTIFICATION": True, "FOLLOWERS_FOLLOWINGS_NOTIFICATION": True, "ERROR_NOTIFICATION": True, "EMAIL_IMAGES": True}
+    secret_updates = {}
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: True)
+    monkeypatch.setattr(monitor, "_wizard_ask_text", lambda question, default="", required=False: "" if question == abandoned else "answer@example.test")
+    monkeypatch.setattr(monitor, "_wizard_ask_positive_int", lambda question, default: default)
+    monkeypatch.setattr(monitor, "_wizard_ask_secret", lambda question: "private-password")
+
+    assert monitor._wizard_collect_email(config_values, secret_updates, tmp_path / ".env") == []
+    assert config_values == {"PROFILE_NOTIFICATION": False, "FOLLOWERS_FOLLOWINGS_NOTIFICATION": False, "ERROR_NOTIFICATION": False, "EMAIL_IMAGES": False}
+    assert secret_updates == {}
+
+
+# Verifies mail server settings the validator rejects can be abandoned, which switches every email alert off
+def test_rejected_mail_server_settings_can_be_abandoned(monkeypatch, tmp_path):
+    config_values = {"PROFILE_NOTIFICATION": True, "FOLLOWERS_FOLLOWINGS_NOTIFICATION": True, "ERROR_NOTIFICATION": True, "EMAIL_IMAGES": True}
+    labels = []
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: True)
+    monkeypatch.setattr(monitor, "_wizard_ask_text", lambda question, default="", required=False: "answer@example.test")
+    monkeypatch.setattr(monitor, "_wizard_ask_positive_int", lambda question, default: default)
+    monkeypatch.setattr(monitor, "_wizard_ask_secret", lambda question: "private-password")
+    monkeypatch.setattr(monitor, "_wizard_validate_smtp", lambda values, password: "SENDER_EMAIL is not a valid address")
+    monkeypatch.setattr(monitor, "_wizard_offer_retry", lambda label, consequence="": labels.append(label) or False)
+
+    assert monitor._wizard_collect_email(config_values, {}, tmp_path / ".env") == []
+    assert labels == ["mail server settings"]
+    assert config_values["PROFILE_NOTIFICATION"] is False
+    assert config_values["ERROR_NOTIFICATION"] is False
+
+
+# Verifies a webhook URL nobody can supply switches the channel off instead of repeating the prompt
+@pytest.mark.parametrize(("entry", "consequence_expected"), (("", True), ("not-a-url", False)))
+def test_an_unusable_webhook_url_can_be_abandoned(monkeypatch, tmp_path, entry, consequence_expected):
+    config_values = {"WEBHOOK_ENABLED": True, "WEBHOOK_PROFILE_NOTIFICATION": True, "WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION": True, "WEBHOOK_ERROR_NOTIFICATION": True, "NTFY_IMAGES": True}
+    secret_updates = {}
+    labels = []
+    monkeypatch.delenv("WEBHOOK_URL", raising=False)
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: True)
+    monkeypatch.setattr(monitor, "_wizard_ask_choice", lambda question, options, default_index=0: 0)
+    monkeypatch.setattr(monitor, "_wizard_ask_secret", lambda question: entry)
+    monkeypatch.setattr(monitor, "_wizard_offer_retry", lambda label, consequence="": labels.append((label, consequence)) or False)
+
+    assert monitor._wizard_collect_webhook(config_values, secret_updates, tmp_path / ".env") == []
+    assert labels == [("webhook URL", "Webhook alerts stay off until one is set" if consequence_expected else "")]
+    assert config_values == {"WEBHOOK_ENABLED": False, "WEBHOOK_PROFILE_NOTIFICATION": False, "WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION": False, "WEBHOOK_ERROR_NOTIFICATION": False, "NTFY_IMAGES": False, "WEBHOOK_PROVIDER": "discord"}
+    assert secret_updates == {}
+
+
+# Verifies a retried webhook URL is still collected after one unusable entry
+def test_a_retried_webhook_url_is_accepted(monkeypatch, tmp_path):
+    config_values = {}
+    secret_updates = {}
+    entries = iter(["", "https://discord.com/api/webhooks/1/token"])
+    monkeypatch.delenv("WEBHOOK_URL", raising=False)
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: True)
+    monkeypatch.setattr(monitor, "_wizard_ask_choice", lambda question, options, default_index=0: 0)
+    monkeypatch.setattr(monitor, "_wizard_ask_secret", lambda question: next(entries))
+    monkeypatch.setattr(monitor, "_wizard_offer_retry", lambda label, consequence="": True)
+    monkeypatch.setattr(monitor, "_wizard_collect_notification_images", lambda question: False)
+
+    monitor._wizard_collect_webhook(config_values, secret_updates, tmp_path / ".env")
+
+    assert secret_updates["WEBHOOK_URL"] == "https://discord.com/api/webhooks/1/token"
+    assert config_values["WEBHOOK_ENABLED"] is True
+
+
+# Verifies a blank ntfy access token means no token rather than an unanswerable prompt
+def test_a_blank_ntfy_access_token_means_no_token(monkeypatch, tmp_path):
+    secret_updates = {}
+    monkeypatch.delenv("NTFY_ACCESS_TOKEN", raising=False)
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: True)
+    monkeypatch.setattr(monitor, "_wizard_ask_secret", lambda question: "")
+
+    monitor._wizard_collect_ntfy_access_token(secret_updates, tmp_path / ".env")
+
+    assert secret_updates == {}
+
+
+# Verifies a token pasted with its authorization scheme can be abandoned and is never saved
+def test_an_ntfy_access_token_pasted_with_its_scheme_can_be_abandoned(monkeypatch, tmp_path):
+    secret_updates = {}
+    labels = []
+    monkeypatch.delenv("NTFY_ACCESS_TOKEN", raising=False)
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: True)
+    monkeypatch.setattr(monitor, "_wizard_ask_secret", lambda question: "Bearer tk_secret")
+    monkeypatch.setattr(monitor, "_wizard_offer_retry", lambda label, consequence="": labels.append(label) or False)
+
+    monitor._wizard_collect_ntfy_access_token(secret_updates, tmp_path / ".env")
+
+    assert labels == ["ntfy access token"]
+    assert secret_updates == {}
+
+
+# Verifies a blank sp_dc entry is never sent to Spotify and can be abandoned without losing the other answers
+def test_a_blank_sp_dc_entry_is_not_validated(monkeypatch, tmp_path):
+    secret_updates = {}
+    labels = []
+    monkeypatch.delenv("SP_DC_COOKIE", raising=False)
+    monkeypatch.setattr(monitor, "_wizard_import_browsers", lambda: [])
+    monkeypatch.setattr(monitor, "_wizard_ask_choice", lambda question, options, default_index=0: len(options) - 2)
+    monkeypatch.setattr(monitor, "_wizard_ask_secret", lambda question: "")
+    monkeypatch.setattr(monitor, "validate_sp_dc_cookie", lambda cookie: pytest.fail("a blank cookie was sent to Spotify"))
+    monkeypatch.setattr(monitor, "_wizard_offer_retry", lambda label, consequence="": labels.append((label, consequence)) or False)
+
+    auth = monitor._wizard_collect_cookie_auth("pip", tmp_path / ".env", secret_updates)
+
+    assert labels == [("sp_dc cookie", "Monitoring cannot start until one is set")]
+    assert auth == {"complete": False, "validated": False, "browser": None, "source": "not configured"}
+    assert secret_updates == {}
+
+
+# Verifies a login Protobuf missing values can be abandoned, leaving client mode without credentials rather than looping
+def test_an_incomplete_login_protobuf_can_be_abandoned(monkeypatch, tmp_path):
+    protobuf_path = tmp_path / "login.bin"
+    protobuf_path.write_bytes(b"protobuf")
+    config_values = {}
+    offers = []
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: True)
+    monkeypatch.setattr(monitor, "_wizard_ask_text", lambda question, default="", required=False: str(protobuf_path))
+    monkeypatch.setattr(monitor, "parse_login_request_body_file", lambda path: ("device-id", "system-id", "", "refresh-token"))
+    monkeypatch.setattr(monitor, "_wizard_offer_retry", lambda label, consequence="": offers.append(label) or False)
+
+    result = monitor._wizard_collect_client_auth(config_values, tmp_path / ".env", {})
+
+    assert offers == ["login request Protobuf file"]
+    assert result == {"complete": False, "validated": False, "browser": None, "source": "advanced client mode without credentials"}
+    assert config_values == {}

@@ -57,6 +57,8 @@ Run `spotify_profile_monitor --setup` in an interactive terminal. Press Enter to
 
 If the selected config file already exists, setup asks before replacement or lets you choose another destination. An approved replacement creates a timestamped `.bak` copy and validates the new Python config before atomically installing it. A manually entered `sp_dc` value is validated before it is queued for saving. Setup can then run Doctor and optionally start monitoring.
 
+Every answer setup cannot use offers a way out, so one value you cannot produce right now does not cost you the answers already given. A blank answer asks whether to continue without it and names what stops working, and a rejected one offers to enter it again. Declining switches the part that needed it off, so half a mail server or a webhook with no destination is never written.
+
 When you enable email or ntfy alerts, setup offers artwork attachments. If the optional Pillow package is missing it says so and can install the `notification-images` extra for you, then enables the matching setting only when the install succeeds. Declining keeps the alerts text-only.
 
 Polling intervals accept seconds or readable durations such as `90`, `2m`, `1.5h` or `1h 30m`.

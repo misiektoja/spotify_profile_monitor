@@ -1,6 +1,6 @@
 # Getting help
 
-Start with the [README](README.md). [Installation](README.md#installation), [Quick Start](README.md#quick-start) and [Configuration](README.md#configuration) cover most first-run problems, and [Debugging Tools](README.md#debugging-tools) covers the rest.
+Start with the [documentation](https://misiektoja.github.io/spotify_profile_monitor/). [Installation](https://misiektoja.github.io/spotify_profile_monitor/installation/) and [Setup & First Run](https://misiektoja.github.io/spotify_profile_monitor/setup-and-first-run/) cover most first-run problems, [Configuration](https://misiektoja.github.io/spotify_profile_monitor/configuration/) explains every setting the tool reads and [Debugging Tools](https://misiektoja.github.io/spotify_profile_monitor/debugging/) covers the rest.
 
 ## Check your setup first
 
@@ -12,7 +12,7 @@ spotify_profile_monitor --doctor
 
 It checks the environment, configuration, credentials, notifications and connectivity, and names the reason for anything invalid.
 
-An expired `sp_dc` cookie is the most common cause of sudden authentication failures, empty results or a tool that worked yesterday and stopped today. The [Configuration](README.md#configuration) section explains how to refresh it.
+An expired `sp_dc` cookie is the most common cause of sudden authentication failures, empty results or a tool that worked yesterday and stopped today. The [Spotify sp_dc Cookie](https://misiektoja.github.io/spotify_profile_monitor/configuration/#spotify-sp_dc-cookie) section explains how to refresh it.
 
 ## Where to ask
 

@@ -15,11 +15,32 @@ yaml = pytest.importorskip("yaml")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_DIRECTORY = PROJECT_ROOT / ".github" / "workflows"
+PROJECT_URL = "https://github.com/misiektoja/spotify_profile_monitor"
+REPOSITORY_MARKDOWN = ("README.md", "SUPPORT.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "THIRD_PARTY_NOTICES.md", ".github/pull_request_template.md")
+ISSUE_TEMPLATES = (".github/ISSUE_TEMPLATE/config.yml", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE/feature_request.yml")
 
 
 # Reads one repository file as text
 def read_asset(relative_path: str) -> str:
     return (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
+
+
+# Returns the anchors one Markdown page defines, from its headings and from explicit anchor tags
+def page_anchors(path: Path) -> set:
+    text = path.read_text(encoding="utf-8")
+    anchors = set(re.findall(r'<a id="([^"]+)"></a>', text))
+    for line in text.splitlines():
+        if not line.startswith("#"):
+            continue
+        title = line.lstrip("#").strip()
+        anchors.add("".join(character for character in title.casefold().replace(" ", "-") if character.isalnum() or character in "-_"))
+    return anchors
+
+
+# Returns every local link target in one repository document, including README anchors written as absolute project links
+def repository_link_targets(text: str) -> list:
+    targets = re.findall(r"\]\((?!https?:|mailto:)([^)]+)\)", text)
+    return list(targets) + [f"README.md#{anchor}" for anchor in re.findall(rf"{re.escape(PROJECT_URL)}/?#([^\s)\"']+)", text)]
 
 
 # Reads one repository file as parsed YAML
@@ -34,6 +55,24 @@ class TestGovernanceDocuments:
             asset = PROJECT_ROOT / relative_path
             assert asset.is_file(), relative_path
             assert asset.stat().st_size > 200, relative_path
+
+    # A section that moved to the documentation site leaves dead links behind, and nothing outside docs/ checks them
+    def test_no_repository_document_links_at_a_missing_local_target(self):
+        broken = []
+        for relative_path in REPOSITORY_MARKDOWN + ISSUE_TEMPLATES:
+            path = PROJECT_ROOT / relative_path
+            if not path.exists():
+                continue
+            for target in repository_link_targets(path.read_text(encoding="utf-8")):
+                page_part, _, anchor = target.partition("#")
+                target_page = path if not page_part else (PROJECT_ROOT / page_part)
+                if page_part and not target_page.exists():
+                    broken.append(f"{relative_path} -> {target}")
+                    continue
+                if anchor and anchor not in page_anchors(target_page):
+                    broken.append(f"{relative_path} -> {target}")
+
+        assert not broken, f"repository documents linking at missing targets: {broken}"
 
     # A CODEOWNERS entry is what actually requests review on every change
     def test_codeowners_covers_every_path(self):
@@ -89,6 +128,13 @@ class TestIssueTemplates:
 
 
 class TestWorkflowSupplyChain:
+    # A job named after the documentation build is not the build, so the step CI runs has to be checked
+    def test_the_documentation_build_is_a_ci_gate(self):
+        commands = [match.strip() for match in re.findall(r"^\s*run:\s*(.+)$", read_asset(".github/workflows/tests.yml"), flags=re.MULTILINE)]
+
+        assert any("mkdocs build --strict" in command for command in commands), "CI does not build the documentation site"
+        assert any("docs/requirements.txt" in command for command in commands), "CI does not install the documentation dependencies"
+
     # Every third-party action is pinned to a commit, so a moved tag cannot change what runs with our secrets
     def test_actions_are_pinned_to_commit_shas(self):
         unpinned = []
