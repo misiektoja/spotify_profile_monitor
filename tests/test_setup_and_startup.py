@@ -269,6 +269,19 @@ def test_setup_review_edits_polling_without_losing_state(tmp_path, monkeypatch):
     assert state.target == "target.user"
 
 
+# Verifies the polling prompt advertises every accepted duration form
+def test_setup_polling_prompt_includes_duration_hint(tmp_path, monkeypatch):
+    baseline = dict(vars(monitor))
+    state = monitor.WizardSetupState(tmp_path / "config.conf", tmp_path / ".env", baseline, dict(baseline), {}, "target.user", True, {"complete": False, "validated": False, "browser": None, "source": "not configured"}, [], [])
+    state.config_values["SPOTIFY_CHECK_INTERVAL"] = 1800
+    prompts = []
+    monkeypatch.setattr(monitor, "_wizard_ask_duration", lambda question, default: prompts.append((question, default)) or default)
+
+    monitor._wizard_collect_polling_section(state)
+
+    assert prompts == [("Spotify polling interval (seconds or use s/m/h/d)", 1800)]
+
+
 # Verifies noninteractive setup refuses to mutate destination files
 def test_setup_requires_interactive_terminal(tmp_path, monkeypatch):
     config_path = tmp_path / "config.conf"
@@ -291,7 +304,7 @@ def test_setup_collects_polling_before_authentication(tmp_path, monkeypatch, cap
     monkeypatch.setattr(monitor, "_wizard_install_method", lambda: "pip")
     monkeypatch.setattr(monitor, "_wizard_choose_config_destination", lambda path: path)
     monkeypatch.setattr(monitor, "_wizard_collect_target_section", lambda state, target=None: events.append("target"))
-    monkeypatch.setattr(monitor, "_wizard_collect_polling_section", lambda state: (events.append("polling"), print("Spotify polling interval [1800s - 30m]:")))
+    monkeypatch.setattr(monitor, "_wizard_collect_polling_section", lambda state: (events.append("polling"), print("Spotify polling interval (seconds or use s/m/h/d) [1800s - 30m]:")))
     monkeypatch.setattr(monitor, "_wizard_collect_auth_section", lambda state, method: (events.append("authentication"), print("\nChoose an authentication mode")))
     monkeypatch.setattr(monitor, "_wizard_collect_email_section", lambda state: events.append("email"))
     monkeypatch.setattr(monitor, "_wizard_collect_webhook_section", lambda state: events.append("webhook"))
@@ -303,8 +316,8 @@ def test_setup_collects_polling_before_authentication(tmp_path, monkeypatch, cap
     assert error.value.code == 1
     assert events == ["target", "polling", "authentication", "email", "webhook"]
     output = capsys.readouterr().out
-    assert "Spotify polling interval [1800s - 30m]:\n\nChoose an authentication mode" in output
-    assert "Spotify polling interval [1800s - 30m]:\n\n\nChoose an authentication mode" not in output
+    assert "Spotify polling interval (seconds or use s/m/h/d) [1800s - 30m]:\n\nChoose an authentication mode" in output
+    assert "Spotify polling interval (seconds or use s/m/h/d) [1800s - 30m]:\n\n\nChoose an authentication mode" not in output
 
 
 # Verifies the editable summary follows the same polling-before-authentication order
@@ -325,6 +338,7 @@ def test_setup_summary_and_editor_order_polling_before_authentication(tmp_path, 
     monitor._wizard_edit_setup_section(state, "pip")
 
     assert summary.index("Polling interval:") < summary.index("Token source:")
+    assert "Polling interval: 90s - 1m 30s" in summary
     assert labels[:3] == ["Target and persistence", "Polling interval", "Authentication"]
 
 

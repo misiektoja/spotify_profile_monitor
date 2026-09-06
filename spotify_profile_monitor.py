@@ -9472,7 +9472,7 @@ def _wizard_collect_auth_section(state: WizardSetupState, method: str) -> None:
 # Collects the polling interval using the current answer as its default
 def _wizard_collect_polling_section(state: WizardSetupState) -> None:
     current_interval = int(state.config_values.get("SPOTIFY_CHECK_INTERVAL", SPOTIFY_CHECK_INTERVAL))
-    state.config_values["SPOTIFY_CHECK_INTERVAL"] = _wizard_ask_duration("Spotify polling interval", current_interval)
+    state.config_values["SPOTIFY_CHECK_INTERVAL"] = _wizard_ask_duration("Spotify polling interval (seconds or use s/m/h/d)", current_interval)
 
 
 # Collects email settings after clearing pending answers
@@ -9525,7 +9525,7 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
     print(colorize('header', "\nSetup summary\n"))
     print(f"  Target: {state.target}")
     print(f"  Persist target: {'yes' if state.persist_target else 'no'}")
-    print(f"  Polling interval: {state.config_values['SPOTIFY_CHECK_INTERVAL']} seconds")
+    print(f"  Polling interval: {_wizard_format_duration(int(state.config_values['SPOTIFY_CHECK_INTERVAL']))}")
     print(f"  Token source: {state.auth['source']}")
     print(f"  Authentication status: {'complete' if state.auth['complete'] else 'incomplete'}")
     if state.auth.get("browser"):

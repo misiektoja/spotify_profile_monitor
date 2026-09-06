@@ -11,7 +11,7 @@ The easiest path is the interactive wizard:
 spotify_profile_monitor --setup
 ```
 
-It asks for the target, authentication, polling interval and optional email or webhook alerts. You can review or change each section before saving. Regular settings go to `spotify_profile_monitor.conf`. Private values go to `.env`.
+It asks for the target, authentication, polling interval and optional email or webhook alerts. The polling prompt accepts seconds or `s`, `m`, `h` and `d` units and shows both seconds and a readable default. You can review or change each section before saving. Regular settings go to `spotify_profile_monitor.conf`. Private values go to `.env`.
 
 For manual setup you need two values:
 
