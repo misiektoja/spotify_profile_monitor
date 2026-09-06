@@ -11622,7 +11622,10 @@ def main():
                     malformed = [binding for binding in bindings if binding.error]
                     if malformed:
                         raise ValueError(f"Dotenv syntax error near line {malformed[0].original.line}")
-                    load_dotenv(env_path, override=True, interpolate=False)
+                    # An exported variable wins over the file at startup, matching python-dotenv's own default, so a
+                    # one-off secret or one injected by systemd or a container is not silently shadowed by the dotenv.
+                    # The SIGHUP reload still overrides, because there the edited file is exactly what must take effect.
+                    load_dotenv(env_path, override=False, interpolate=False)
                     debug_print(f"Loaded dotenv file: {env_path}")
             else:
                 env_path = find_dotenv() or None
@@ -11632,7 +11635,7 @@ def main():
                     malformed = [binding for binding in bindings if binding.error]
                     if malformed:
                         raise ValueError(f"Dotenv syntax error near line {malformed[0].original.line}")
-                    load_dotenv(env_path, override=True, interpolate=False)
+                    load_dotenv(env_path, override=False, interpolate=False)
                     debug_print(f"Auto-discovered and loaded dotenv file: {env_path}")
         except ImportError as exc:
             env_path = DOTENV_FILE if DOTENV_FILE else None
