@@ -238,7 +238,7 @@ def test_doctor_configuration_resolves_auto_timezone(monkeypatch):
 
     checks = monitor.doctor_check_configuration()
 
-    assert any(check.status == "PASS" and check.label == "LOCAL_TIMEZONE Auto resolves to Europe/Warsaw" for check in checks)
+    assert any(check.status == "PASS" and check.label == "Local timezone can be detected" and check.detail == "Europe/Warsaw" for check in checks)
 
 
 # Verifies Doctor checks the final target-specific log filename

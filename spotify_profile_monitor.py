@@ -8601,19 +8601,18 @@ def doctor_check_configuration(config_path=None, env_path=None, startup_checks: 
         else:
             timezone_error = None
         if detected_timezone and is_valid_timezone(detected_timezone):
-            checks.append(make_doctor_check("Configuration", "PASS", f"LOCAL_TIMEZONE Auto resolves to {detected_timezone}"))
+            checks.append(make_doctor_check("Configuration", "PASS", "Local timezone can be detected", detected_timezone))
+        elif get_localzone is None:
+            advice = make_recovery_advice("dependency.missing", "The local timezone could not be detected", recovery_fix_with_guide("Install tzlocal or set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_GUIDE_URL), False, "LOCAL_TIMEZONE is Auto but tzlocal is unavailable")
+            checks.append(make_doctor_check("Configuration", "FAIL", "Automatic timezone detection is unavailable", advice.detail, advice.fix, advice))
         else:
-            detail = f"LOCAL_TIMEZONE Auto could not be resolved{f': {timezone_error}' if timezone_error else ''}"
-            if get_localzone is None:
-                advice = classify_recovery_error(ModuleNotFoundError("tzlocal"), "dependency", detail)
-            else:
-                advice = make_recovery_advice("config.invalid", "The local timezone could not be detected", recovery_fix_with_guide("Set LOCAL_TIMEZONE to a valid timezone such as Europe/Warsaw then retry", CONFIG_GUIDE_URL), False, detail)
-            checks.append(make_doctor_check("Configuration", "FAIL", "LOCAL_TIMEZONE Auto could not be resolved", advice.detail, advice.fix, advice))
+            advice = make_recovery_advice("config.invalid", "The local timezone could not be detected", recovery_fix_with_guide("Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_GUIDE_URL), False, f"tzlocal did not return a supported timezone{f': {timezone_error}' if timezone_error else ''}")
+            checks.append(make_doctor_check("Configuration", "FAIL", "Automatic timezone detection failed", advice.detail, advice.fix, advice))
     elif is_valid_timezone(LOCAL_TIMEZONE):
-        checks.append(make_doctor_check("Configuration", "PASS", f"LOCAL_TIMEZONE is {LOCAL_TIMEZONE}"))
+        checks.append(make_doctor_check("Configuration", "PASS", "Local timezone is valid", str(LOCAL_TIMEZONE)))
     else:
-        advice = classify_recovery_error(context="config_invalid", detail=f"LOCAL_TIMEZONE is invalid: {LOCAL_TIMEZONE!r}")
-        checks.append(make_doctor_check("Configuration", "FAIL", "LOCAL_TIMEZONE is invalid", advice.detail, advice.fix, advice))
+        advice = make_recovery_advice("config.invalid", "The local timezone is invalid", recovery_fix_with_guide("Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_GUIDE_URL), False, str(LOCAL_TIMEZONE))
+        checks.append(make_doctor_check("Configuration", "FAIL", "Local timezone is invalid", advice.detail, advice.fix, advice))
     try:
         ascii_log_separators_enabled()
     except ValueError as exc:
