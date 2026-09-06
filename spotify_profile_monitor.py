@@ -3495,17 +3495,13 @@ def check_token_validity(access_token: str, client_id: Optional[str] = None, use
 
     alarm_state = _start_timeout_alarm(FUNCTION_TIMEOUT + 2)
     try:
-        debug_print(
-            f"Token validity check mode={check_mode}, url={url}, "
-            f"client_id_header={'yes' if 'Client-Id' in headers else 'no'}"
-        )
-        debug_print("HTTP GET", url=url, context="token validity", headers=sanitize_debug_headers(headers))
+        debug_print("HTTP GET", url=url, context="token validity", mode=check_mode, client_id_header="yes" if "Client-Id" in headers else "no", headers=sanitize_debug_headers(headers))
         response = req.get(url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
         valid = response.status_code == 200
-        debug_print("HTTP GET", url=url, status=response.status_code, context="token validity", mode=f"{check_mode} (valid={valid})")
+        debug_print("HTTP GET", url=url, status=response.status_code, context="token validity", mode=check_mode, valid=valid)
     except Exception:
         valid = False
-        debug_print("HTTP GET", url=url, outcome=f"failed during token validity check [mode={check_mode}]")
+        debug_print("HTTP GET", url=url, context="token validity", mode=check_mode, outcome="failed")
     finally:
         _restore_timeout_alarm(alarm_state)
     return valid
@@ -4715,7 +4711,7 @@ def spotify_get_playlist_info_web(playlist_uri, get_tracks):
         if revision_id and cached_revision.get("revision_id") == revision_id and cached_revision.get("total_tracks") == total_tracks:
             normalized_items = cached_revision.get("items", [])
             cached_revision["timestamp"] = time.time()
-            debug_print("spotify_get_playlist_info_web(): using cached revision for", uri=playlist_uri, revision_id=revision_id)
+            debug_print("spotify_get_playlist_info_web(): cached revision reused", uri=playlist_uri, revision_id=revision_id)
         else:
             raw_items = []
             offset = 0
@@ -4818,7 +4814,7 @@ def is_playlist_private(access_token, playlist_uri, oauth_app: bool = False):
             except PlaylistRestrictedError:
                 return True
             except Exception as e:
-                debug_print("is_playlist_private(): web-player check failed for", playlist_uri=f"{playlist_uri}: {sanitize_error_text(e)}")
+                debug_print("is_playlist_private(): web-player check", playlist_uri=playlist_uri, outcome="failed", error=f"{type(e).__name__}: {e}")
                 return False
         if not access_token:
             debug_print("is_playlist_private(): missing oauth_app token, trying web-player metadata")
@@ -4850,18 +4846,18 @@ def is_playlist_private(access_token, playlist_uri, oauth_app: bool = False):
         if response.status_code in {403, 404}:
             try:
                 spotify_get_web_playlist_metadata(playlist_uri)
-                debug_print("Playlist visibility", uri=playlist_uri, outcome="public", source="web-player metadata")
+                debug_print("Playlist visibility", uri=playlist_uri, outcome="OK", visibility="public", source="web-player metadata")
                 return False
             except PlaylistRestrictedError:
-                debug_print("Playlist visibility", uri=playlist_uri, outcome="private or restricted")
+                debug_print("Playlist visibility", uri=playlist_uri, outcome="OK", visibility="private or restricted")
                 return True
             except Exception as e:
-                debug_print("is_playlist_private(): web-player fallback failed for", playlist_uri=f"{playlist_uri}: {sanitize_error_text(e)}")
+                debug_print("is_playlist_private(): web-player fallback", playlist_uri=playlist_uri, outcome="failed", error=f"{type(e).__name__}: {e}")
                 return response.status_code == 404
-        debug_print("Playlist visibility", uri=playlist_uri, outcome="not private or restricted")
+        debug_print("Playlist visibility", uri=playlist_uri, outcome="OK", visibility="not private or restricted")
         return False
     except Exception as e:
-        debug_print("is_playlist_private(): request failed for", playlist_uri=f"{playlist_uri}: {sanitize_error_text(e)}")
+        debug_print("is_playlist_private(): request", playlist_uri=playlist_uri, outcome="failed", error=f"{type(e).__name__}: {e}")
         return False
 
 
@@ -4949,7 +4945,7 @@ def is_token_owner(access_token, user_uri_id) -> bool:
         debug_print("Token owner check", requested_user=user_uri_id, owner_match=owner_match)
         return owner_match
     except Exception as e:
-        debug_print("is_token_owner(): failed for", user_uri_id=f"{user_uri_id}: {sanitize_error_text(e)}")
+        debug_print("is_token_owner()", user_uri_id=user_uri_id, outcome="failed", error=f"{type(e).__name__}: {e}")
         return False
 
 
@@ -5100,22 +5096,18 @@ def _spotify_get_playlist_info_api(access_token, playlist_uri, get_tracks, oauth
                 sp_playlist_followers_count = None
 
         if sp_playlist_followers_count is None:
-            debug_print("_spotify_get_playlist_info_api(): followers count unavailable for", uri=f"{playlist_uri}, using n/a")
+            debug_print("_spotify_get_playlist_info_api(): followers count", uri=playlist_uri, outcome="degraded", reported_as="n/a")
 
         sp_playlist_url = (json_response1.get("external_urls") or {}).get("spotify")
         if sp_playlist_url:
             sp_playlist_url += si
 
-        debug_print(
-            f"_spotify_get_playlist_info_api(): uri={playlist_uri}, name={sp_playlist_name!r}, "
-            f"tracks={sp_playlist_tracks_count}, tracks_raw={sp_playlist_tracks_count_before_filtering}, "
-            f"followers={sp_playlist_followers_count}"
-        )
+        debug_print("_spotify_get_playlist_info_api()", uri=playlist_uri, name=repr(sp_playlist_name), tracks=sp_playlist_tracks_count, tracks_raw=sp_playlist_tracks_count_before_filtering, followers=sp_playlist_followers_count)
 
         return {"sp_playlist_name": sp_playlist_name, "sp_playlist_collaborative": sp_playlist_collaborative, "sp_playlist_description": sp_playlist_description, "sp_playlist_owner": sp_playlist_owner, "sp_playlist_owner_url": sp_playlist_owner_url, "sp_playlist_tracks_count": sp_playlist_tracks_count, "sp_playlist_tracks_count_before_filtering": sp_playlist_tracks_count_before_filtering, "sp_playlist_tracks": sp_playlist_tracks, "sp_playlist_followers_count": sp_playlist_followers_count, "sp_playlist_url": sp_playlist_url, "sp_playlist_owner_uri": sp_playlist_owner_uri, "sp_playlist_image_url": sp_playlist_image_url}
 
     except Exception as e:
-        debug_print("_spotify_get_playlist_info_api(): failed for", uri=f"{playlist_uri}: {sanitize_error_text(e)}")
+        debug_print("_spotify_get_playlist_info_api()", uri=playlist_uri, outcome="failed", error=f"{type(e).__name__}: {e}")
         raise
 
 
@@ -5156,23 +5148,23 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks, oauth_app:
             if spotify_should_latch_web_backend(e, SP_WEB_PLAYLIST_API_FAILURES):
                 SP_WEB_PLAYLIST_BACKEND_PREFERRED = True
                 status_code = e.response.status_code if isinstance(e, req.HTTPError) and e.response is not None else None
-                debug_print("Playlist metadata backend", api="legacy Web API", outcome="unavailable", failures=SP_WEB_PLAYLIST_API_FAILURES, status=status_code, fallback="web-player backend for remaining playlists")
+                debug_print("Playlist metadata backend", api="legacy Web API", outcome="degraded", failures=SP_WEB_PLAYLIST_API_FAILURES, status=status_code, fallback="web-player backend for remaining playlists")
                 verbose_print("Playlist metadata switched to the web-player backend after legacy API failures")
             else:
-                debug_print("spotify_get_playlist_info(): legacy Web API backend failed for", uri=f"{playlist_uri} (failures={SP_WEB_PLAYLIST_API_FAILURES}): {sanitize_error_text(e)}")
+                debug_print("spotify_get_playlist_info(): legacy Web API backend", uri=playlist_uri, failures=SP_WEB_PLAYLIST_API_FAILURES, outcome="failed", error=f"{type(e).__name__}: {e}")
 
     try:
         return spotify_tag_playlist_source(spotify_get_playlist_info_web(playlist_uri, get_tracks), "web")
     except Exception as e:
         web_error = e
-        debug_print("spotify_get_playlist_info(): web-player backend failed for", uri=f"{playlist_uri}: {sanitize_error_text(e)}")
+        debug_print("spotify_get_playlist_info(): web-player backend", uri=playlist_uri, outcome="failed", error=f"{type(e).__name__}: {e}")
 
     if api_available and (SP_WEB_PLAYLIST_BACKEND_PREFERRED or api_error is None):
         try:
             return spotify_tag_playlist_source(_spotify_get_playlist_info_api(access_token, playlist_uri, get_tracks, oauth_app), "api")
         except Exception as e:
             api_error = e
-            debug_print("spotify_get_playlist_info(): legacy Web API fallback failed for", uri=f"{playlist_uri}: {sanitize_error_text(e)}")
+            debug_print("spotify_get_playlist_info(): legacy Web API fallback", uri=playlist_uri, outcome="failed", error=f"{type(e).__name__}: {e}")
 
     if isinstance(web_error, PlaylistRestrictedError):
         raise web_error
@@ -5378,7 +5370,7 @@ def spotify_get_user_followings(access_token, user_uri_id):
                 if after:
                     params["after"] = after
                 response = SESSION.get(f"{SPOTIFY_API_BASE_URL}/me/following", headers=headers, params=params, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
-                debug_print("HTTP GET", url=f"{SPOTIFY_API_BASE_URL} /me/following [followings] -> {response.status_code}")
+                debug_print("HTTP GET", url=f"{SPOTIFY_API_BASE_URL}/me/following", context="followings", status=response.status_code)
                 response.raise_for_status()
                 data = response.json().get("artists", {})
                 items = data.get("items", []) or []
@@ -6042,10 +6034,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                         effective_get_tracks = False
                     else:
                         effective_get_tracks = get_tracks
-                    debug_print(
-                        f"playlist loop: uri={p_uri}, owner={p_owner_id or p_owner_name}, "
-                        f"effective_get_tracks={effective_get_tracks}"
-                    )
+                    debug_print("Playlist loop", uri=p_uri, owner=p_owner_id or p_owner_name, effective_get_tracks=effective_get_tracks)
 
                     restricted_playlist = False
                     cached_entry = PLAYLIST_INFO_CACHE.get(p_uri, {})
@@ -6073,7 +6062,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                 "image_url": sp_playlist_data.get("sp_playlist_image_url", "") or playlist.get("image_url", "")
                             }
                         except PlaylistRestrictedError:
-                            debug_print("Playlist loop", uri=p_uri, outcome="restricted", status=404)
+                            debug_print("Playlist loop", uri=p_uri, outcome="degraded", visibility="restricted", status=404)
                             sp_playlist_data = _build_restricted_playlist_data(playlist, cached_entry)
                             restricted_playlist = True
                             PLAYLIST_INFO_CACHE[p_uri] = {
@@ -6201,7 +6190,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                 list_of_tracks.append({"artist": p_artist, "track": p_track, "duration": track_duration, "added_at": added_at_dt, "uri": track_uri, "added_by": added_by_name, "added_by_id": added_by_id, "album_image_url": album_image_url})
 
                 except Exception as e:
-                    debug_print("playlist loop: unexpected build error for", uri=f"{p_uri}: {sanitize_error_text(e)}")
+                    debug_print("Playlist loop: build", uri=p_uri, outcome="failed", error=f"{type(e).__name__}: {e}")
 
                     failure_count += 1
                     if failure_count == 1 or not HIDE_DUPLICATE_NETWORK_ERRORS:
@@ -7175,7 +7164,7 @@ def save_profile_pic(user_image_url, image_file_name):
         debug_print("Profile picture saved", path=image_file_name)
         return True
     except Exception as e:
-        debug_print("save_profile_pic(): failed for", url=f"{user_image_url}: {sanitize_error_text(e)}")
+        debug_print("save_profile_pic()", url=user_image_url, outcome="failed", error=f"{type(e).__name__}: {e}")
         return False
 
 
@@ -10555,7 +10544,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                 # change detection to avoid spurious notifications
                                 source_changed = bool(p_source) and bool(p_source_old) and p_source != p_source_old
                                 if source_changed:
-                                    debug_print("playlist diff", uri=f"{p_uri} backend source changed ({p_source_old} -> {p_source}); re-baselining tracks/collaborators without notification")
+                                    debug_print("Playlist diff", uri=p_uri, source_old=p_source_old, source_new=p_source, outcome="degraded", action="re-baselining tracks and collaborators without notification")
 
                                 likes_display_old = p_likes_old if p_likes_old is not None else "n/a"
                                 likes_display_new = p_likes if p_likes is not None else "n/a"
@@ -11905,7 +11894,7 @@ def main():
         debug_print("Using USER_AGENT from CLI argument")
     if not USER_AGENT:
         USER_AGENT = get_random_spotify_user_agent() if TOKEN_SOURCE == "client" else get_random_user_agent()
-        debug_print("Generated USER_AGENT for", source=TOKEN_SOURCE)
+        debug_print("Generated USER_AGENT", source=TOKEN_SOURCE)
     debug_print("Effective token source", token_source=TOKEN_SOURCE)
 
     if args.file_suffix:
