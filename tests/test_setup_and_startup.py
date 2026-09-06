@@ -218,6 +218,29 @@ def test_startup_summary_has_concise_and_full_views(monkeypatch, capsys):
     assert "* More details:" not in complete
 
 
+# Verifies the complete view alone reports the install method and names the origin of every loaded secret
+def test_startup_summary_reports_install_method_and_secret_origins(tmp_path, monkeypatch, capsys):
+    env_file = tmp_path / ".env"
+    env_file.write_text("SMTP_PASSWORD=from-file\n", encoding="utf-8")
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "from-file")
+    monkeypatch.setattr(monitor, "SP_DC_COOKIE", "from-environment")
+    monkeypatch.setenv("SP_DC_COOKIE", "from-environment")
+    monkeypatch.setattr(monitor.sys, "argv", ["spotify_profile_monitor.py"])
+    rows = monitor.build_startup_summary("target.user", None, str(env_file), None)
+
+    monitor.emit_startup_summary(rows, show_full=False)
+    concise = capsys.readouterr().out
+    monitor.emit_startup_summary(rows, show_full=True)
+    complete = capsys.readouterr().out
+
+    for label in ("* Install method:", "* Secrets from dotenv:", "* Secrets from environment:"):
+        assert label not in concise
+        assert label in complete
+    assert "downloaded script" in complete
+    assert "SMTP_PASSWORD" in complete and "SP_DC_COOKIE" in complete
+    assert "from-file" not in complete and "from-environment" not in complete
+
+
 # Verifies the default JSON history destination is shown as its effective directory path
 def test_startup_summary_shows_current_json_directory_path(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)

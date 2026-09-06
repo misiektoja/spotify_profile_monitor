@@ -8024,6 +8024,12 @@ def _wizard_install_method() -> str:
     return "manual" if os.path.basename(sys.argv[0] or "").endswith(".py") else "pip"
 
 
+# Returns a readable name for the detected install method
+def install_method_display_name(method: Optional[str] = None) -> str:
+    selected = _wizard_install_method() if method is None else method
+    return {"pip": "PyPI install", "manual": "downloaded script"}.get(selected, selected)
+
+
 # Returns the Pillow requirement that matches the running interpreter
 def notification_images_requirement() -> str:
     return "Pillow>=11.3.0,<12" if sys.version_info < (3, 10) else "Pillow>=12.0.0"
@@ -8334,6 +8340,12 @@ class DoctorReport:
     authentication_advice: Optional[RecoveryAdvice] = None
 
 
+# Reports the detected install method and which secrets came from the dotenv file or the environment, by name and never by value
+def _startup_install_and_secret_rows(env_path) -> List[StartupSummaryRow]:
+    from_file, from_environment, _ = doctor_secret_sources(env_path)
+    return [StartupSummaryRow("Install method", install_method_display_name()), StartupSummaryRow("Secrets from dotenv", ", ".join(sorted(from_file)) if from_file else "None"), StartupSummaryRow("Secrets from environment", ", ".join(sorted(from_environment)) if from_environment else "None")]
+
+
 # Builds the concise and complete non-secret startup summary rows
 def build_startup_summary(target: str, config_path, env_path, output_path) -> List[StartupSummaryRow]:
     authentication_names = {"cookie": "Cookie mode", "client": "Client mode, advanced", "oauth_app": "OAuth app mode", "oauth_user": "OAuth user mode"}
@@ -8355,6 +8367,7 @@ def build_startup_summary(target: str, config_path, env_path, output_path) -> Li
         StartupSummaryRow("ASCII log separators", f"{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})"),
         StartupSummaryRow("Config", str(config_path) if config_path else "None", concise=True),
         StartupSummaryRow("Dotenv", str(env_path) if env_path else "None", concise=True),
+        *_startup_install_and_secret_rows(env_path),
         StartupSummaryRow("Playlist backend", spotify_get_playlist_backend_description(), concise=True),
         StartupSummaryRow("Profile picture changes", str(DETECT_CHANGED_PROFILE_PIC)),
         StartupSummaryRow("Playlist changes", str(DETECT_CHANGES_IN_PLAYLISTS)),
