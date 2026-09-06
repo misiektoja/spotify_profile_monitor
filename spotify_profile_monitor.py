@@ -346,7 +346,7 @@ CHECK_INTERNET_URL = 'https://api.spotify.com/v1'
 # Timeout used when checking initial internet connectivity; in seconds
 CHECK_INTERNET_TIMEOUT = 5
 
-# Whether to verify TLS certificates on every outbound request
+# Whether to verify TLS certificates on every outbound connection, email delivery included
 # Only set this to False on a network that intercepts TLS with its own certificate authority
 # Switching it off removes the protection against an intercepted connection
 VERIFY_SSL = True
@@ -1865,6 +1865,15 @@ def apply_tls_verification_setting():
         urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
+# Returns the TLS context SMTP uses, unverified while VERIFY_SSL is off so email follows the same switch as every other connection
+def smtp_ssl_context():
+    context = ssl.create_default_context()
+    if not VERIFY_SSL:
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+    return context
+
+
 # Checks internet connectivity
 def check_internet(url=None, timeout=None, verify=None):
     # Resolve at call time so config file and dotenv overrides take effect (these globals change after import)
@@ -2352,7 +2361,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
 
     try:
         if use_ssl:
-            ssl_context = ssl.create_default_context()
+            ssl_context = smtp_ssl_context()
             smtpObj = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=smtp_timeout)
             smtpObj.starttls(context=ssl_context)
         else:
@@ -8900,7 +8909,7 @@ def validate_smtp_configuration() -> Optional[str]:
 def smtp_connect_and_login(use_ssl, smtp_timeout=5):
     smtp_object = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=smtp_timeout)
     if use_ssl:
-        smtp_object.starttls(context=ssl.create_default_context())
+        smtp_object.starttls(context=smtp_ssl_context())
     smtp_object.login(SMTP_USER, SMTP_PASSWORD)
     return smtp_object
 
