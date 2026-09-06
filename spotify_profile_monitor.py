@@ -8135,11 +8135,28 @@ def _wizard_validate_destination(path, label: str) -> Path:
     return destination
 
 
+# The theme part each setup summary row draws its value in, for rows whose value has a known kind
+WIZARD_SUMMARY_VALUE_STYLES = {"Target": "username", "Polling interval": "duration"}
+
+
+# Colours one setup summary value from its row label
+def _wizard_summary_value(label, value):
+    text = str(value)
+    part = WIZARD_SUMMARY_VALUE_STYLES.get(label)
+    if part:
+        return colorize(part, text)
+    if text.startswith("enabled") or text == "complete":
+        return colorize("boolean_true", text)
+    if text in ("disabled", "incomplete"):
+        return colorize("boolean_false", text)
+    return text
+
+
 # Prints one aligned label and value block, so every summary row lines up
 def _wizard_print_summary_rows(rows) -> None:
     width = max(len(label) for label, _ in rows) + 1
     for label, value in rows:
-        print(f"  {(label + ':'):<{width}} {value}")
+        print(f"  {(label + ':'):<{width}} {_wizard_summary_value(label, value)}")
 
 
 # Prints one labelled setup or recovery command
@@ -9439,6 +9456,7 @@ def _wizard_collect_webhook(config_values: dict, secret_updates: dict, env_path:
 WIZARD_AUTH_CONFIG_KEYS = ("TOKEN_SOURCE", "LOGIN_REQUEST_BODY_FILE", "DEVICE_ID", "SYSTEM_ID", "USER_URI_ID")
 WIZARD_EMAIL_CONFIG_KEYS = ("SMTP_HOST", "SMTP_PORT", "SMTP_SSL", "SMTP_USER", "SENDER_EMAIL", "RECEIVER_EMAIL", "PROFILE_NOTIFICATION", "FOLLOWERS_FOLLOWINGS_NOTIFICATION", "ERROR_NOTIFICATION", "EMAIL_IMAGES")
 WIZARD_WEBHOOK_CONFIG_KEYS = ("WEBHOOK_ENABLED", "WEBHOOK_PROVIDER", "WEBHOOK_PROFILE_NOTIFICATION", "WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION", "WEBHOOK_ERROR_NOTIFICATION", "NTFY_IMAGES")
+WIZARD_OUTPUT_CONFIG_KEYS = ("DISABLE_LOGGING", "CSV_FILE")
 
 
 # Holds editable setup answers until the user saves them
@@ -9505,7 +9523,14 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
     state.enabled_webhooks = _wizard_collect_webhook(state.config_values, state.secret_updates, state.env_path)
 
 
-# Lets the user change output files and recollects secret-bearing sections
+# Collects the log and CSV output destinations monitoring would write
+def _wizard_collect_output_section(state: WizardSetupState) -> None:
+    _wizard_reset_section(state, WIZARD_OUTPUT_CONFIG_KEYS, ())
+    state.config_values["DISABLE_LOGGING"] = not _wizard_ask_yes_no("Write the normal per-target log file?", default=not bool(state.config_values.get("DISABLE_LOGGING")))
+    state.config_values["CSV_FILE"] = _wizard_ask_text("Optional CSV output path (blank disables it)", default=str(state.config_values.get("CSV_FILE") or ""))
+
+
+# Lets the user change file destinations and recollects secret-bearing sections
 def _wizard_collect_destination_section(state: WizardSetupState, method: str) -> None:
     while True:
         config_text = _wizard_ask_text("Configuration file destination", default=str(state.config_path), required=True)
@@ -9555,6 +9580,8 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
         ("Email notifications", ", ".join(state.enabled_notifications) if state.enabled_notifications else "none"),
         ("Webhook", webhook_state),
         ("Webhook alerts", ", ".join(state.enabled_webhooks) if state.enabled_webhooks else "none"),
+        ("Output log", "disabled" if state.config_values.get("DISABLE_LOGGING") else "enabled"),
+        ("CSV output", state.config_values.get("CSV_FILE") or "disabled"),
         ("Config destination", state.config_path),
         ("Dotenv destination", state.env_path),
         ("Install method", method),
@@ -9565,7 +9592,7 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
 
 # Opens one selected setup section then returns to the summary
 def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
-    section = _wizard_ask_choice("Which setup section should be changed?", [("Target and persistence", "Change the Spotify profile and whether it is saved."), ("Polling interval", "Change how often Spotify is checked."), ("Authentication", "Choose cookie or advanced client authentication again."), ("Email notifications", "Change SMTP details and email events."), ("Webhook alerts", "Change Discord or ntfy details and events."), ("File destinations", "Change the configuration or dotenv output path."), ("Return to summary", "Keep every current answer.")])
+    section = _wizard_ask_choice("Which setup section should be changed?", [("Target and persistence", "Change the Spotify profile and whether it is saved."), ("Polling interval", "Change how often Spotify is checked."), ("Authentication", "Choose cookie or advanced client authentication again."), ("Email notifications", "Change SMTP details and email events."), ("Webhook alerts", "Change Discord or ntfy details and events."), ("Output files", "Change log and CSV output settings."), ("File destinations", "Change the configuration or dotenv output path."), ("Return to summary", "Keep every current answer.")])
     if section == 0:
         print()
         _wizard_collect_target_section(state, state.target)
@@ -9581,6 +9608,9 @@ def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
         print()
         _wizard_collect_webhook_section(state)
     elif section == 5:
+        print()
+        _wizard_collect_output_section(state)
+    elif section == 6:
         print()
         _wizard_collect_destination_section(state, method)
 
@@ -9694,6 +9724,8 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
     _wizard_collect_email_section(state)
     print()
     _wizard_collect_webhook_section(state)
+    print()
+    _wizard_collect_output_section(state)
     if not _wizard_review_setup(state, method):
         print("Setup cancelled. Destination files were not changed.")
         raise SystemExit(1)

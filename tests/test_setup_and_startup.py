@@ -308,13 +308,14 @@ def test_setup_collects_polling_before_authentication(tmp_path, monkeypatch, cap
     monkeypatch.setattr(monitor, "_wizard_collect_auth_section", lambda state, method: (events.append("authentication"), print("\nChoose an authentication mode")))
     monkeypatch.setattr(monitor, "_wizard_collect_email_section", lambda state: events.append("email"))
     monkeypatch.setattr(monitor, "_wizard_collect_webhook_section", lambda state: events.append("webhook"))
+    monkeypatch.setattr(monitor, "_wizard_collect_output_section", lambda state: events.append("output"))
     monkeypatch.setattr(monitor, "_wizard_review_setup", lambda state, method: False)
 
     with pytest.raises(SystemExit) as error:
         monitor.run_setup_wizard()
 
     assert error.value.code == 1
-    assert events == ["target", "polling", "authentication", "email", "webhook"]
+    assert events == ["target", "polling", "authentication", "email", "webhook", "output"]
     output = capsys.readouterr().out
     assert "Spotify polling interval (seconds or use s/m/h/d) [1800s - 30m]:\n\nChoose an authentication mode" in output
     assert "Spotify polling interval (seconds or use s/m/h/d) [1800s - 30m]:\n\n\nChoose an authentication mode" not in output
@@ -329,7 +330,7 @@ def test_setup_summary_and_editor_order_polling_before_authentication(tmp_path, 
 
     def choose(question, options, *args, **kwargs):
         labels.extend(label for label, description in options)
-        return 6
+        return 7
 
     monkeypatch.setattr(monitor, "_wizard_ask_choice", choose)
 
@@ -365,6 +366,7 @@ def test_setup_saves_confirmed_incomplete_configuration(tmp_path, monkeypatch, c
     monkeypatch.setattr(monitor, "_wizard_collect_polling_section", lambda state: state.config_values.update({"SPOTIFY_CHECK_INTERVAL": 90}))
     monkeypatch.setattr(monitor, "_wizard_collect_email_section", lambda state: setattr(state, "enabled_notifications", []))
     monkeypatch.setattr(monitor, "_wizard_collect_webhook_section", lambda state: setattr(state, "enabled_webhooks", []))
+    monkeypatch.setattr(monitor, "_wizard_collect_output_section", lambda state: None)
     monkeypatch.setattr(monitor, "_wizard_review_setup", lambda state, method: True)
 
     with pytest.raises(SystemExit) as error:
@@ -379,3 +381,29 @@ def test_setup_saves_confirmed_incomplete_configuration(tmp_path, monkeypatch, c
     assert str(config_path) in output
     assert "--env-file" in output
     assert str(env_path) in output
+
+
+# Verifies the output section records the log choice and the CSV destination it was given
+def test_the_output_section_records_the_log_and_csv_choices(monkeypatch, tmp_path):
+    baseline = dict(vars(monitor))
+    state = monitor.WizardSetupState(tmp_path / "config.conf", tmp_path / ".env", baseline, dict(baseline), {}, "target.user", True, {"complete": False, "validated": False, "browser": None, "source": "not configured"}, [], [])
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: False)
+    monkeypatch.setattr(monitor, "_wizard_ask_text", lambda question, default="", required=False: str(tmp_path / "profile.csv"))
+
+    monitor._wizard_collect_output_section(state)
+
+    assert state.config_values["DISABLE_LOGGING"] is True
+    assert state.config_values["CSV_FILE"] == str(tmp_path / "profile.csv")
+
+
+# Verifies a blank CSV answer disables CSV output rather than storing an empty path as a file name
+def test_a_blank_csv_answer_disables_csv_output(monkeypatch, tmp_path):
+    baseline = dict(vars(monitor))
+    state = monitor.WizardSetupState(tmp_path / "config.conf", tmp_path / ".env", baseline, dict(baseline), {}, "target.user", True, {"complete": False, "validated": False, "browser": None, "source": "not configured"}, [], [])
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: True)
+    monkeypatch.setattr(monitor, "_wizard_ask_text", lambda question, default="", required=False: "")
+
+    monitor._wizard_collect_output_section(state)
+
+    assert state.config_values["DISABLE_LOGGING"] is False
+    assert state.config_values["CSV_FILE"] == ""
