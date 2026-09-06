@@ -25,13 +25,13 @@ def test_startup_banner_matches_selected_ascii_logo(capsys):
     assert output.isascii()
 
 
-# Verifies startup clearing requires the configured interactive terminal conditions
-@pytest.mark.parametrize(("clear_enabled", "input_tty", "output_tty", "require_input", "expected"), ((True, True, True, True, True), (True, False, True, True, False), (True, True, False, True, False), (False, True, True, True, False), (True, False, True, False, True)))
-def test_prepare_startup_screen_respects_terminal_conditions(clear_enabled, input_tty, output_tty, require_input, expected, monkeypatch):
+# Verifies startup clearing asks for the interactive input conditions, since clear_screen owns the stdout check
+@pytest.mark.parametrize(("clear_enabled", "input_tty", "require_input", "expected"), ((True, True, True, True), (True, False, True, False), (False, True, True, False), (True, False, False, True)))
+def test_prepare_startup_screen_respects_terminal_conditions(clear_enabled, input_tty, require_input, expected, monkeypatch):
     clear_mock = Mock()
+    monkeypatch.setattr(monitor.sys, "argv", ["spotify_profile_monitor", "test-user"])
     monkeypatch.setattr(monitor, "CLEAR_SCREEN", clear_enabled)
     monkeypatch.setattr(monitor.sys.stdin, "isatty", lambda: input_tty)
-    monkeypatch.setattr(monitor.sys.stdout, "isatty", lambda: output_tty)
     monkeypatch.setattr(monitor, "clear_screen", clear_mock)
 
     monitor.prepare_startup_screen(require_input=require_input)

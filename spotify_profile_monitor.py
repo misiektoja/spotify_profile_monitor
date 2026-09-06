@@ -1953,6 +1953,9 @@ def check_internet(url=None, timeout=None, verify=None):
 def clear_screen(enabled=True):
     if not enabled:
         return
+    # Don't clear screen if stdout is redirected (not a TTY)
+    if not hasattr(sys.stdout, "isatty") or not sys.stdout.isatty():
+        return
     try:
         if platform.system() == 'Windows':
             os.system('cls')
@@ -1962,12 +1965,21 @@ def clear_screen(enabled=True):
         print("* Cannot clear the screen contents")
 
 
+# Commands that print a one-shot result and exit, so the screen keeps whatever is already on it
+KEEP_HISTORY_FLAGS = ("--import-browser-cookie", "--set-sp-dc", "--set-smtp-password", "--set-webhook-url", "--doctor", "--send-test-email", "--send-test-webhook", "--help", "-h")
+
+
+# Returns True when the running command is a one-shot whose output has to stay scrollable
+def keep_terminal_history() -> bool:
+    return any(flag in sys.argv for flag in KEEP_HISTORY_FLAGS)
+
+
 # Prepares a clean screen for interactive full-screen startup flows
 def prepare_startup_screen(require_input=False):
     input_is_interactive = not require_input or sys.stdin.isatty()
     if CLEAR_SCREEN and DEBUG_MODE:
         debug_print("Terminal screen clear skipped because debug mode is active")
-    clear_screen(bool(CLEAR_SCREEN and input_is_interactive and sys.stdout.isatty() and not DEBUG_MODE))
+    clear_screen(bool(CLEAR_SCREEN and input_is_interactive and not keep_terminal_history() and not DEBUG_MODE))
 
 
 # Prints the ASCII startup banner with its separately aligned version
