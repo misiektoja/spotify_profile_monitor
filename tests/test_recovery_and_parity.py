@@ -11,6 +11,10 @@ import pytest
 import spotify_profile_monitor as monitor
 
 
+# Guide constants may point at Spotify's own developer documentation, which this repository cannot resolve to a page
+EXTERNAL_GUIDE_PREFIXES = ("https://developer.spotify.com/",)
+
+
 # Verifies runtime URL builders use centralized globals instead of repeated literals
 def test_runtime_url_builders_use_global_bases(monkeypatch):
     monkeypatch.setattr(monitor, "NTFY_PUBLIC_BASE_URL", "https://notify.example")
@@ -39,13 +43,16 @@ def markdown_anchors(text: str) -> set:
     return anchors
 
 
-# Verifies every runtime guide global resolves to a published documentation page and anchor
+# Verifies every runtime guide global resolves to a published documentation page and anchor, enumerated so a new constant cannot escape the check
 def test_guide_urls_match_documentation_anchors():
-    guide_names = ("QUICK_START_GUIDE_URL", "INSTALLATION_GUIDE_URL", "CONFIG_GUIDE_URL", "COOKIE_GUIDE_URL", "MANUAL_COOKIE_GUIDE_URL", "CLIENT_GUIDE_URL", "TARGET_GUIDE_URL", "SMTP_GUIDE_URL", "WEBHOOK_GUIDE_URL", "SECRETS_GUIDE_URL", "INTERVALS_GUIDE_URL", "DOCTOR_GUIDE_URL", "OAUTH_GUIDE_URL", "OAUTH_USER_GUIDE_URL", "BROWSER_COOKIE_GUIDE_URL", "SETUP_GUIDE_URL")
+    guide_names = sorted(name for name in vars(monitor) if name.endswith("_GUIDE_URL"))
+    assert guide_names, "no runtime guide constants were found"
 
     for name in guide_names:
         guide_url = getattr(monitor, name)
-        assert guide_url.startswith(monitor.DOCUMENTATION_URL + "/"), name
+        if not guide_url.startswith(monitor.DOCUMENTATION_URL + "/"):
+            assert guide_url.startswith(EXTERNAL_GUIDE_PREFIXES), f"{name} points outside both this site and the allowed external guides: {guide_url}"
+            continue
         relative_path, _separator, fragment = guide_url.removeprefix(monitor.DOCUMENTATION_URL).lstrip("/").partition("#")
         document_path = "docs/index.md" if not relative_path else f"docs/{relative_path.rstrip('/')}.md"
         document = Path(__file__).parents[1] / document_path

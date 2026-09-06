@@ -54,6 +54,9 @@ would see.
   than skipping the test.
 * Restore module-level globals you change. Tests share one imported module, so a leaked global
   affects whatever runs next.
+* Exported secrets are cleared before every test by the autouse fixture in `conftest.py`, because
+  loading a dotenv writes them into `os.environ` and nothing removes them again. Set the one a test
+  needs with `monkeypatch.setenv` inside that test.
 * Put disposable artifacts under `local/`, never in the repository root or the system temp
   directory.
 * Never use a real cookie, Protobuf login file, OAuth client secret, SMTP password or webhook URL.
