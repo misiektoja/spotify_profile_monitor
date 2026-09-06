@@ -8080,7 +8080,7 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
         parsed_values = parse_config_content(content, str(config_path), retired_settings)
         selected_namespace.update(parsed_values)
         if report_errors:
-            verbose_print(f"Loaded {len(parsed_values)} settings from the configuration file")
+            debug_print("Configuration applied", path=config_path, settings=len(parsed_values))
         if retired_out is not None:
             retired_out.extend(retired_settings)
         if retired_settings and report_errors and retired_out is None:
@@ -12521,6 +12521,7 @@ def main():
         FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
 
     if str(SMTP_HOST).startswith("your_smtp_server_"):
+        verbose_print("Email notifications are off because SMTP_HOST is still the shipped placeholder")
         PROFILE_NOTIFICATION = False
         FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
