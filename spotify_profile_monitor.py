@@ -7932,6 +7932,74 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
     return str(destination)
 
 
+# Signs in to the configured mail server with one entered password, so nothing is saved that cannot deliver
+def smtp_sign_in(password: str, timeout: int = 5) -> str:
+    global SMTP_PASSWORD
+
+    candidate = str(password or "")
+    if not candidate or candidate == "your_smtp_password":
+        raise RecoveryError(classify_recovery_error(context="smtp_config", detail="No SMTP password was entered, so the dotenv file was not changed"))
+    previous_password = SMTP_PASSWORD
+    SMTP_PASSWORD = candidate
+    smtp_object = None
+    try:
+        settings_problem = validate_smtp_configuration()
+        if settings_problem:
+            raise RecoveryError(classify_recovery_error(context="smtp_config", detail=settings_problem))
+        smtp_object = smtp_connect_and_login(SMTP_SSL, smtp_timeout=timeout)
+    finally:
+        if smtp_object is not None:
+            try:
+                smtp_object.quit()
+            except Exception:
+                pass
+        SMTP_PASSWORD = previous_password
+    return str(SMTP_USER)
+
+
+# Privately checks one SMTP password against the mail server and atomically stores it
+def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getpass_func=None, config_path=None, sign_in=None) -> str:
+    if env_file is not None and str(env_file).casefold() == "none":
+        raise RecoveryError(classify_recovery_error(context="secret", detail="--set-smtp-password needs a writable dotenv destination and cannot use '--env-file none'"))
+    destination = (Path.cwd() / ".env" if env_file is None else Path(env_file).expanduser()).resolve()
+    terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
+    if not terminal_is_interactive:
+        raise RecoveryError(classify_recovery_error(context="secret", detail="--set-smtp-password needs an interactive terminal so the password stays hidden while you type it"))
+    prompt = input if input_func is None else input_func
+    if _dotenv_contains_key(destination, "SMTP_PASSWORD"):
+        try:
+            confirmed = str(prompt(f"Replace the saved SMTP password in '{destination}'? [y/N]: ")).strip().casefold() in ("y", "yes")
+        except (EOFError, KeyboardInterrupt):
+            confirmed = False
+        if not confirmed:
+            raise RecoveryError(classify_recovery_error(context="secret", detail="SMTP password setup was cancelled, so the dotenv file was not changed"))
+    print(f"* The password is checked by signing in to {SMTP_HOST} as {SMTP_USER}. Nothing is sent")
+    hidden_prompt = getpass.getpass if getpass_func is None else getpass_func
+    try:
+        smtp_password = str(hidden_prompt("Enter the SMTP password (input hidden): ")).strip()
+    except (EOFError, KeyboardInterrupt):
+        raise RecoveryError(classify_recovery_error(context="secret", detail="SMTP password setup was cancelled, so the dotenv file was not changed")) from None
+    check = smtp_sign_in if sign_in is None else sign_in
+    try:
+        signed_in_user = check(smtp_password, timeout=5)
+    except RecoveryError:
+        raise
+    except Exception as exc:
+        raise RecoveryError(classify_recovery_error(exc, context="smtp"), exc) from None
+    try:
+        update_dotenv_file(destination, {"SMTP_PASSWORD": smtp_password})
+    except Exception as exc:
+        raise RecoveryError(classify_recovery_error(exc, context="file.unwritable", detail=f"Cannot save SMTP_PASSWORD to '{destination}'"), exc) from None
+    method = _wizard_install_method()
+    selected_config = config_path or find_config_file()
+    print(f"* The mail server accepted the password for {signed_in_user}")
+    print(f"* Updated private settings file: {destination}")
+    print()
+    _wizard_print_command("Send a test email:", _wizard_action_command(method, "--send-test-email", selected_config, destination))
+    _wizard_print_command("Check setup again:", _wizard_action_command(method, "--doctor", selected_config, destination, None if TARGET_USER_URI_ID else "SPOTIFY_TARGET"))
+    return str(destination)
+
+
 # Finds an optional config file
 def find_config_file(cli_path=None):
     """
@@ -11322,6 +11390,12 @@ def main():
         help="Privately validate and save SP_DC_COOKIE through a hidden prompt",
     )
     conf.add_argument(
+        "--set-smtp-password",
+        dest="set_smtp_password",
+        action="store_true",
+        help="Enter the SMTP password privately, check it against the mail server and save it to the dotenv file",
+    )
+    conf.add_argument(
         "--set-webhook-url",
         dest="set_webhook_url",
         action="store_true",
@@ -11700,6 +11774,7 @@ def main():
         (args.setup, "--setup", {"setup", "user_id", "config_file", "env_file"}),
         (args.import_browser_cookie, "--import-browser-cookie", {"import_browser_cookie", "user_id", "config_file", "env_file", "browser", "browser_profile", "cookie_file", "force"}),
         (args.set_sp_dc, "--set-sp-dc", {"set_sp_dc", "config_file", "env_file"}),
+        (args.set_smtp_password, "--set-smtp-password", {"set_smtp_password", "config_file", "env_file"}),
         (args.set_webhook_url, "--set-webhook-url", {"set_webhook_url", "config_file", "env_file"}),
     )
     for enabled, action_name, allowed in exclusive_actions:
@@ -11894,6 +11969,16 @@ def main():
             run_set_sp_dc(env_file=DOTENV_FILE or None, config_path=cfg_path or CLI_CONFIG_PATH)
         except SpDcConfigurationError as exc:
             print_recovery_error(exc, "set_sp_dc")
+            sys.exit(1)
+        sys.exit(0)
+
+    if args.set_smtp_password:
+        # Runs after the config file so the mail server it signs in to is the one monitoring would use
+        report_retired_settings(config_retired, cfg_path)
+        try:
+            run_set_smtp_password(env_file=DOTENV_FILE or None, config_path=cfg_path)
+        except RecoveryError as exc:
+            print_recovery_error(exc, "smtp")
             sys.exit(1)
         sys.exit(0)
 

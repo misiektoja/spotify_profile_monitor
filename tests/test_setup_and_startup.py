@@ -596,3 +596,78 @@ def test_the_shared_summary_rows_match_the_sibling_tools():
     assert [row.label for row in rows if row.label in SHARED_ROW_ORDER] == list(SHARED_ROW_ORDER)
     # The renderer pads "<label>:" into a 30-character column, so a longer label swallows the separating space
     assert max(len(row.label) for row in rows) <= 28
+
+
+# Verifies the one-shot command signs in before the password reaches the dotenv file
+def test_set_smtp_password_signs_in_before_saving(tmp_path, monkeypatch, capsys):
+    destination = tmp_path / ".env"
+    destination.write_text("UNRELATED=stay\n", encoding="utf-8")
+    sign_in = Mock(return_value="monitor@example.test")
+    monkeypatch.setattr(monitor, "_wizard_install_method", lambda: "pip")
+    monkeypatch.setattr(monitor, "find_config_file", lambda: None)
+    monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.test")
+    monkeypatch.setattr(monitor, "SMTP_USER", "monitor@example.test")
+
+    result = monitor.run_set_smtp_password(env_file=destination, interactive=True, getpass_func=lambda prompt: "app-password", sign_in=sign_in)
+
+    assert result == str(destination.resolve())
+    sign_in.assert_called_once_with("app-password", timeout=5)
+    saved = destination.read_text(encoding="utf-8")
+    assert "UNRELATED=stay" in saved
+    assert 'SMTP_PASSWORD="app-password"' in saved
+    output = capsys.readouterr().out
+    assert "signing in to smtp.example.test as monitor@example.test" in output
+    assert "The mail server accepted the password for monitor@example.test" in output
+    assert "app-password" not in output
+
+
+# Verifies a password the mail server refuses leaves the dotenv file untouched
+def test_set_smtp_password_keeps_the_dotenv_file_on_a_refused_sign_in(tmp_path):
+    destination = tmp_path / ".env"
+    destination.write_text("UNRELATED=stay\n", encoding="utf-8")
+    refuse = Mock(side_effect=monitor.smtplib.SMTPAuthenticationError(535, b"authentication failed"))
+
+    with pytest.raises(monitor.RecoveryError) as error:
+        monitor.run_set_smtp_password(env_file=destination, interactive=True, getpass_func=lambda prompt: "wrong", sign_in=refuse)
+
+    assert error.value.advice.code == "smtp.authentication"
+    assert destination.read_text(encoding="utf-8") == "UNRELATED=stay\n"
+
+
+# Verifies the command refuses without a terminal or a writable dotenv destination
+def test_set_smtp_password_requires_safe_persistence():
+    with pytest.raises(monitor.RecoveryError) as no_terminal:
+        monitor.run_set_smtp_password(interactive=False, getpass_func=Mock(side_effect=AssertionError("prompted")))
+    assert "interactive terminal" in no_terminal.value.advice.detail
+
+    with pytest.raises(monitor.RecoveryError) as no_destination:
+        monitor.run_set_smtp_password(env_file="none", interactive=True, getpass_func=Mock(side_effect=AssertionError("prompted")))
+    assert "dotenv destination" in no_destination.value.advice.detail
+
+
+# Verifies the sign-in uses the configured mail server and restores the password it borrowed
+def test_smtp_sign_in_uses_the_configured_mail_server(monkeypatch):
+    session = Mock()
+    connect = Mock(return_value=session)
+    monkeypatch.setattr(monitor, "validate_smtp_configuration", lambda: None)
+    monkeypatch.setattr(monitor, "smtp_connect_and_login", connect)
+    monkeypatch.setattr(monitor, "SMTP_USER", "monitor@example.test")
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "saved")
+    monkeypatch.setattr(monitor, "SMTP_SSL", True)
+
+    assert monitor.smtp_sign_in("entered", timeout=5) == "monitor@example.test"
+
+    connect.assert_called_once_with(True, smtp_timeout=5)
+    session.quit.assert_called_once()
+    assert monitor.SMTP_PASSWORD == "saved"
+
+
+# Verifies incomplete mail server settings are reported instead of a bare connection failure
+def test_smtp_sign_in_reports_incomplete_settings(monkeypatch):
+    monkeypatch.setattr(monitor, "smtp_connect_and_login", Mock(side_effect=AssertionError("connected")))
+    monkeypatch.setattr(monitor, "SMTP_HOST", "your_smtp_server_ssl")
+
+    with pytest.raises(monitor.RecoveryError) as error:
+        monitor.smtp_sign_in("entered")
+
+    assert "SMTP_HOST" in error.value.advice.detail
