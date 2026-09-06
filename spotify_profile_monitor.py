@@ -8680,6 +8680,9 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
         fix = recovery_fix_with_guide(f"Install it through the active Python environment then retry: {install_command}", INSTALLATION_GUIDE_URL)
         checks.append(make_doctor_check("Environment", "FAIL", f"Required dependency {package_name} is missing", advice.detail, fix, advice))
     optional = (("pycookiecheat", "pycookiecheat"), ("PIL", "Pillow"))
+    # The classic Command Prompt is the only place this library changes anything, so a machine it cannot affect is not warned about a package it does not need
+    if platform.system() == "Windows":
+        optional += (("colorama", "colorama"),)
     for module_name, package_name in optional:
         try:
             present = find_spec(module_name) is not None
@@ -8687,6 +8690,8 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
             present = False
         if module_name == "PIL":
             purpose = "Used only for email and ntfy artwork attachments" if present else doctor_notification_images_detail()
+        elif module_name == "colorama":
+            purpose = "Used only for coloured output in the classic Windows Command Prompt" if present else "Coloured output may not render in the classic Windows Command Prompt. Normal monitoring is unaffected. Windows Terminal needs nothing extra"
         else:
             purpose = "Used only for importing cookies from Chromium-based browsers. Firefox cookie import does not need it" if present else "Required only for importing cookies from Chromium-based browsers. Normal monitoring is unaffected. Firefox cookie import is also unaffected"
         checks.append(make_doctor_check("Environment", "PASS" if present else "WARN", f"Optional dependency {package_name} is {'installed' if present else 'not installed'}", purpose))

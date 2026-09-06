@@ -33,6 +33,28 @@ def test_doctor_explains_browser_import_dependency_scope():
     assert check.detail == "Used only for importing cookies from Chromium-based browsers. Firefox cookie import does not need it"
 
 
+# Verifies a warning about a library that cannot affect this machine is not shown at all
+@pytest.mark.parametrize("system, reported", [("Windows", True), ("Linux", False), ("Darwin", False)])
+def test_a_platform_specific_dependency_is_only_reported_where_it_applies(monkeypatch, system, reported):
+    monkeypatch.setattr(monitor.platform, "system", lambda: system)
+
+    checks = monitor.doctor_check_environment((3, 12, 1), lambda name: None)
+
+    assert any("colorama" in check.label for check in checks) is reported
+
+
+# Verifies the Windows colour library is reported there, so broken colours on that platform have a diagnostic
+def test_missing_colorama_is_reported_on_windows(monkeypatch):
+    monkeypatch.setattr(monitor.platform, "system", lambda: "Windows")
+
+    checks = monitor.doctor_check_environment((3, 12, 1), lambda name: None if name == "colorama" else object())
+
+    missing = next(check for check in checks if "colorama" in check.label)
+    assert missing.status == "WARN"
+    assert "Coloured output may not render in the classic Windows Command Prompt" in missing.detail
+    assert "Windows Terminal needs nothing extra" in missing.detail
+
+
 # Pillow moved to an optional extra, so a missing copy must never be reported as a broken installation
 def test_doctor_treats_missing_artwork_support_as_optional():
     checks = monitor.doctor_check_environment((3, 12, 1), lambda name: None if name == "PIL" else object())
