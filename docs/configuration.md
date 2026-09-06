@@ -506,7 +506,7 @@ To colour saved log files when you view them later, see [Coloring Log Output wit
 <a id="storing-secrets"></a>
 ## Storing Secrets
 
-It is recommended to store secrets like `SP_DC_COOKIE`, `SP_APP_CLIENT_ID`, `SP_APP_CLIENT_SECRET`, `SP_USER_CLIENT_ID`, `SP_USER_CLIENT_SECRET`, `REFRESH_TOKEN`, `SP_SHA256`, `SMTP_PASSWORD`, `WEBHOOK_URL` or `NTFY_ACCESS_TOKEN` as either an environment variable or in a dotenv file. For `SP_DC_COOKIE`, prefer `spotify_profile_monitor --set-sp-dc` so the value is entered through a hidden prompt and validated before it is saved.
+It is recommended to store secrets like `SP_DC_COOKIE`, `SP_APP_CLIENT_ID`, `SP_APP_CLIENT_SECRET`, `SP_USER_CLIENT_ID`, `SP_USER_CLIENT_SECRET`, `REFRESH_TOKEN`, `SP_SHA256`, `SMTP_PASSWORD`, `WEBHOOK_URL` or `NTFY_ACCESS_TOKEN` as either an environment variable or in a dotenv file. An exported environment value wins when the same key also exists in the selected dotenv file. For `SP_DC_COOKIE`, prefer `spotify_profile_monitor --set-sp-dc` so the value is entered through a hidden prompt and validated before it is saved.
 
 Set the needed environment variables using `export` on **Linux/Unix/macOS/WSL** systems:
 
