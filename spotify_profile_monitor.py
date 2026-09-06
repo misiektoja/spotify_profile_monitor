@@ -8230,37 +8230,44 @@ def _wizard_print_monitor_after_doctor(config_path, env_path, target: Optional[s
     _wizard_print_command("After Doctor passes, start monitoring:", command)
 
 
-# Builds install-aware examples for command help
+# Renders the --help examples: one heading per task, then a comment and the command it describes
+def _render_help_examples(groups, guide_url: str) -> str:
+    blocks = []
+    for title, entries in groups:
+        block = [f"{title}:"]
+        for comment, command in entries:
+            if len(block) > 1:
+                block.append("")
+            block.extend(f"  # {line}" for line in comment.split("\n"))
+            if command:
+                block.append(f"  {command}")
+        blocks.append("\n".join(block))
+    return "Examples:\n\n" + "\n\n".join(blocks) + f"\n\nGuide: {guide_url}\n"
+
+
+# Returns the --help epilog, listing the commands worth knowing rather than every command there is
 def _build_help_epilog() -> str:
     method = _wizard_install_method()
     prefix = _wizard_cmd_prefix(method)
-    return "\n".join((
-        "Examples:",
-        "  # Guided setup, recommended for the first run",
-        f"  {prefix} --setup",
-        "",
-        f"  # Open {SPOTIFY_WEB_LOGIN_URL} in Firefox and sign in first",
-        "  # Then import and validate Spotify login from Firefox",
-        f"  {prefix} --import-browser-cookie --browser firefox",
-        "",
-        "  # Or enter the Spotify cookie through a hidden validated prompt",
-        f"  {prefix} --set-sp-dc",
-        "",
-        "  # Save a Discord or ntfy destination through a hidden prompt",
-        f"  {prefix} --set-webhook-url",
-        "",
-        "  # Check authentication, connectivity and one target",
-        f"  {prefix} --doctor <spotify_target>",
-        "",
-        "  # Monitor one Spotify user",
-        "  # Use a complete profile URL, spotify:user URI or user ID",
-        f"  {prefix} <spotify_target>",
-        "",
-        "  # Advanced Spotify desktop client mode",
-        f"  {prefix} <spotify_target> --token-source client --login-request-body-file <protobuf_file>",
-        "",
-        f"Guide: {QUICK_START_GUIDE_URL}",
-    )) + "\n"
+    groups = (
+        ("Getting started", (
+            ("Guided setup, recommended for the first run", f"{prefix} --setup"),
+            (f"Open {SPOTIFY_WEB_LOGIN_URL} in Firefox and sign in first\nThen import and validate Spotify login from Firefox", _wizard_firefox_import_cmd(method)),
+            ("Or enter the Spotify cookie through a hidden validated prompt", _wizard_set_sp_dc_cmd(method)),
+            ("Check the setup before relying on it", f"{prefix} --doctor <spotify_target>"),
+            ("Start monitoring, a complete profile URL, spotify:user URI or user ID all work", f"{prefix} <spotify_target>"),
+        )),
+        ("Notifications", (
+            ("Save a Discord or ntfy destination through a hidden prompt", _wizard_set_webhook_url_cmd(method)),
+            ("Send one test email", f"{prefix} --send-test-email"),
+            ("Send one test webhook", f"{prefix} --send-test-webhook"),
+        )),
+        ("Information and diagnostics", (
+            ("Show profile details for one user and exit", f"{prefix} -i <spotify_target>"),
+            ("Trace what the tool is doing", f"{prefix} <spotify_target> --debug"),
+        )),
+    )
+    return _render_help_examples(groups, QUICK_START_GUIDE_URL)
 
 
 # Prints a short no-argument welcome and optionally launches setup
@@ -11207,6 +11214,11 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
+    # argparse prints --help and exits from inside parse_args, so the banner has to go out before the parser exists.
+    # Every other path prints it later, once CLEAN_OUTPUT is known
+    if any(flag in sys.argv[1:] for flag in ("-h", "--help")):
+        print_startup_banner()
+
     parser = argparse.ArgumentParser(
         prog="spotify_profile_monitor",
         description=(f"Monitor a Spotify user's profile changes including playlists and send customizable email or webhook alerts [ {PROJECT_URL}/ ]"), formatter_class=argparse.RawTextHelpFormatter,
@@ -11274,6 +11286,16 @@ def main():
         help="Run preflight checks with separately approved delivery tests then exit",
     )
 
+    cookie_auth = parser.add_argument_group("Auth details for 'cookie' token source")
+    cookie_auth.add_argument(
+        "-u", "--spotify-dc-cookie",
+        dest="spotify_dc_cookie",
+        metavar="SP_DC_COOKIE",
+        type=str,
+        help="Spotify sp_dc cookie"
+    )
+
+    # Auth details used when token source is set to client
     browser_import = parser.add_argument_group("Browser sp_dc import")
     browser_import.add_argument(
         "--import-browser-cookie",
@@ -11311,16 +11333,6 @@ def main():
     )
 
     # Auth details used when token source is set to cookie
-    cookie_auth = parser.add_argument_group("Auth details for 'cookie' token source")
-    cookie_auth.add_argument(
-        "-u", "--spotify-dc-cookie",
-        dest="spotify_dc_cookie",
-        metavar="SP_DC_COOKIE",
-        type=str,
-        help="Spotify sp_dc cookie"
-    )
-
-    # Auth details used when token source is set to client
     client_auth = parser.add_argument_group("Auth details for 'client' token source")
     client_auth.add_argument(
         "-w", "--login-request-body-file",
@@ -11356,7 +11368,7 @@ def main():
     )
 
     # Notifications
-    notify = parser.add_argument_group("Notifications")
+    notify = parser.add_argument_group("Email notifications")
     notify.add_argument(
         "-p", "--notify-profile",
         dest="profile_notification",
@@ -11468,7 +11480,7 @@ def main():
     )
 
     # Listing
-    listing = parser.add_argument_group("Listing")
+    listing = parser.add_argument_group("User information & listing")
     listing.add_argument(
         "-l", "--list-tracks-for-playlist",
         dest="list_tracks_for_playlist",
