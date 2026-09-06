@@ -8529,13 +8529,14 @@ class DoctorReport:
 
 # Reports the install method, which secrets came from where by name and never by value, and the shared output settings
 def _startup_environment_rows(env_path) -> List[StartupSummaryRow]:
-    from_file, from_environment, from_settings = doctor_secret_sources(env_path)
+    from_file, from_environment, from_settings, from_command_line = doctor_secret_sources(env_path)
     return [
         StartupSummaryRow("Local timezone", str(LOCAL_TIMEZONE)),
         StartupSummaryRow("Install method", install_method_display_name()),
         StartupSummaryRow("Secrets from dotenv", ", ".join(sorted(from_file)) if from_file else "None"),
         StartupSummaryRow("Secrets from environment", ", ".join(sorted(from_environment)) if from_environment else "None"),
         StartupSummaryRow("Secrets from config file", ", ".join(sorted(from_settings)) if from_settings else "None"),
+        StartupSummaryRow("Secrets from command line", ", ".join(sorted(from_command_line)) if from_command_line else "None"),
         StartupSummaryRow("TLS verification", "On" if VERIFY_SSL else "Off, server certificates are not checked", concise=not VERIFY_SSL),
         StartupSummaryRow("ASCII log separators", f"{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})"),
         # The resolved state, not the setting: colour also switches itself off when the output is not a terminal
@@ -8624,7 +8625,10 @@ def make_doctor_check(section: str, status: str, label: str, detail: Any = "", f
     if status not in ("PASS", "WARN", "FAIL"):
         raise ValueError(f"Unsupported Doctor status: {status}")
     selected_fix = advice.fix if advice is not None and not fix else fix
-    return DoctorCheck(section, status, sanitize_error_text(label), sanitize_error_text(detail), sanitize_error_text(selected_fix), advice)
+    safe_label = sanitize_error_text(label)
+    safe_detail = sanitize_error_text(detail)
+    # Several advice objects carry the same text as their summary, and printing it twice reads as two problems
+    return DoctorCheck(section, status, safe_label, "" if safe_detail == safe_label else safe_detail, sanitize_error_text(selected_fix), advice)
 
 
 # Explains what missing artwork support means for the current image settings and how to install it
@@ -8696,10 +8700,11 @@ def doctor_secret_is_set(value) -> bool:
 
 
 # Groups configured secret names by the source each value actually came from
-def doctor_secret_sources(env_path=None) -> Tuple[List[str], List[str], List[str]]:
+def doctor_secret_sources(env_path=None) -> Tuple[List[str], List[str], List[str], List[str]]:
     from_file: List[str] = []
     from_environment: List[str] = []
     from_settings: List[str] = []
+    from_command_line: List[str] = []
     for key in SECRET_KEYS:
         if not doctor_secret_is_set(globals().get(key)):
             continue
@@ -8708,14 +8713,17 @@ def doctor_secret_sources(env_path=None) -> Tuple[List[str], List[str], List[str
             from_file.append(key)
         elif source == "environment":
             from_environment.append(key)
+        # A secret passed as an argument is known exactly, unlike one that only defaulted to the settings bucket
+        elif source == "command line":
+            from_command_line.append(key)
         else:
             from_settings.append(key)
-    return from_file, from_environment, from_settings
+    return from_file, from_environment, from_settings, from_command_line
 
 
 # Reports which secrets are in effect and where each one was read from
 def doctor_secret_checks(env_path=None) -> List[DoctorCheck]:
-    from_file, from_environment, from_settings = doctor_secret_sources(env_path)
+    from_file, from_environment, from_settings, from_command_line = doctor_secret_sources(env_path)
     checks: List[DoctorCheck] = []
     if from_file:
         checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the dotenv file", ", ".join(from_file)))
@@ -8723,6 +8731,8 @@ def doctor_secret_checks(env_path=None) -> List[DoctorCheck]:
         checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the environment", ", ".join(from_environment)))
     if from_settings:
         checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the configuration file or command line", ", ".join(from_settings)))
+    if from_command_line:
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the command line", ", ".join(from_command_line)))
     if not checks:
         checks.append(make_doctor_check("Configuration", "PASS", "No secrets loaded", "Nothing was read from a dotenv file, the environment or the command line"))
     return checks

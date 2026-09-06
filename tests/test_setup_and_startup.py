@@ -588,7 +588,7 @@ def test_an_incomplete_login_protobuf_can_be_abandoned(monkeypatch, tmp_path):
 
 
 # The rows shared with the sibling monitors, in the order every one of them prints
-SHARED_ROW_ORDER = ("Target", "Authentication", "Polling interval", "Notifications (email)", "Notifications (webhook)", "Output", "Output logging", "Config", "Dotenv", "Liveness output", "CSV output", "Terminal truncation", "Local timezone", "Install method", "Secrets from dotenv", "Secrets from environment", "Secrets from config file", "TLS verification", "ASCII log separators", "Coloured output", "Verbose mode", "Debug mode", "More details")
+SHARED_ROW_ORDER = ("Target", "Authentication", "Polling interval", "Notifications (email)", "Notifications (webhook)", "Output", "Output logging", "Config", "Dotenv", "Liveness output", "CSV output", "Terminal truncation", "Local timezone", "Install method", "Secrets from dotenv", "Secrets from environment", "Secrets from config file", "Secrets from command line", "TLS verification", "ASCII log separators", "Coloured output", "Verbose mode", "Debug mode", "More details")
 
 
 # Verifies the shared rows keep the order and the label column width every sibling monitor prints
