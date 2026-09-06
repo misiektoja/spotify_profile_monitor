@@ -426,43 +426,45 @@ COLORED_OUTPUT = True
 #   "bright_cyan bold", "yellow", "red underline", "bright_magenta bold underline", "red bold blink"
 # Valid colour names: black, red, green, yellow, blue, magenta, cyan, white,
 # and their bright_ variants (bright_red, bright_green, ...).
-COLOR_THEME = {
-    # Headings and commands the wizard tells you to run
-    "header": "bright_cyan",
-    "section": "bright_white",
-    # Identity
-    "username": "bright_cyan underline",
-    "id": "bright_magenta",
-    # Activity status values
-    "status_active": "green",
-    "status_inactive": "red",
-    "status_offline": "red",
-    "status_other": "white",
-    # Music info
-    "track": "bright_yellow",
-    "playlist": "yellow",
-    "duration": "green",
-    # Activity info
-    # Misc
-    "timestamp_label": "",
-    "timestamp_value": "cyan",
-    "info": "cyan",
-    "warning": "yellow",
-    "error": "red",
-    "signal": "yellow",
-    "email": "bright_cyan",
-    "webhook": "bright_blue",
-    # Dates
-    "date": "magenta",
-    "date_range": "magenta",
-    # Boolean values
-    "boolean_true": "green",
-    "boolean_false": "red",
-    # Counters and differences
-    "count_up": "green",
-    "count_down": "red",
-    "link": "blue underline",
-}
+# The defaults below are what the tool uses while this block stays commented out. Uncomment it to override
+# them and keep only the lines you want to change, so the rest keep following the tool's own defaults.
+# COLOR_THEME = {
+#     # Headings and commands the wizard tells you to run
+#     "header": "bright_cyan",
+#     "section": "bright_white",
+#     # Identity
+#     "username": "bright_cyan underline",
+#     "id": "bright_magenta",
+#     # Activity status values
+#     "status_active": "green",
+#     "status_inactive": "red",
+#     "status_offline": "red",
+#     "status_other": "white",
+#     # Music info
+#     "track": "bright_yellow",
+#     "playlist": "yellow",
+#     "duration": "green",
+#     # Activity info
+#     # Misc
+#     "timestamp_label": "",
+#     "timestamp_value": "cyan",
+#     "info": "cyan",
+#     "warning": "yellow",
+#     "error": "red",
+#     "signal": "yellow",
+#     "email": "bright_cyan",
+#     "webhook": "bright_blue",
+#     # Dates
+#     "date": "magenta",
+#     "date_range": "magenta",
+#     # Boolean values
+#     "boolean_true": "green",
+#     "boolean_false": "red",
+#     # Counters and differences
+#     "count_up": "green",
+#     "count_down": "red",
+#     "link": "blue underline",
+# }
 
 # Max characters per line when printing to screen to avoid line wrapping
 # Does not affect log file output
@@ -7273,6 +7275,9 @@ def _format_config_value(value, prefer_double_quotes: bool) -> str:
 # replaced in 3.5 by TOTP_VERSION and TOTP_SECRET_CIPHER_BYTES.
 RETIRED_CONFIG_SETTINGS = frozenset(("SECRET_CIPHER_DICT", "SECRET_CIPHER_DICT_URL", "TOTP_VER"))
 
+# Settings the template ships commented out so the built-in default applies, still accepted from a config file
+COMMENTED_CONFIG_SETTINGS = frozenset({"COLOR_THEME"})
+
 
 # Describes ignored retired settings in one sentence, optionally naming the file they can be deleted from
 def describe_retired_settings(names: Sequence[str], path: Any = "") -> str:
@@ -7295,7 +7300,7 @@ def report_retired_settings(names: Sequence[str], path: Any = "", stream=None) -
 # Returns the setting names declared by the trusted built-in config template
 def _config_allowed_names() -> FrozenSet[str]:
     template_tree = ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec")
-    return frozenset(statement.targets[0].id for statement in template_tree.body if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name))
+    return frozenset(statement.targets[0].id for statement in template_tree.body if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name)) | COMMENTED_CONFIG_SETTINGS
 
 
 # Parses allowlisted literal config assignments without executing any file content

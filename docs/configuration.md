@@ -478,6 +478,8 @@ Webhook requests do not follow redirects, so `WEBHOOK_HEADERS` credentials and a
 
 `COLOR_THEME` overrides individual colours. It is merged over the built-in theme, so name only the parts you want to change:
 
+Generated configuration files ship this block commented out, so the built-in defaults apply and a later change to them reaches you. A configuration file written by an earlier version sets every colour explicitly and therefore keeps the old ones: delete its `COLOR_THEME` block to follow the current defaults, or edit the values you want to keep. Such a file still loads unchanged.
+
 ```ini
 COLOR_THEME = { "playlist": "bright_magenta bold", "username": "green" }
 ```

@@ -209,7 +209,7 @@ def test_config_template_parses_as_literals():
     parsed = monitor.parse_config_content(monitor.CONFIG_BLOCK, "<built-in-config>")
 
     assert parsed["LOCAL_TIMEZONE"] == "Auto"
-    assert len(parsed) == len(monitor._config_allowed_names())
+    assert len(parsed) == len(monitor._config_allowed_names() - monitor.COMMENTED_CONFIG_SETTINGS)
 
 
 # Verifies loading a real config preserves builtins needed by later timestamp formatting
