@@ -41,6 +41,8 @@ would see.
 | `test_webhook_notifications.py` | Webhook URL validation, provider detection, startup rollups and `SIGHUP` reload |
 | `test_notification_escaping.py` | Source-level sweep proving every HTML email body escapes Spotify-supplied text |
 | `test_untrusted_output.py` | Terminal control-character stripping across the logger, output streams and early-exit listing modes |
+| `test_help_screen.py` | The `--help` screen: the shared argument group names, the task-grouped examples and the startup banner |
+| `test_tls_verification.py` | Every connection honouring `VERIFY_SSL` and the single shared TLS context builder |
 | `test_terminal_color.py` | Coloured terminal output: theme resolution, line rules, the colour-aware sanitizer, plain log files and the uncoloured progress lines |
 | `test_url_and_download_safety.py` | Spotify URI and URL conversion boundaries, host allowlists and bounded downloads |
 | `test_runtime_deadlines.py` | Nested request alarms restoring the enclosing watchdog deadline, and the POSIX-only guard |
