@@ -8380,10 +8380,20 @@ class DoctorReport:
     authentication_advice: Optional[RecoveryAdvice] = None
 
 
-# Reports the detected install method and which secrets came from the dotenv file or the environment, by name and never by value
-def _startup_install_and_secret_rows(env_path) -> List[StartupSummaryRow]:
-    from_file, from_environment, _ = doctor_secret_sources(env_path)
-    return [StartupSummaryRow("Install method", install_method_display_name()), StartupSummaryRow("Secrets from dotenv", ", ".join(sorted(from_file)) if from_file else "None"), StartupSummaryRow("Secrets from environment", ", ".join(sorted(from_environment)) if from_environment else "None")]
+# Reports the install method, which secrets came from where by name and never by value, and the shared output settings
+def _startup_environment_rows(env_path) -> List[StartupSummaryRow]:
+    from_file, from_environment, from_settings = doctor_secret_sources(env_path)
+    return [
+        StartupSummaryRow("Local timezone", str(LOCAL_TIMEZONE)),
+        StartupSummaryRow("Install method", install_method_display_name()),
+        StartupSummaryRow("Secrets from dotenv", ", ".join(sorted(from_file)) if from_file else "None"),
+        StartupSummaryRow("Secrets from environment", ", ".join(sorted(from_environment)) if from_environment else "None"),
+        StartupSummaryRow("Secrets from config file", ", ".join(sorted(from_settings)) if from_settings else "None"),
+        StartupSummaryRow("TLS verification", "On" if VERIFY_SSL else "Off, server certificates are not checked", concise=not VERIFY_SSL),
+        StartupSummaryRow("ASCII log separators", f"{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})"),
+        # The resolved state, not the setting: colour also switches itself off when the output is not a terminal
+        StartupSummaryRow("Coloured output", f"{COLOR_ENABLED} (setting: {COLORED_OUTPUT})"),
+    ]
 
 
 # Builds the concise and complete non-secret startup summary rows
@@ -8404,10 +8414,8 @@ def build_startup_summary(target: str, config_path, env_path, output_path) -> Li
         StartupSummaryRow("Notifications (webhook)", notification_state_webhook, concise=True),
         StartupSummaryRow("Output", output_state, concise=True, full=False, log=False),
         StartupSummaryRow("Output logging", str(output_path) if output_path else "Disabled"),
-        StartupSummaryRow("ASCII log separators", f"{ascii_log_separators_enabled()} (mode: {ASCII_LOG_SEPARATORS})"),
         StartupSummaryRow("Config", str(config_path) if config_path else "None", concise=True),
         StartupSummaryRow("Dotenv", str(env_path) if env_path else "None", concise=True),
-        *_startup_install_and_secret_rows(env_path),
         StartupSummaryRow("Playlist backend", spotify_get_playlist_backend_description(), concise=True),
         StartupSummaryRow("Profile picture changes", str(DETECT_CHANGED_PROFILE_PIC)),
         StartupSummaryRow("Playlist changes", str(DETECT_CHANGES_IN_PLAYLISTS)),
@@ -8418,17 +8426,19 @@ def build_startup_summary(target: str, config_path, env_path, output_path) -> Li
         StartupSummaryRow("Ignored-playlist file", PLAYLISTS_TO_SKIP_FILE or "Disabled", concise=bool(PLAYLISTS_TO_SKIP_FILE)),
         StartupSummaryRow("Spotify playlists ignored", str(IGNORE_SPOTIFY_PLAYLISTS)),
         StartupSummaryRow("Profile picture display", imgcat_exe or "Disabled", concise=bool(imgcat_exe)),
-        StartupSummaryRow("Terminal truncation", f"{TRUNCATE_CHARS} chars" if TRUNCATE_CHARS else "Disabled", concise=bool(TRUNCATE_CHARS)),
-        StartupSummaryRow("Local timezone", str(LOCAL_TIMEZONE)),
-        StartupSummaryRow("TLS verification", "On" if VERIFY_SSL else "Off, server certificates are not checked", concise=not VERIFY_SSL),
-        StartupSummaryRow("Verbose mode", str(VERBOSE_MODE), concise=bool(VERBOSE_MODE)),
-        StartupSummaryRow("Debug mode", str(DEBUG_MODE), concise=bool(DEBUG_MODE)),
-        StartupSummaryRow("More details", "use --verbose or --debug", concise=True, full=False, log=False),
     ]
     if TOKEN_SOURCE == "oauth_user":
         rows.append(StartupSummaryRow("Spotify token cache", SP_USER_TOKENS_FILE or "None (memory only)"))
     elif TOKEN_SOURCE == "oauth_app" or spotify_has_oauth_app_credentials():
         rows.append(StartupSummaryRow("Spotify OAuth cache", SP_APP_TOKENS_FILE or "None (memory only)"))
+    rows.extend([
+        StartupSummaryRow("Terminal truncation", f"{TRUNCATE_CHARS} chars" if TRUNCATE_CHARS else "Disabled", concise=bool(TRUNCATE_CHARS)),
+        *_startup_environment_rows(env_path),
+        StartupSummaryRow("Verbose mode", str(VERBOSE_MODE), concise=bool(VERBOSE_MODE)),
+        StartupSummaryRow("Debug mode", str(DEBUG_MODE), concise=bool(DEBUG_MODE)),
+        # Points at the two modes for a reader who does not know they exist, so the full view drops it
+        StartupSummaryRow("More details", "use --verbose or --debug", concise=True, full=False, log=False),
+    ])
     return rows
 
 

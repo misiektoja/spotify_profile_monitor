@@ -23,7 +23,7 @@ When a terminal is interactive and passive checks pass, Doctor separately offers
 - **Verbose mode (`--verbose`)** adds the complete startup summary, one line per completed check so a quiet run still shows the loop is alive, and infrequent operational transitions such as token refreshes or metadata backend changes
 - **Debug mode (`--debug`)** adds sanitized HTTP flow, scheduling details and internal diagnostics. Each line names the operation, then lists its details as comma-separated `key=value` fields, and every outbound call reports `outcome=OK` or `outcome=failed`
 
-Either mode also expands the startup summary with the detected install method and the names of the secrets that came from the dotenv file or the environment. Secret values never appear.
+Either mode also expands the startup summary with the detected install method and the names of the secrets that came from the dotenv file, the environment or the configuration file. Secret values never appear.
 
 ```sh
 spotify_profile_monitor <spotify_target> --verbose

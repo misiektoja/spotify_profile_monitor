@@ -583,3 +583,16 @@ def test_an_incomplete_login_protobuf_can_be_abandoned(monkeypatch, tmp_path):
     assert offers == ["login request Protobuf file"]
     assert result == {"complete": False, "validated": False, "browser": None, "source": "advanced client mode without credentials"}
     assert config_values == {}
+
+
+# The rows shared with the sibling monitors, in the order every one of them prints
+SHARED_ROW_ORDER = ("Target", "Authentication", "Polling interval", "Notifications (email)", "Notifications (webhook)", "Output", "Output logging", "Config", "Dotenv", "Liveness output", "CSV output", "Terminal truncation", "Local timezone", "Install method", "Secrets from dotenv", "Secrets from environment", "Secrets from config file", "TLS verification", "ASCII log separators", "Coloured output", "Verbose mode", "Debug mode", "More details")
+
+
+# Verifies the shared rows keep the order and the label column width every sibling monitor prints
+def test_the_shared_summary_rows_match_the_sibling_tools():
+    rows = monitor.build_startup_summary("target.user", "spotify_profile_monitor.conf", ".env", "spotify_profile_monitor.log")
+
+    assert [row.label for row in rows if row.label in SHARED_ROW_ORDER] == list(SHARED_ROW_ORDER)
+    # The renderer pads "<label>:" into a 30-character column, so a longer label swallows the separating space
+    assert max(len(row.label) for row in rows) <= 28
