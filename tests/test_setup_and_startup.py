@@ -1,3 +1,4 @@
+import builtins
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -671,3 +672,19 @@ def test_smtp_sign_in_reports_incomplete_settings(monkeypatch):
         monitor.smtp_sign_in("entered")
 
     assert "SMTP_HOST" in error.value.advice.detail
+
+
+# Verifies Ctrl+C at the welcome offer reports one line instead of a traceback
+def test_interrupting_the_welcome_offer_reports_a_cancellation(monkeypatch, capsys):
+    def interrupt(*_args, **_kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(monitor.sys, "stdin", Mock(isatty=lambda: True))
+    monkeypatch.setattr(builtins, "input", interrupt)
+    monkeypatch.setattr(monitor, "run_setup_wizard", lambda *args, **kwargs: pytest.fail("the wizard ran after being interrupted"))
+
+    with pytest.raises(SystemExit) as exit_error:
+        monitor._wizard_welcome()
+
+    assert exit_error.value.code == 1
+    assert "Setup cancelled." in capsys.readouterr().out
