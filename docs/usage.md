@@ -275,6 +275,8 @@ WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION = True
 WEBHOOK_ERROR_NOTIFICATION = True
 ```
 
+A `WEBHOOK_URL` left unset, or left at its `your_webhook_url` placeholder, switches webhook alerts off at startup instead of failing at the first alert. `--verbose` reports why.
+
 You can also enable profile webhooks for one run:
 
 ```sh
