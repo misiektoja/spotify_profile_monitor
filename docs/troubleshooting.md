@@ -21,7 +21,7 @@ When a terminal is interactive and passive checks pass, Doctor separately offers
 
 - **Default mode** keeps startup output compact and reports profile changes, warnings and errors
 - **Verbose mode (`--verbose`)** adds the complete startup summary and infrequent operational transitions such as token refreshes or metadata backend changes. It prints nothing per check, so an uneventful run stays quiet
-- **Debug mode (`--debug`)** adds sanitized HTTP flow, scheduling details and internal diagnostics. Each line names the operation, then lists its details as comma-separated `key=value` fields, and every outbound call reports `outcome=OK` or `outcome=failed`
+- **Debug mode (`--debug`)** adds sanitized HTTP flow, scheduling details and internal diagnostics. Each line names the operation, then lists its details as comma-separated `key=value` fields, and every outbound call reports `outcome=OK` or `outcome=failed`. A `--debug` run leaves the terminal as it was instead of clearing it, so the output you are comparing against stays on screen. `--verbose` clears it like an ordinary run.
 
 Either mode also expands the startup summary with the detected install method and the names of the secrets that came from the dotenv file, the environment or the configuration file. Secret values never appear.
 

@@ -1907,7 +1907,9 @@ def clear_screen(enabled=True):
 # Prepares a clean screen for interactive full-screen startup flows
 def prepare_startup_screen(require_input=False):
     input_is_interactive = not require_input or sys.stdin.isatty()
-    clear_screen(bool(CLEAR_SCREEN and input_is_interactive and sys.stdout.isatty()))
+    if CLEAR_SCREEN and DEBUG_MODE:
+        debug_print("Terminal screen clear skipped because debug mode is active")
+    clear_screen(bool(CLEAR_SCREEN and input_is_interactive and sys.stdout.isatty() and not DEBUG_MODE))
 
 
 # Prints the ASCII startup banner with its separately aligned version

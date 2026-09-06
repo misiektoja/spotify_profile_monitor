@@ -226,3 +226,20 @@ def test_the_config_settings_count_is_a_debug_only_trace(tmp_path, monkeypatch, 
     monkeypatch.setattr(monitor, "DEBUG_MODE", True)
     monitor.load_config_file(config, namespace=namespace)
     assert "Configuration applied" in capsys.readouterr().out
+
+
+
+# Confirms only debug keeps the screen, since a cleared terminal loses the run being compared against
+@pytest.mark.parametrize(("debug", "verbose", "expected"), ((True, False, False), (False, True, True), (False, False, True)))
+def test_only_debug_mode_keeps_the_screen(monkeypatch, debug, verbose, expected):
+    cleared = []
+    monkeypatch.setattr(monitor, "clear_screen", lambda enabled=True: cleared.append(bool(enabled)))
+    monkeypatch.setattr(monitor, "CLEAR_SCREEN", True)
+    monkeypatch.setattr(monitor, "DEBUG_MODE", debug)
+    monkeypatch.setattr(monitor, "VERBOSE_MODE", verbose)
+    monkeypatch.setattr(monitor.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(monitor.sys.stdout, "isatty", lambda: True, raising=False)
+
+    monitor.prepare_startup_screen()
+
+    assert cleared == [expected]
