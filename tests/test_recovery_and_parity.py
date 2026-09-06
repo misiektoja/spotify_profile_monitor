@@ -375,3 +375,11 @@ def test_config_backup_keeps_the_owner_only_mode_of_its_source(tmp_path):
     assert backups[0].read_text(encoding="utf-8") == "SENTINEL = True\n"
     assert backups[0].stat().st_mode & 0o077 == 0
     assert destination.stat().st_mode & 0o077 == 0
+
+
+# Verifies the completed check stays a debug trace, since one verbose line per cycle buried the events worth reading
+def test_the_completed_check_is_a_debug_only_trace():
+    source = (Path(__file__).resolve().parents[1] / "spotify_profile_monitor.py").read_text(encoding="utf-8")
+
+    assert "Monitoring check #" not in source
+    assert 'debug_print("Completed check"' in source
