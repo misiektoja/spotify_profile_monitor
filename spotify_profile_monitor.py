@@ -395,12 +395,16 @@ DISABLE_LOGGING = False
 #   "Off"  - preserve Unicode separators in logs
 ASCII_LOG_SEPARATORS = "Auto"
 
-# Enable debug mode for technical logging (can also be enabled via --debug flag)
+# Enable debug mode for technical logging
 # Shows request flow, selected params and internal state changes (with sensitive values redacted)
+# Independent of VERBOSE_MODE, so enable both to see everything
+# Can also be enabled via the --debug flag, which turns it on regardless of this setting
 DEBUG_MODE = False
 
 # Enable verbose mode for occasional operational events and the complete startup summary
 # Full request flow and internal state details remain exclusive to DEBUG_MODE
+# Independent of DEBUG_MODE, so enable both to see everything
+# Can also be enabled via the --verbose flag, which turns it on regardless of this setting
 VERBOSE_MODE = False
 
 # Width of horizontal line
