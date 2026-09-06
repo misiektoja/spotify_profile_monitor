@@ -489,3 +489,22 @@ def test_valid_numeric_settings_take_no_row():
     checks = monitor.doctor_check_configuration()
 
     assert not any("numeric" in check.label.casefold() for check in checks)
+
+
+# Verifies email alerts that cannot deliver are one WARN whose detail and action name the same settings
+def test_unusable_email_settings_warn_and_name_the_same_settings(monkeypatch):
+    monkeypatch.setattr(monitor, "PROFILE_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.test")
+    monkeypatch.setattr(monitor, "SMTP_PORT", 587)
+    monkeypatch.setattr(monitor, "SENDER_EMAIL", "monitor@example.invalid")
+    monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "owner@example.invalid")
+    monkeypatch.setattr(monitor, "SMTP_USER", "your_smtp_user")
+    monkeypatch.setattr(monitor, "smtp_connect_and_login", Mock(side_effect=AssertionError("SMTP was contacted")))
+
+    check = monitor.doctor_check_notifications()[0]
+
+    assert check.status == "WARN"
+    assert check.label == monitor.EMAIL_UNUSABLE_CHECK_LABEL
+    assert check.detail == "SMTP_USER or SMTP_PASSWORD is empty or still set to its placeholder"
+    assert "Set SMTP_USER and SMTP_PASSWORD or turn the email alerts off" in check.fix
+    assert monitor.SMTP_GUIDE_URL in check.fix

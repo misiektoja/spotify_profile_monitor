@@ -871,6 +871,9 @@ DOCTOR_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#doctor-preflight"
 # Labels of the two Doctor checks that gate the optional delivery tests, matched by prefix so each can name its channel
 SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
 WEBHOOK_READY_CHECK_LABEL = "Webhook URL, headers and alert choices look valid"
+
+# The label every sibling monitor uses when email alerts are on but the settings they would use cannot deliver
+EMAIL_UNUSABLE_CHECK_LABEL = "Email alerts are enabled but unusable"
 OAUTH_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-oauth-app"
 OAUTH_USER_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-oauth-user"
 BROWSER_COOKIE_GUIDE_URL = DOCUMENTATION_URL + "/setup-and-first-run/#browser-cookie-import"
@@ -9010,21 +9013,27 @@ def doctor_check_optional_oauth(report: Optional[DoctorReport] = None) -> List[D
         SP_APP_TOKENS_FILE = saved_cache
 
 
-# Returns one validation error for configured SMTP settings
-def validate_smtp_configuration() -> Optional[str]:
+# Reports the first unusable email setting as a doctor detail and an action that names the same settings
+def email_settings_problem() -> Optional[Tuple[str, str]]:
     if not SMTP_HOST or str(SMTP_HOST).startswith("your_smtp_server_"):
-        return "SMTP_HOST is missing or still a placeholder"
+        return ("SMTP_HOST is empty or still set to its placeholder", "Set SMTP_HOST or turn the email alerts off")
     try:
         port = int(SMTP_PORT)
         if not 1 <= port <= 65535:
             raise ValueError
     except (TypeError, ValueError):
-        return "SMTP_PORT must be between 1 and 65535"
-    if not SMTP_USER or SMTP_USER == "your_smtp_user" or not SMTP_PASSWORD or SMTP_PASSWORD == "your_smtp_password":
-        return "SMTP_USER or SMTP_PASSWORD is missing or still a placeholder"
+        return ("SMTP_PORT is not a port number between 1 and 65535", "Correct SMTP_PORT or turn the email alerts off")
     if "@" not in str(SENDER_EMAIL) or "@" not in str(RECEIVER_EMAIL):
-        return "SENDER_EMAIL or RECEIVER_EMAIL is invalid"
+        return ("SENDER_EMAIL or RECEIVER_EMAIL is not an email address", "Correct SENDER_EMAIL and RECEIVER_EMAIL or turn the email alerts off")
+    if not SMTP_USER or SMTP_USER == "your_smtp_user" or not SMTP_PASSWORD or SMTP_PASSWORD == "your_smtp_password":
+        return ("SMTP_USER or SMTP_PASSWORD is empty or still set to its placeholder", "Set SMTP_USER and SMTP_PASSWORD or turn the email alerts off")
     return None
+
+
+# Returns one validation error for configured SMTP settings
+def validate_smtp_configuration() -> Optional[str]:
+    problem = email_settings_problem()
+    return problem[0] if problem is not None else None
 
 
 # Opens and authenticates one SMTP connection without sending a message
@@ -9036,6 +9045,12 @@ def smtp_connect_and_login(use_ssl, smtp_timeout=5):
     return smtp_object
 
 
+# Returns the doctor row for email alerts whose settings cannot deliver, worded the same way by every sibling monitor
+def doctor_email_unusable_check(detail: str, fix: str) -> DoctorCheck:
+    # The renderer keeps an advice object's own detail for debug mode, so this row carries its finding and fix directly
+    return make_doctor_check("Notifications", "WARN", EMAIL_UNUSABLE_CHECK_LABEL, detail, recovery_fix_with_guide(fix, SMTP_GUIDE_URL))
+
+
 # Validates notification settings without sending a message
 def doctor_check_notifications() -> List[DoctorCheck]:
     checks = []
@@ -9043,10 +9058,9 @@ def doctor_check_notifications() -> List[DoctorCheck]:
     if not email_enabled:
         checks.append(make_doctor_check("Notifications", "PASS", "Email notifications are disabled", "No SMTP connection was attempted and no email was sent"))
     else:
-        validation_error = validate_smtp_configuration()
-        if validation_error:
-            advice = classify_recovery_error(context="smtp_config", detail=validation_error)
-            checks.append(make_doctor_check("Notifications", "FAIL", advice.summary, advice.detail, advice.fix, advice))
+        problem = email_settings_problem()
+        if problem is not None:
+            checks.append(doctor_email_unusable_check(*problem))
         else:
             smtp_object = None
             try:
