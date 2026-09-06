@@ -11528,7 +11528,7 @@ def main():
         "--config-file",
         dest="config_file",
         metavar="PATH",
-        help="Location of the optional config file",
+        help="Location of the optional config file (auto-search if not set, disable with 'none')",
     )
     conf.add_argument(
         "--generate-config",

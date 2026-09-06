@@ -60,6 +60,8 @@ By default, the tool looks for a configuration file named `spotify_profile_monit
 spotify_profile_monitor <spotify_target> --config-file /path/spotify_profile_monitor_new.conf
 ```
 
+`--config-file none` switches automatic config discovery off for one run.
+
 By default, only public playlists owned by the user are fetched. To change this behavior:
 - set `GET_ALL_PLAYLISTS` to `True`
 - or use the `-k` flag

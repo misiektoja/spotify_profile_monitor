@@ -88,3 +88,11 @@ def test_the_parser_is_built_with_the_argparse_colour_switch():
     source = Path(monitor.__file__).read_text(encoding="utf-8")
 
     assert "**argparse_color_kwargs()" in source.split("argparse.ArgumentParser(", 1)[1].split("\n\n", 1)[0]
+
+
+# Verifies both file flags advertise the `none` sentinel, since either can switch its own discovery off
+def test_both_file_flags_advertise_the_none_sentinel(help_screen):
+    compact = " ".join(help_screen.split())
+
+    assert "Location of the optional config file (auto-search if not set, disable with 'none')" in compact
+    assert "Path to optional dotenv file (auto-search if not set, disable with 'none')" in compact
