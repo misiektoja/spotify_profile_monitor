@@ -688,3 +688,70 @@ def test_interrupting_the_welcome_offer_reports_a_cancellation(monkeypatch, caps
 
     assert exit_error.value.code == 1
     assert "Setup cancelled." in capsys.readouterr().out
+
+
+# Puts the wizard on the shortest path to the save, so a test can interrupt one chosen prompt
+def install_saving_wizard_flow(monkeypatch, config_path, env_path, answers):
+    monkeypatch.setattr(monitor.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(monitor, "_wizard_destinations", lambda config, env: (config_path, env_path))
+    monkeypatch.setattr(monitor, "_wizard_install_method", lambda: "pip")
+    monkeypatch.setattr(monitor, "_wizard_choose_config_destination", lambda path: path)
+    monkeypatch.setattr(monitor, "_wizard_collect_target_section", lambda state, target=None: setattr(state, "target", "target.user"))
+    monkeypatch.setattr(monitor, "_wizard_collect_polling_section", lambda state: None)
+    monkeypatch.setattr(monitor, "_wizard_collect_auth_section", lambda state, method: state.auth.update({"complete": True, "source": "existing SP_DC_COOKIE"}))
+    monkeypatch.setattr(monitor, "_wizard_collect_email_section", lambda state: None)
+    monkeypatch.setattr(monitor, "_wizard_collect_webhook_section", lambda state: None)
+    monkeypatch.setattr(monitor, "_wizard_collect_output_section", lambda state: None)
+    monkeypatch.setattr(monitor, "_wizard_review_setup", lambda state, method: True)
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", Mock(side_effect=list(answers)))
+
+
+# Verifies an interrupt before the save says the destination files are untouched
+def test_interrupting_the_questions_reports_untouched_files(tmp_path, monkeypatch, capsys):
+    config_path = tmp_path / "config.conf"
+    monkeypatch.setattr(monitor.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(monitor, "_wizard_destinations", lambda config, env: (config_path, tmp_path / ".env"))
+    monkeypatch.setattr(monitor, "_wizard_install_method", lambda: "pip")
+    monkeypatch.setattr(builtins, "input", Mock(side_effect=KeyboardInterrupt))
+
+    with pytest.raises(SystemExit) as error:
+        monitor.run_setup_wizard()
+
+    assert error.value.code == 1
+    assert "Setup cancelled. Destination files were not changed." in capsys.readouterr().out
+    assert not config_path.exists()
+
+
+# Verifies an interrupt at the doctor offer reports the saved setup instead of a cancellation
+def test_interrupting_the_doctor_offer_keeps_the_saved_setup(tmp_path, monkeypatch, capsys):
+    config_path = tmp_path / "config.conf"
+    install_saving_wizard_flow(monkeypatch, config_path, tmp_path / ".env", [KeyboardInterrupt, False])
+
+    with pytest.raises(SystemExit) as error:
+        monitor.run_setup_wizard()
+
+    output = capsys.readouterr().out
+    assert error.value.code == 0
+    assert "Setup is saved. Use the commands below when ready." in output
+    assert "Setup cancelled" not in output
+    assert "Next steps" in output
+    assert config_path.is_file()
+
+
+# Verifies an interrupt at the launch offer reports the saved setup and points at the printed command
+def test_interrupting_the_launch_offer_keeps_the_saved_setup(tmp_path, monkeypatch, capsys):
+    config_path = tmp_path / "config.conf"
+    install_saving_wizard_flow(monkeypatch, config_path, tmp_path / ".env", [True, KeyboardInterrupt])
+    monkeypatch.setattr(monitor, "_wizard_load_effective_setup", lambda config, env: True)
+    monkeypatch.setattr(monitor, "run_doctor", lambda *args, **kwargs: 0)
+    execv_mock = Mock()
+    monkeypatch.setattr(monitor.os, "execv", execv_mock)
+
+    with pytest.raises(SystemExit) as error:
+        monitor.run_setup_wizard()
+
+    output = capsys.readouterr().out
+    assert error.value.code == 0
+    assert "Setup is saved. Start monitoring with the command above when ready." in output
+    assert "Setup cancelled" not in output
+    execv_mock.assert_not_called()
