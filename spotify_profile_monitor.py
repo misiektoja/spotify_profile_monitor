@@ -795,6 +795,9 @@ DISABLE_LOGGING = False
 ASCII_LOG_SEPARATORS = "Auto"
 DEBUG_MODE = False
 VERBOSE_MODE = False
+
+# True once monitoring has printed its header, so a verbose notice after that closes its own block
+MONITORING_ACTIVE = False
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
 COLORED_OUTPUT = False
@@ -1970,6 +1973,23 @@ def debug_print(_operation, **fields):
 def verbose_print(message: Any) -> None:
     if VERBOSE_MODE:
         print(f"* {sanitize_error_text(message)}")
+
+
+# Prints verbose-only notices as one block, so a standalone line is not left without the timestamp trailer
+def verbose_notice(*messages):
+    if not VERBOSE_MODE or not messages:
+        return
+    for message in messages:
+        verbose_print(message)
+    # Before monitoring starts the notice belongs to the startup screen, which the monitoring header closes
+    if MONITORING_ACTIVE:
+        print_cur_ts("Timestamp:\t\t\t")
+
+
+# Marks the point where output stops being the startup screen, so later notices close their own block
+def mark_monitoring_started():
+    global MONITORING_ACTIVE
+    MONITORING_ACTIVE = True
 
 
 # Masks one secret while retaining small optional edge fragments
@@ -3792,7 +3812,7 @@ def spotify_get_access_token_from_sp_dc(sp_dc: str):
                 time.sleep(TOKEN_RETRY_TIMEOUT)
             else:
                 debug_print("Spotify access token obtained successfully", length=length)
-                verbose_print("Authentication token refreshed (cookie mode)")
+                verbose_notice("Authentication token refreshed (cookie mode)")
                 break
         except Exception as e:
             last_error = str(e)
@@ -3848,7 +3868,7 @@ def spotify_get_access_token_from_oauth_app(sp_client_id, sp_client_secret):
 
     SP_CACHED_OAUTH_APP_TOKEN = auth_manager.get_access_token(as_dict=False)
     debug_print("OAuth app access token refreshed successfully")
-    verbose_print("Legacy OAuth metadata token refreshed")
+    verbose_notice("Legacy OAuth metadata token refreshed")
 
     return SP_CACHED_OAUTH_APP_TOKEN
 
@@ -4346,7 +4366,7 @@ def spotify_get_access_token_from_client(device_id, system_id, user_uri_id, refr
     SP_CACHED_ACCESS_TOKEN = access_token
     SP_CACHED_REFRESH_TOKEN = parsed[1].get(3)
     SP_ACCESS_TOKEN_EXPIRES_AT = time.time() + expires_in
-    verbose_print("Authentication token refreshed (advanced client mode)")
+    verbose_notice("Authentication token refreshed (advanced client mode)")
     return access_token
 
 
@@ -4404,7 +4424,7 @@ def spotify_get_client_token(app_version, device_id, system_id, **device_overrid
     SP_CACHED_CLIENT_TOKEN = client_token
     SP_CLIENT_TOKEN_EXPIRES_AT = time.time() + ttl
     debug_print("Client token refreshed successfully", ttl=f"{ttl}s")
-    verbose_print("Spotify client token refreshed")
+    verbose_notice("Spotify client token refreshed")
 
     return client_token
 
@@ -4594,7 +4614,7 @@ def spotify_get_web_access_token_data():
     SP_WEB_ACCESS_TOKEN_EXPIRES_AT = expires_at
     SP_CACHED_WEB_CLIENT_ID = client_id
     debug_print("Anonymous Spotify web-player token obtained successfully", token_len=len(access_token))
-    verbose_print("Web-player metadata token refreshed")
+    verbose_notice("Web-player metadata token refreshed")
     return {"access_token": access_token, "expires_at": expires_at, "client_id": client_id}
 
 
@@ -5190,7 +5210,7 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks, oauth_app:
                 SP_WEB_PLAYLIST_BACKEND_PREFERRED = True
                 status_code = e.response.status_code if isinstance(e, req.HTTPError) and e.response is not None else None
                 debug_print("Playlist metadata backend", api="legacy Web API", outcome="degraded", failures=SP_WEB_PLAYLIST_API_FAILURES, status=status_code, fallback="web-player backend for remaining playlists")
-                verbose_print("Playlist metadata switched to the web-player backend after legacy API failures")
+                verbose_notice("Playlist metadata switched to the web-player backend after legacy API failures")
             else:
                 debug_print("spotify_get_playlist_info(): legacy Web API backend", uri=playlist_uri, failures=SP_WEB_PLAYLIST_API_FAILURES, outcome="failed", error=f"{type(e).__name__}: {e}")
 
@@ -10093,6 +10113,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
     email_sent = False
     webhook_sent = False
+
+    mark_monitoring_started()
 
     out = f"Monitoring user {user_uri_id}"
     print(out)

@@ -774,3 +774,24 @@ def test_prompts_restore_the_default_interrupt_handler(monkeypatch):
         assert signal.getsignal(signal.SIGINT) is monitor.signal_handler
     finally:
         signal.signal(signal.SIGINT, previous_handler)
+
+
+# Verifies a repeated operational notice such as a token refresh closes its own block once monitoring runs,
+# and stays a bare line on the startup screen, where the monitoring header closes the block instead
+def test_a_token_refresh_notice_closes_its_own_block_only_while_monitoring(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "VERBOSE_MODE", True)
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor, "HORIZONTAL_LINE", 10)
+    monkeypatch.setattr(monitor, "MONITORING_ACTIVE", False)
+
+    monitor.verbose_notice("Authentication token refreshed (cookie mode)")
+
+    assert capsys.readouterr().out == "* Authentication token refreshed (cookie mode)\n"
+
+    monitor.mark_monitoring_started()
+    monitor.verbose_notice("Authentication token refreshed (cookie mode)")
+
+    lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
+    assert lines[0] == "* Authentication token refreshed (cookie mode)"
+    assert lines[1].startswith("Timestamp:")
+    assert set(lines[2]) == {"─"}
