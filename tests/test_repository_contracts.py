@@ -99,6 +99,14 @@ class TestGovernanceDocuments:
         for requirement in re.findall(r'"([A-Za-z0-9_.-]+)', declared.group(1)):
             assert requirement.lower() in notices.lower(), requirement
 
+    # A guide that lists the test files goes stale the moment one is added and nothing else notices
+    def test_the_test_suite_guide_lists_every_test_file(self):
+        listed = set(re.findall(r"^\| `([^`]+)` \|", (PROJECT_ROOT / "tests" / "README.md").read_text(encoding="utf-8"), re.M))
+        present = {path.name for path in (PROJECT_ROOT / "tests").glob("test_*.py")} | {path.name for path in (PROJECT_ROOT / "tests").glob("conftest.py")}
+
+        assert present - listed == set(), f"test files missing from tests/README.md: {sorted(present - listed)}"
+        assert {name for name in listed if name.endswith(".py")} - present == set(), f"tests/README.md names files that do not exist: {sorted({name for name in listed if name.endswith('.py')} - present)}"
+
 
 class TestIssueTemplates:
     # Blank issues bypass the forms, and the contact links are what route vulnerabilities away from public issues
