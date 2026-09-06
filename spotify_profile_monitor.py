@@ -431,8 +431,8 @@ COLOR_THEME = {
     "header": "bright_cyan",
     "section": "bright_white",
     # Identity
-    "username": "blue underline",
-    "user_uri_id": "bright_magenta",
+    "username": "bright_cyan underline",
+    "id": "bright_magenta",
     # Activity status values
     "status_active": "green",
     "status_inactive": "red",
@@ -1294,8 +1294,8 @@ DEFAULT_COLOR_THEME = {
     "header": "bright_cyan",
     "section": "bright_white",
     # Identity
-    "username": "blue underline",
-    "user_uri_id": "bright_magenta",
+    "username": "bright_cyan underline",
+    "id": "bright_magenta",
     # Activity status values
     "status_active": "green",
     "status_inactive": "red",
@@ -1327,6 +1327,9 @@ DEFAULT_COLOR_THEME = {
     "link": "blue underline",
 }
 
+# COLOR_THEME key names used by older releases, still honoured so an existing config keeps working
+_THEME_KEY_ALIASES = {"user_uri_id": "id"}
+
 ANSI_RESET = "\033[0m"
 
 # Mapping of style names to ANSI SGR codes
@@ -1356,7 +1359,7 @@ _STYLE_CODES = {
 # Output labels whose value is coloured with one theme style, longest label first so a prefix cannot win
 _LABEL_STYLES = (
     (("Username:", "Display name:", "Owner:"), "username"),
-    (("Spotify user ID:", "User URI:", "Playlist ID:"), "user_uri_id"),
+    (("Spotify user ID:", "User URI:", "Playlist ID:", "Target:"), "id"),
     (("Duration:",), "duration"),
 )
 
@@ -1476,6 +1479,11 @@ def init_color_output(stream):
     user_theme = globals().get("COLOR_THEME") if isinstance(globals().get("COLOR_THEME"), dict) else {}
     theme = {**DEFAULT_COLOR_THEME, **(user_theme or {})}
 
+    # A config written against an older key name still wins over the default, unless it also sets the current name
+    for legacy_name, current_name in _THEME_KEY_ALIASES.items():
+        if user_theme and legacy_name in user_theme and current_name not in user_theme:
+            theme[current_name] = user_theme[legacy_name]
+
     styles = {}
     for name, style_str in theme.items():
         seq = _build_ansi_sequence(style_str)
@@ -1568,7 +1576,7 @@ def _colorize_quoted_name(match, style_name):
     # mentions playlists, and only the rest of the line is consulted when nothing there says what it is
     preceding = match.string[:match.start()]
     if _QUOTED_USER_ID_CONTEXT_RE.search(preceding):
-        style_name = "user_uri_id"
+        style_name = "id"
     elif _QUOTED_USER_CONTEXT_RE.search(preceding):
         style_name = "username"
     elif _QUOTED_PLAYLIST_CONTEXT_RE.search(preceding):
@@ -1650,7 +1658,7 @@ def _colorize_line(line):
 
     # Highlight the Spotify user named inside a sentence, taking the complete display name in a change header
     line = _sub_outside_color(_CHANGE_HEADER_USER_RE, lambda mo: f"{mo.group(1)}{colorize('username', mo.group(2))}{mo.group(3)}", line)
-    line = _sub_outside_color(_USER_TAG_RE, lambda mo: f"{mo.group(1)}{mo.group(2)}{colorize('username', mo.group(3))}", line)
+    line = _sub_outside_color(_USER_TAG_RE, lambda mo: f"{mo.group(1)}{mo.group(2)}{colorize('id', mo.group(3))}", line)
 
     # Highlight counters and their differences
     line = _sub_outside_color(_FROM_TO_COUNT_RE, lambda mo: f"{mo.group(1)}{colorize('count_up' if int(mo.group(4)) >= int(mo.group(2)) else 'count_down', mo.group(2))}{mo.group(3)}{colorize('count_up' if int(mo.group(4)) >= int(mo.group(2)) else 'count_down', mo.group(4))}", line)

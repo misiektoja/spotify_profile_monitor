@@ -128,7 +128,7 @@ def test_startup_banner_art_is_unchanged(colored):
 # Verifies labelled Spotify rows colour the value with the expected theme part
 @pytest.mark.parametrize("line,part", [
     ("Username:\t\t\tJohn Doe", "username"),
-    ("Spotify user ID:\t\tsq58", "user_uri_id"),
+    ("Spotify user ID:\t\tsq58", "id"),
     ("Duration:\t\t\t9 hours", "duration"),
 ])
 def test_labelled_rows_use_the_expected_theme_part(colored, line, part):
@@ -498,11 +498,47 @@ def test_unrecognized_listing_rows_keep_their_name_plain(colored, line):
     assert colored["track"] not in result
 
 
+# Verifies the monitored target renders as an ID everywhere it is named, since this tool identifies a
+# profile by URI ID rather than by display name
+@pytest.mark.parametrize("line", [
+    "Monitoring user 31nnv6eqt4qswvjhcnknimtxqife",
+    "Spotify user ID:\t\t31nnv6eqt4qswvjhcnknimtxqife",
+    "* Target:                       31nnv6eqt4qswvjhcnknimtxqife",
+])
+def test_target_id_uses_the_id_colour_everywhere(colored, line):
+    result = monitor._colorize_line(line)
+
+    assert monitor.ANSI_ESCAPE_RE.sub("", result) == line
+    assert f"{colored['id']}31nnv6eqt4qswvjhcnknimtxqife{monitor.ANSI_RESET}" in result
+
+
+# Verifies a config written against the pre-rename 'user_uri_id' key still colours identifiers
+def test_legacy_theme_key_still_applies(monkeypatch):
+    monkeypatch.setattr(monitor, "COLORED_OUTPUT", True)
+    monkeypatch.setattr(monitor, "COLOR_THEME", {"user_uri_id": "red"})
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", False)
+    monkeypatch.setattr(monitor, "_COLOR_STYLES", {})
+    monkeypatch.setattr(monitor, "_stream_supports_color", lambda stream: True)
+    monitor.init_color_output(StringIO())
+    assert monitor._COLOR_STYLES["id"] == monitor._build_ansi_sequence("red")
+
+
+# Verifies the current key name wins when a config sets both the old and the new name
+def test_current_theme_key_wins_over_the_legacy_name(monkeypatch):
+    monkeypatch.setattr(monitor, "COLORED_OUTPUT", True)
+    monkeypatch.setattr(monitor, "COLOR_THEME", {"user_uri_id": "red", "id": "green"})
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", False)
+    monkeypatch.setattr(monitor, "_COLOR_STYLES", {})
+    monkeypatch.setattr(monitor, "_stream_supports_color", lambda stream: True)
+    monitor.init_color_output(StringIO())
+    assert monitor._COLOR_STYLES["id"] == monitor._build_ansi_sequence("green")
+
+
 # Verifies the word before a quoted value decides its colour, even when the line also mentions playlists
 @pytest.mark.parametrize("line,part", [
     ("* Spotify API: suspected transient playlist change for user 'martus' (2 -> 1), streak 1/2", "username"),
     ("* Spotify API: suspected transient collaborator change for playlist 'bzy i kosy' (2 -> 1)", "playlist"),
-    ("* Getting detailed info for Spotify user ID '31nnv6eqt4qswvjhcnknimtxqife' ...", "user_uri_id"),
+    ("* Getting detailed info for Spotify user ID '31nnv6eqt4qswvjhcnknimtxqife' ...", "id"),
     ("* Searching for users with 'martus' string ...", "username"),
 ])
 def test_quoted_value_takes_its_colour_from_the_preceding_word(colored, line, part):

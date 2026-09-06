@@ -495,7 +495,7 @@ Parts with the same name mean the same thing in [spotify_monitor](https://github
 | `header` | The startup banner plus the Setup Wizard and Doctor headings |
 | `section` | Commands the wizard tells you to run, and the Doctor section names |
 | `username` | Spotify display names and quoted user names |
-| `user_uri_id` | Spotify user IDs and URIs |
+| `id` | Spotify user IDs and URIs. A configuration file that still sets `user_uri_id` keeps working |
 | `status_active` | `ACTIVE` and `PRIVATE MODE` status words |
 | `status_inactive` | `INACTIVE` status words |
 | `status_offline` | `OFFLINE` status words |
