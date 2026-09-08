@@ -1151,6 +1151,21 @@ def test_the_webhook_question_defaults_to_the_saved_switch(monkeypatch, tmp_path
     assert seen == [("Set up webhook alerts (Discord, ntfy etc.)?", True)]
 
 
+# Verifies the email question defaults to the saved alerts, so a rerun over configured email proposes keeping it
+def test_the_email_question_defaults_to_the_saved_alerts(monkeypatch, tmp_path):
+    seen = []
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=False, **kwargs: seen.append((question, default)) or False)
+
+    monitor._wizard_collect_email({"ERROR_NOTIFICATION": True, "SMTP_HOST": "your_smtp_server_ssl"}, {}, tmp_path / ".env")
+    assert seen == [("Configure email notifications?", False)]
+
+    monitor._wizard_collect_email({"ERROR_NOTIFICATION": True, "SMTP_HOST": "smtp.example.test"}, {}, tmp_path / ".env")
+    assert seen[-1] == ("Configure email notifications?", True)
+
+    monitor._wizard_collect_email({"PROFILE_NOTIFICATION": True, "SMTP_HOST": "your_smtp_server_ssl"}, {}, tmp_path / ".env")
+    assert seen[-1] == ("Configure email notifications?", True)
+
+
 # Verifies the custom alert questions start unselected, so an alert is sent only when it was chosen
 def test_custom_webhook_alert_questions_default_to_off(monkeypatch, tmp_path):
     seen = []

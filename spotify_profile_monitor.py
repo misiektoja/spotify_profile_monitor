@@ -9915,9 +9915,17 @@ def _wizard_email_answer_missing(config_values: dict, answer: str, secret_update
     return True
 
 
+# Reports whether the saved settings already send email, so a rerun proposes keeping the channel it has
+def _wizard_email_enabled(config_values: dict) -> bool:
+    # The error alert ships switched on, so on its own it counts only once a mail server has been named
+    if bool(config_values.get("PROFILE_NOTIFICATION")) or bool(config_values.get("FOLLOWERS_FOLLOWINGS_NOTIFICATION")):
+        return True
+    return bool(config_values.get("ERROR_NOTIFICATION")) and doctor_secret_is_set(config_values.get("SMTP_HOST"))
+
+
 # Collects SMTP settings and profile-monitor notification choices
 def _wizard_collect_email(config_values: dict, secret_updates: dict, env_path: Path) -> List[str]:
-    if not _wizard_ask_yes_no("Configure email notifications?", default=False):
+    if not _wizard_ask_yes_no("Configure email notifications?", default=_wizard_email_enabled(config_values)):
         _wizard_disable_email(config_values, secret_updates)
         return []
     pending = dict(config_values)
