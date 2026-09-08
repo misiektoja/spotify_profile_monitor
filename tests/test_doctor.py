@@ -541,3 +541,34 @@ def test_doctor_details_keep_to_the_agreed_shapes():
             offenders.append(f"{node.lineno}: the detail ends with a full stop")
 
     assert not offenders, "doctor details outside the agreed shapes:\n" + "\n".join(offenders)
+
+
+# Verifies the constructor drops a detail that only repeats its label, so no row says the same thing twice
+def test_a_detail_that_repeats_its_label_is_dropped():
+    check = monitor.make_doctor_check("Configuration", "PASS", "Output logging is disabled", "Output logging is disabled")
+
+    assert check.detail == ""
+
+
+# Verifies only the four shared markers can reach a report
+def test_only_the_four_shared_markers_are_accepted():
+    assert monitor.DOCTOR_STATUSES == ("PASS", "WARN", "FAIL", "SKIP")
+    assert [monitor.make_doctor_check("Configuration", status, "a label").status for status in monitor.DOCTOR_STATUSES] == list(monitor.DOCTOR_STATUSES)
+
+    with pytest.raises(ValueError):
+        monitor.make_doctor_check("Configuration", "INFO", "a label")
+
+
+# Verifies one row reads as one block: the action lines sit under the marker at the detail indent while a pass row has none
+def test_the_action_lines_sit_indented_under_their_marker(monkeypatch):
+    monkeypatch.setattr(monitor, "colorize", lambda theme, text: text)
+    fix = monitor.recovery_fix_with_guide("do the thing", monitor.DOCTOR_GUIDE_URL)
+    report = monitor.DoctorReport([
+        monitor.make_doctor_check("Configuration", "WARN", "a warning row", "a detail worth keeping", fix),
+        monitor.make_doctor_check("Configuration", "PASS", "a passing row", "", fix),
+    ])
+
+    lines = monitor.render_doctor_report(report).splitlines()
+    rows = lines[lines.index("[WARN] a warning row"):]
+
+    assert rows[:5] == ["[WARN] a warning row", "  a detail worth keeping", "  To fix: do the thing", f"  Guide: {monitor.DOCTOR_GUIDE_URL}", "[PASS] a passing row"]

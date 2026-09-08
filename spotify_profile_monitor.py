@@ -8570,6 +8570,11 @@ class StartupSummaryRow:
     log: bool = True
 
 
+# The four shared status markers. A fifth neutral marker is the single biggest source of drift between these
+# tools, because every state it would cover is a state the others already call PASS
+DOCTOR_STATUSES = ("PASS", "WARN", "FAIL", "SKIP")
+
+
 # Stores one Doctor result before the report is rendered
 @dataclass(frozen=True)
 class DoctorCheck:
@@ -8686,7 +8691,7 @@ def emit_startup_summary(rows: Sequence[StartupSummaryRow], show_full: bool, str
 
 # Creates one secret-safe Doctor result with optional structured recovery guidance
 def make_doctor_check(section: str, status: str, label: str, detail: Any = "", fix: Any = "", advice: Optional[RecoveryAdvice] = None) -> DoctorCheck:
-    if status not in ("PASS", "WARN", "FAIL"):
+    if status not in DOCTOR_STATUSES:
         raise ValueError(f"Unsupported Doctor status: {status}")
     selected_fix = advice.fix if advice is not None and not fix else fix
     safe_label = sanitize_error_text(label)
@@ -8968,20 +8973,20 @@ def doctor_check_connectivity(report: DoctorReport) -> List[DoctorCheck]:
     if report.authentication_error and _looks_like_network_failure(report.authentication_error):
         advice = classify_recovery_error(req.ConnectionError(report.authentication_error), "runtime", report.authentication_error)
         return [make_doctor_check("Connectivity", "FAIL", advice.summary, advice.detail, advice.fix, advice)]
-    return [make_doctor_check("Connectivity", "WARN", "Spotify connectivity check was skipped", "Authentication did not produce a reusable access token", "Fix authentication then run --doctor again")]
+    return [make_doctor_check("Connectivity", "SKIP", "Spotify connectivity check was skipped", "Authentication did not produce a reusable access token", "Fix authentication then run --doctor again")]
 
 
 # Validates an optional target through one live profile request
 def doctor_check_target(report: DoctorReport, target_value=None) -> List[DoctorCheck]:
     if target_value is None or target_value == "":
-        return [make_doctor_check("Target", "WARN", "No Spotify target was provided", "Authentication-only preflight completed", "Pass a user ID, spotify:user URI or profile URL to check one target")]
+        return [make_doctor_check("Target", "WARN", "No Spotify target was provided", "Authentication-only preflight completed", recovery_fix_with_guide("Pass a user ID, spotify:user URI or profile URL to check one target", QUICK_START_GUIDE_URL))]
     try:
         target_id = resolve_target_user_id(target_value, None)
     except ValueError as exc:
         advice = classify_recovery_error(exc, "target_invalid")
         return [make_doctor_check("Target", "FAIL", advice.summary, advice.detail, advice.fix, advice)]
     if not report.access_token:
-        return [make_doctor_check("Target", "WARN", f"Target '{target_id}' live check was skipped", "Authentication did not produce an access token", "Fix authentication then rerun Doctor")]
+        return [make_doctor_check("Target", "SKIP", f"Target '{target_id}' live check was skipped", "Authentication did not produce an access token", "Fix authentication then rerun Doctor")]
     try:
         report.target_profile = spotify_get_user_info(report.access_token, target_id, True, 0)
         return [make_doctor_check("Target", "PASS", f"Target '{target_id}' can be monitored", "A live Spotify profile request succeeded")]
@@ -9141,7 +9146,9 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> List[DoctorCheck]:
             results.append(check)
             print(f"[{check.status}] {check.label}")
         else:
-            print("[SKIP] Test email was not sent")
+            check = make_doctor_check("Notifications", "SKIP", "Test email was not sent")
+            results.append(check)
+            print(f"[{check.status}] {check.label}")
     if webhook_ready:
         provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
@@ -9150,7 +9157,9 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> List[DoctorCheck]:
             results.append(check)
             print(f"[{check.status}] {check.label}")
         else:
-            print("[SKIP] Test webhook was not sent")
+            check = make_doctor_check("Notifications", "SKIP", "Test webhook was not sent")
+            results.append(check)
+            print(f"[{check.status}] {check.label}")
     return results
 
 
@@ -9233,8 +9242,9 @@ def render_doctor_report(report: DoctorReport) -> str:
             lines.append(f"[{check.status}] {check.label}")
             if check.detail and (check.advice is None or DEBUG_MODE):
                 lines.append(f"  {check.detail}")
-            if check.fix and check.status in ("FAIL", "WARN"):
-                lines.append(f"To fix: {check.fix}")
+            if check.fix and check.status != "PASS":
+                # The fix carries its own guide line, so each line is indented on its own
+                lines.extend(f"  {fix_line}" for fix_line in f"To fix: {check.fix}".splitlines())
     failures = sum(check.status == "FAIL" for check in report.checks)
     warnings = sum(check.status == "WARN" for check in report.checks)
     if failures:
