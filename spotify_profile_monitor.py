@@ -1953,7 +1953,7 @@ def check_internet(url=None, timeout=None, verify=None, quiet=False):
         LAST_CONNECTIVITY_ERROR = e
         # Quiet callers render the failure themselves, which doctor needs so nothing lands on its progress line
         if not quiet:
-            print_recovery_error(e, "runtime")
+            print_recovery_error(e, "connectivity")
         return False
 
 
@@ -2230,6 +2230,13 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         return make_recovery_advice("smtp.invalid", "The SMTP configuration is incomplete or invalid", recovery_fix_with_guide("Correct SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SENDER_EMAIL and RECEIVER_EMAIL then run --send-test-email", SMTP_GUIDE_URL), False, safe_detail)
     if context == "webhook_config":
         return make_recovery_advice("webhook.invalid", "The webhook configuration is invalid", recovery_fix_with_guide("Check the provider, URL, template, headers and ntfy access token then run --send-test-webhook", WEBHOOK_GUIDE_URL), False, safe_detail)
+
+    if context == "connectivity":
+        # Classified from the error, because the detail names the endpoint rather than the failure
+        cause = str(error or "").lower()
+        if "timed out" in cause or "timeout" in cause:
+            return make_recovery_advice("network.timeout", "The connectivity endpoint did not answer in time", "Check network, DNS, proxy and CHECK_INTERNET_URL settings", True, safe_detail)
+        return make_recovery_advice("network.unavailable", "The connectivity endpoint could not be reached", "Check network, DNS, proxy and CHECK_INTERNET_URL settings", True, safe_detail)
 
     if context.startswith("webhook"):
         if status == 429 or any(term in message for term in ("429", "too many requests", "rate limit")):
@@ -8982,7 +8989,7 @@ def doctor_connectivity_endpoint_check() -> DoctorCheck:
     LAST_CONNECTIVITY_ERROR = None
     if check_internet(quiet=True):
         return make_doctor_check("Connectivity", "PASS", "The connectivity endpoint is reachable", f"Endpoint: {CHECK_INTERNET_URL}")
-    advice = classify_recovery_error(LAST_CONNECTIVITY_ERROR, "runtime", f"Could not reach {CHECK_INTERNET_URL}")
+    advice = classify_recovery_error(LAST_CONNECTIVITY_ERROR, "connectivity", f"Could not reach {CHECK_INTERNET_URL}")
     # The advice object is not attached, because this renderer hides the detail when one is present
     return make_doctor_check("Connectivity", "FAIL", "The connectivity endpoint could not be reached", f"Endpoint: {CHECK_INTERNET_URL}", advice.fix)
 
