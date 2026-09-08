@@ -1165,6 +1165,12 @@ def test_the_email_question_defaults_to_the_saved_alerts(monkeypatch, tmp_path):
     monitor._wizard_collect_email({"PROFILE_NOTIFICATION": True, "SMTP_HOST": "your_smtp_server_ssl"}, {}, tmp_path / ".env")
     assert seen[-1] == ("Configure email notifications?", True)
 
+    monitor._wizard_collect_email({"FOLLOWERS_FOLLOWINGS_NOTIFICATION": True, "ERROR_NOTIFICATION": True, "SMTP_HOST": "your_smtp_server_ssl"}, {}, tmp_path / ".env")
+    assert seen[-1] == ("Configure email notifications?", False)
+
+    monitor._wizard_collect_email({"FOLLOWERS_FOLLOWINGS_NOTIFICATION": True, "SMTP_HOST": "smtp.example.test"}, {}, tmp_path / ".env")
+    assert seen[-1] == ("Configure email notifications?", True)
+
 
 # Verifies the custom alert questions start unselected, so an alert is sent only when it was chosen
 def test_custom_webhook_alert_questions_default_to_off(monkeypatch, tmp_path):
