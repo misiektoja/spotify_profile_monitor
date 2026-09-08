@@ -384,12 +384,17 @@ def test_setup_saves_confirmed_incomplete_configuration(tmp_path, monkeypatch, c
     monkeypatch.setattr(monitor, "_wizard_collect_webhook_section", lambda state: setattr(state, "enabled_webhooks", []))
     monkeypatch.setattr(monitor, "_wizard_collect_output_section", lambda state: None)
     monkeypatch.setattr(monitor, "_wizard_review_setup", lambda state, method: True)
+    # The doctor is offered even without authentication, so the saved setup can learn what it still lacks
+    prompts = []
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: prompts.append(question) or False)
 
     with pytest.raises(SystemExit) as error:
         monitor.run_setup_wizard(config_file=config_path, env_file=env_path)
 
     output = capsys.readouterr().out
     assert error.value.code == 0
+    assert any(prompt.startswith("Run doctor now?") for prompt in prompts)
+    assert not any(prompt.startswith("Start monitoring now?") for prompt in prompts)
     assert config_path.is_file()
     # No secret was entered, so no dotenv is created yet, but the sp_dc step will write it and every command names it
     assert not env_path.exists()
@@ -1134,3 +1139,30 @@ def test_a_declined_target_ends_the_section_without_the_persist_question(monkeyp
     assert state.target == ""
     assert state.config_values["TARGET_USER_URI_ID"] == ""
     assert "No target selected. Nothing can be monitored until one is set. Run --setup again or pass the target on the command line." in capsys.readouterr().out
+
+
+# Verifies the webhook question defaults to the saved switch, so a rerun over a configured webhook proposes keeping it
+def test_the_webhook_question_defaults_to_the_saved_switch(monkeypatch, tmp_path):
+    seen = []
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=False, **kwargs: seen.append((question, default)) or False)
+
+    assert monitor._wizard_collect_webhook({"WEBHOOK_ENABLED": True}, {}, tmp_path / ".env") == []
+
+    assert seen == [("Set up webhook alerts (Discord, ntfy etc.)?", True)]
+
+
+# Verifies the custom alert questions start unselected, so an alert is sent only when it was chosen
+def test_custom_webhook_alert_questions_default_to_off(monkeypatch, tmp_path):
+    seen = []
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=False, **kwargs: seen.append((question, default)) or question.startswith("Set up webhook"))
+    monkeypatch.setattr(monitor, "_wizard_ask_choice", lambda question, options, **kwargs: 1)
+    monkeypatch.setattr(monitor, "_wizard_existing_secret", lambda *args, **kwargs: None)
+    monkeypatch.setattr(monitor, "_wizard_ask_secret", lambda *args, **kwargs: "https://ntfy.example.test/topic")
+    monkeypatch.setattr(monitor, "_wizard_collect_ntfy_access_token", lambda *args, **kwargs: None)
+    monkeypatch.setattr(monitor, "_wizard_collect_notification_images", lambda *args, **kwargs: False)
+
+    assert monitor._wizard_collect_webhook({"WEBHOOK_ENABLED": False}, {}, tmp_path / ".env") == []
+
+    custom_defaults = [default for question, default in seen if not question.startswith("Set up webhook")]
+    assert len(custom_defaults) == 3
+    assert custom_defaults == [False, False, False]

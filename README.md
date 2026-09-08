@@ -32,7 +32,7 @@ Run the setup wizard:
 spotify_profile_monitor --setup
 ```
 
-The wizard asks for the target, authentication, polling interval and optional email or webhook alerts, then offers to run Doctor and start monitoring. The polling prompt accepts seconds or `s`, `m`, `h` and `d` units and shows both seconds and a readable default.
+The wizard asks for the target, authentication, polling interval and optional email or webhook alerts, then offers to run Doctor and, once it passes, to start monitoring. The polling prompt accepts seconds or `s`, `m`, `h` and `d` units and shows both seconds and a readable default.
 
 For the manual single-file method, optional extras and upgrade commands, see [Installation](https://misiektoja.github.io/spotify_profile_monitor/installation/).
 

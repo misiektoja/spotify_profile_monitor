@@ -9940,9 +9940,9 @@ def _wizard_collect_email(config_values: dict, secret_updates: dict, env_path: P
     else:
         print()
         selected = {
-            "PROFILE_NOTIFICATION": _wizard_ask_yes_no("Email when the user's profile changes?", default=True),
-            "FOLLOWERS_FOLLOWINGS_NOTIFICATION": _wizard_ask_yes_no("Email when followers or followings change?", default=True),
-            "ERROR_NOTIFICATION": _wizard_ask_yes_no("Email on monitoring errors?", default=True),
+            "PROFILE_NOTIFICATION": _wizard_ask_yes_no("Email when the user's profile changes?", default=False),
+            "FOLLOWERS_FOLLOWINGS_NOTIFICATION": _wizard_ask_yes_no("Email when followers or followings change?", default=False),
+            "ERROR_NOTIFICATION": _wizard_ask_yes_no("Email on monitoring errors?", default=False),
         }
     if not selected["PROFILE_NOTIFICATION"]:
         selected["FOLLOWERS_FOLLOWINGS_NOTIFICATION"] = False
@@ -9989,7 +9989,7 @@ def _wizard_disable_webhook(config_values: dict, secret_updates: Optional[dict] 
 
 # Collects hidden webhook details and profile-monitor alert choices
 def _wizard_collect_webhook(config_values: dict, secret_updates: dict, env_path: Path) -> List[str]:
-    if not _wizard_ask_yes_no("Set up webhook alerts (Discord, ntfy etc.)?", default=False):
+    if not _wizard_ask_yes_no("Set up webhook alerts (Discord, ntfy etc.)?", default=bool(config_values.get("WEBHOOK_ENABLED"))):
         _wizard_disable_webhook(config_values, secret_updates)
         return []
     provider_choice = _wizard_ask_choice("Which webhook service should receive alerts?", [("Discord", "Sends a Discord embed to one channel webhook."), ("ntfy", "Sends a native notification to one ntfy topic URL.")])
@@ -10033,9 +10033,9 @@ def _wizard_collect_webhook(config_values: dict, secret_updates: dict, env_path:
     else:
         print()
         selected = {
-            "WEBHOOK_PROFILE_NOTIFICATION": _wizard_ask_yes_no("Send a webhook when the user's profile changes?", default=True),
-            "WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION": _wizard_ask_yes_no("Send a webhook when followers or followings change?", default=True),
-            "WEBHOOK_ERROR_NOTIFICATION": _wizard_ask_yes_no("Send a webhook when monitoring has a problem?", default=True),
+            "WEBHOOK_PROFILE_NOTIFICATION": _wizard_ask_yes_no("Send a webhook when the user's profile changes?", default=False),
+            "WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION": _wizard_ask_yes_no("Send a webhook when followers or followings change?", default=False),
+            "WEBHOOK_ERROR_NOTIFICATION": _wizard_ask_yes_no("Send a webhook when monitoring has a problem?", default=False),
         }
     if not selected["WEBHOOK_PROFILE_NOTIFICATION"]:
         selected["WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION"] = False
@@ -10366,9 +10366,9 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
         if state.auth.get("browser"):
             print()
             state.auth = _wizard_finish_browser_import(state.auth, state.env_path, state.config_path, state.target, state.target if state.persist_target else "")
-        if state.auth["complete"]:
+        if state.target:
             print()
-        if state.auth["complete"] and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
+        if state.target and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
             doctor_ran = True
             if _wizard_load_effective_setup(state.config_path, state.env_path):
                 # The shared resolver rather than the configured value, so doctor names the state a restart would find
@@ -12242,9 +12242,11 @@ def main():
 
     if args.setup:
         if args.config_file is not None and args.config_file.casefold() == "none":
-            parser.error("--setup requires a config destination and cannot use --config-file none")
+            print("Setup cannot start: --setup requires a config destination. Replace '--config-file none' with a writable path.")
+            sys.exit(1)
         if args.env_file is not None and args.env_file.casefold() == "none":
-            parser.error("--setup requires a dotenv destination and cannot use --env-file none")
+            print("Setup cannot start: --setup requires a dotenv destination. Replace '--env-file none' with a writable path.")
+            sys.exit(1)
         prepare_startup_screen(require_input=True)
         print_startup_banner()
         run_setup_wizard(args.user_id, args.config_file, args.env_file)
