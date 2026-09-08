@@ -78,6 +78,16 @@ def test_config_file_slow_poll_widens_the_playlist_cache():
     assert float(probe_value(result.stdout, "CACHE_TTL")) == 172800.0, "a poll slower than the cache lifetime must widen the cache"
 
 
+# Confirms a check interval longer than the liveness interval still waits one whole check
+def test_a_long_check_interval_leaves_the_liveness_counter_at_one_check():
+    with make_temp_directory() as directory_name:
+        config_path = write_config(directory_name, "SPOTIFY_CHECK_INTERVAL = 86400\nLIVENESS_CHECK_INTERVAL = 43200\n")
+        result = run_cli(["--config-file", str(config_path)], PROBE_SETUP)
+
+    assert result.returncode == 0, result.stderr
+    assert float(probe_value(result.stdout, "LIVENESS_COUNTER")) == 1
+
+
 # Confirms a command-line interval still wins over the config file and rescales the same values
 def test_command_line_interval_overrides_the_config_file():
     with make_temp_directory() as directory_name:

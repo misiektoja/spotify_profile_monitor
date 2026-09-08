@@ -1,4 +1,5 @@
 import builtins
+import time
 import subprocess
 import sys
 from pathlib import Path
@@ -817,25 +818,38 @@ def test_prompts_restore_the_default_interrupt_handler(monkeypatch):
         signal.signal(signal.SIGINT, previous_handler)
 
 
-# Verifies a repeated operational notice such as a token refresh closes its own block once monitoring runs,
-# and stays a bare line on the startup screen, where the monitoring header closes the block instead
-def test_a_token_refresh_notice_closes_its_own_block_only_while_monitoring(monkeypatch, capsys):
+# Verifies a repeated operational notice such as a metadata backend change closes its own block once monitoring
+# runs, and stays a bare line on the startup screen, where the monitoring header closes the block instead
+def test_an_operational_notice_closes_its_own_block_only_while_monitoring(monkeypatch, capsys):
     monkeypatch.setattr(monitor, "VERBOSE_MODE", True)
     monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
     monkeypatch.setattr(monitor, "HORIZONTAL_LINE", 10)
     monkeypatch.setattr(monitor, "MONITORING_ACTIVE", False)
 
-    monitor.verbose_notice("Authentication token refreshed (cookie mode)")
+    monitor.verbose_notice("Playlist metadata switched to the web-player backend after legacy API failures")
 
-    assert capsys.readouterr().out == "* Authentication token refreshed (cookie mode)\n"
+    assert capsys.readouterr().out == "* Playlist metadata switched to the web-player backend after legacy API failures\n"
 
     monitor.mark_monitoring_started()
-    monitor.verbose_notice("Authentication token refreshed (cookie mode)")
+    monitor.verbose_notice("Playlist metadata switched to the web-player backend after legacy API failures")
 
     lines = [line for line in capsys.readouterr().out.splitlines() if line.strip()]
-    assert lines[0] == "* Authentication token refreshed (cookie mode)"
+    assert lines[0] == "* Playlist metadata switched to the web-player backend after legacy API failures"
     assert lines[1].startswith("Timestamp:")
     assert set(lines[2]) == {"─"}
+
+
+# Verifies a routine token refresh is debug detail, so a verbose run stays quiet between real events
+def test_a_routine_token_refresh_prints_nothing_in_verbose(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "VERBOSE_MODE", True)
+    monkeypatch.setattr(monitor, "DEBUG_MODE", False)
+    monkeypatch.setattr(monitor, "SP_CACHED_WEB_ACCESS_TOKEN", "", raising=False)
+    monkeypatch.setattr(monitor, "SP_WEB_ACCESS_TOKEN_EXPIRES_AT", 0, raising=False)
+    monkeypatch.setattr(monitor, "refresh_access_token_from_sp_dc", lambda *args, **kwargs: {"access_token": "web-token", "expires_at": int(time.time()) + 3600, "client_id": "web-client"})
+
+    monitor.spotify_get_web_access_token_data()
+
+    assert capsys.readouterr().out == ""
 
 
 # Verifies hidden prompts are colorized like the visible ones, so one question does not look different

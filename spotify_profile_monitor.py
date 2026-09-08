@@ -989,7 +989,8 @@ COLLABORATORS_PENDING_CACHE = {}
 PLAYLISTS_BASELINE_CACHE = {}
 PLAYLISTS_PENDING_CACHE = {}
 
-LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / SPOTIFY_CHECK_INTERVAL
+# Whole checks, so a check interval longer than the liveness interval still waits one check instead of reporting on every check
+LIVENESS_CHECK_COUNTER = max(1, -(-LIVENESS_CHECK_INTERVAL // SPOTIFY_CHECK_INTERVAL)) if LIVENESS_CHECK_INTERVAL else 0
 
 stdout_bck = None
 csvfieldnames = ['Date', 'Type', 'Name', 'Old', 'New']
@@ -3929,7 +3930,6 @@ def spotify_get_access_token_from_sp_dc(sp_dc: str):
                 time.sleep(TOKEN_RETRY_TIMEOUT)
             else:
                 debug_print("Spotify access token obtained successfully", length=length)
-                verbose_notice("Authentication token refreshed (cookie mode)")
                 break
         except Exception as e:
             last_error = str(e)
@@ -3985,7 +3985,6 @@ def spotify_get_access_token_from_oauth_app(sp_client_id, sp_client_secret):
 
     SP_CACHED_OAUTH_APP_TOKEN = auth_manager.get_access_token(as_dict=False)
     debug_print("OAuth app access token refreshed successfully")
-    verbose_notice("Legacy OAuth metadata token refreshed")
 
     return SP_CACHED_OAUTH_APP_TOKEN
 
@@ -4483,7 +4482,7 @@ def spotify_get_access_token_from_client(device_id, system_id, user_uri_id, refr
     SP_CACHED_ACCESS_TOKEN = access_token
     SP_CACHED_REFRESH_TOKEN = parsed[1].get(3)
     SP_ACCESS_TOKEN_EXPIRES_AT = time.time() + expires_in
-    verbose_notice("Authentication token refreshed (advanced client mode)")
+    debug_print("Spotify access token refreshed", source="advanced client")
     return access_token
 
 
@@ -4541,7 +4540,6 @@ def spotify_get_client_token(app_version, device_id, system_id, **device_overrid
     SP_CACHED_CLIENT_TOKEN = client_token
     SP_CLIENT_TOKEN_EXPIRES_AT = time.time() + ttl
     debug_print("Client token refreshed successfully", ttl=f"{ttl}s")
-    verbose_notice("Spotify client token refreshed")
 
     return client_token
 
@@ -4731,7 +4729,6 @@ def spotify_get_web_access_token_data():
     SP_WEB_ACCESS_TOKEN_EXPIRES_AT = expires_at
     SP_CACHED_WEB_CLIENT_ID = client_id
     debug_print("Anonymous Spotify web-player token obtained successfully", token_len=len(access_token))
-    verbose_notice("Web-player metadata token refreshed")
     return {"access_token": access_token, "expires_at": expires_at, "client_id": client_id}
 
 
@@ -12331,7 +12328,7 @@ def main():
     # Recompute interval-derived values after config file and CLI resolution so a config-file
     # SPOTIFY_CHECK_INTERVAL is honored, not only a --check-interval override
     if SPOTIFY_CHECK_INTERVAL > 0:
-        LIVENESS_CHECK_COUNTER = LIVENESS_CHECK_INTERVAL / SPOTIFY_CHECK_INTERVAL
+        LIVENESS_CHECK_COUNTER = max(1, -(-LIVENESS_CHECK_INTERVAL // SPOTIFY_CHECK_INTERVAL)) if LIVENESS_CHECK_INTERVAL else 0
     PLAYLIST_INFO_CACHE_TTL = (SPOTIFY_CHECK_INTERVAL * 2 if SPOTIFY_CHECK_INTERVAL > 43200 else 43200)
     if args.profile_notification is True:
         PROFILE_NOTIFICATION = True
