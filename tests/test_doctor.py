@@ -13,6 +13,11 @@ import spotify_profile_monitor as monitor
 # Composes the two renderers the way run_doctor does, so a test can assert on the whole transcript
 def render_doctor_report(report):
     return monitor.render_doctor_sections(report) + "\n" + monitor.render_doctor_summary(report.checks)
+
+
+# Builds the minimal action a WARN or FAIL row is required to carry
+def actionable_fix():
+    return "do the thing"
 class TTYBuffer(StringIO):
     def isatty(self):
         return True
@@ -57,7 +62,7 @@ def test_missing_colorama_is_reported_on_windows(monkeypatch):
     missing = next(check for check in checks if "colorama" in check.label)
     assert missing.status == "WARN"
     assert "Coloured output may not render in the classic Windows Command Prompt" in missing.detail
-    assert "Windows Terminal needs nothing extra" in missing.detail
+    assert "Windows Terminal, which needs nothing extra" in missing.fix
 
 
 # Pillow moved to an optional extra, so a missing copy must never be reported as a broken installation
@@ -68,7 +73,7 @@ def test_doctor_treats_missing_artwork_support_as_optional():
     check = next(item for item in checks if "Pillow" in item.label)
     assert check.status == "WARN"
     # The rendered command follows the entry point, so assert the part that holds either way
-    assert "-m pip install" in check.detail and "Normal monitoring is unaffected" in check.detail
+    assert "-m pip install" in check.fix and "Normal monitoring is unaffected" in check.detail
 
 
 # A user who turned artwork on needs to be told the alerts are silently text-only until Pillow is installed
@@ -482,7 +487,7 @@ def test_secret_sources_split_by_origin(monkeypatch, tmp_path):
 def test_a_row_never_prints_its_summary_twice():
     repeated = "No valid sp_dc cookie was found"
 
-    check = monitor.make_doctor_check("Configuration", "WARN", repeated, repeated)
+    check = monitor.make_doctor_check("Configuration", "WARN", repeated, repeated, actionable_fix())
 
     assert check.label == repeated
     assert check.detail == ""
@@ -579,9 +584,18 @@ def test_a_detail_that_repeats_its_label_is_dropped():
 
 
 # Verifies only the four shared markers can reach a report
+def test_an_actionable_row_is_rejected_without_a_fix():
+    for status in ("WARN", "FAIL"):
+        with pytest.raises(ValueError):
+            monitor.make_doctor_check("Configuration", status, "a label", "some detail")
+
+    assert monitor.make_doctor_check("Configuration", "SKIP", "a label").status == "SKIP"
+
+
+# Verifies only the four shared markers can reach a report
 def test_only_the_four_shared_markers_are_accepted():
     assert monitor.DOCTOR_STATUSES == ("PASS", "WARN", "FAIL", "SKIP")
-    assert [monitor.make_doctor_check("Configuration", status, "a label").status for status in monitor.DOCTOR_STATUSES] == list(monitor.DOCTOR_STATUSES)
+    assert [monitor.make_doctor_check("Configuration", status, "a label", "", actionable_fix()).status for status in monitor.DOCTOR_STATUSES] == list(monitor.DOCTOR_STATUSES)
 
     with pytest.raises(ValueError):
         monitor.make_doctor_check("Configuration", "INFO", "a label")

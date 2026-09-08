@@ -8863,6 +8863,9 @@ def make_doctor_check(section: str, status: str, label: str, detail: Any = "", f
     if status not in DOCTOR_STATUSES:
         raise ValueError(f"Unsupported Doctor status: {status}")
     selected_fix = advice.fix if advice is not None and not fix else fix
+    # A row the user has to act on is useless without an action, so the row is rejected rather than printed bare
+    if status in ("WARN", "FAIL") and not selected_fix:
+        raise ValueError(f"Doctor {status} rows require a fix")
     safe_label = sanitize_error_text(label)
     safe_detail = sanitize_error_text(detail)
     # Several advice objects carry the same text as their summary, and printing it twice reads as two problems
@@ -8871,10 +8874,9 @@ def make_doctor_check(section: str, status: str, label: str, detail: Any = "", f
 
 # Explains what missing artwork support means for the current image settings and how to install it
 def doctor_notification_images_detail() -> str:
-    remedy = f"Install it with: {notification_images_install_command()}"
     if EMAIL_IMAGES or NTFY_IMAGES:
-        return f"Artwork attachments are enabled, so email and ntfy alerts stay text-only until Pillow is installed. Normal monitoring is unaffected. {remedy}"
-    return f"Required only when EMAIL_IMAGES or NTFY_IMAGES attaches artwork to alerts, which is currently disabled. Normal monitoring is unaffected. {remedy}"
+        return "Artwork attachments are enabled, so email and ntfy alerts stay text-only until Pillow is installed. Normal monitoring is unaffected"
+    return "Required only when EMAIL_IMAGES or NTFY_IMAGES attaches artwork to alerts, which is currently disabled. Normal monitoring is unaffected"
 
 
 # Checks the active Python version plus required and optional dependencies
@@ -8910,13 +8912,19 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
             present = find_spec(module_name) is not None
         except (ImportError, ValueError):
             present = False
+        missing_fix = f"Install it with: pip3 install {package_name}"
         if module_name == "PIL":
             purpose = "Used only for email and ntfy artwork attachments" if present else doctor_notification_images_detail()
+            missing_fix = f"Install it with: {notification_images_install_command()}"
         elif module_name == "colorama":
-            purpose = "Used only for coloured output in the classic Windows Command Prompt" if present else "Coloured output may not render in the classic Windows Command Prompt. Normal monitoring is unaffected. Windows Terminal needs nothing extra"
+            purpose = "Used only for coloured output in the classic Windows Command Prompt" if present else "Coloured output may not render in the classic Windows Command Prompt. Normal monitoring is unaffected"
+            missing_fix = "Install it with: pip3 install colorama. Or use Windows Terminal, which needs nothing extra"
         else:
             purpose = "Used only for importing cookies from Chromium-based browsers. Firefox cookie import does not need it" if present else "Required only for importing cookies from Chromium-based browsers. Normal monitoring is unaffected. Firefox cookie import is also unaffected"
-        checks.append(make_doctor_check("Environment", "PASS" if present else "WARN", f"Optional dependency {package_name} is {'installed' if present else 'not installed'}", purpose))
+        if present:
+            checks.append(make_doctor_check("Environment", "PASS", f"Optional dependency {package_name} is installed", purpose))
+        else:
+            checks.append(make_doctor_check("Environment", "WARN", f"Optional dependency {package_name} is not installed", purpose, recovery_fix_with_guide(missing_fix, INSTALLATION_GUIDE_URL)))
     return checks
 
 
@@ -9185,7 +9193,7 @@ def doctor_check_optional_oauth(report: Optional[DoctorReport] = None) -> List[D
         target_playlists = report.target_profile.get("sp_user_public_playlists_uris", []) if report is not None and isinstance(report.target_profile, dict) else []
         playlist_uri = next((item.get("uri") for item in target_playlists if isinstance(item, dict) and item.get("uri")), None)
         if playlist_uri is None:
-            return [make_doctor_check("Metadata", "WARN", "Legacy OAuth token issued, but playlist access was not checked", "No public target playlist was available. Normal monitoring can use the web-player backend if the legacy API is restricted")]
+            return [make_doctor_check("Metadata", "WARN", "Legacy OAuth token issued, but playlist access was not checked", "No public target playlist was available. Normal monitoring can use the web-player backend if the legacy API is restricted", recovery_fix_with_guide("Run doctor again against a profile that has at least one public playlist to check legacy metadata access", OAUTH_GUIDE_URL))]
         _spotify_get_playlist_info_api(token, playlist_uri, False, oauth_app=True)
         return [make_doctor_check("Metadata", "PASS", "Legacy OAuth playlist metadata access succeeded", f"A live metadata request for {playlist_uri} succeeded with a memory-only token. No OAuth cache was written")]
     except Exception as exc:
@@ -9315,7 +9323,10 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> List[DoctorCheck]:
     if email_ready:
         if _doctor_ask_yes_no("Send one test email now? This will deliver a real message"):
             result = send_email("spotify_profile_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "", SMTP_SSL, smtp_timeout=5)
-            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if result == 0 else "FAIL", "Doctor test email delivered" if result == 0 else "Doctor test email delivery failed", "One real test email was sent after confirmation" if result == 0 else "The approved test email could not be delivered. Review the SMTP error above")
+            if result == 0:
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", "Doctor test email delivered", "One real test email was sent after confirmation")
+            else:
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", "Doctor test email delivery failed", "The approved test email could not be delivered", recovery_fix_with_guide("Review the SMTP error above and correct the email settings", SMTP_GUIDE_URL))
         else:
             check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email was not sent", "You declined the real delivery test. Run doctor again and approve the email test when ready")
         results.append(check)
@@ -9326,7 +9337,10 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> List[DoctorCheck]:
         provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
             result = send_webhook("spotify_profile_monitor: doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "profile", force=True)
-            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if result == 0 else "FAIL", f"Doctor test webhook through {provider} delivered" if result == 0 else f"Doctor test webhook through {provider} delivery failed", "One real test webhook was sent after confirmation" if result == 0 else "The approved test webhook could not be delivered. Review the webhook error above")
+            if result == 0:
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", f"Doctor test webhook through {provider} delivered", "One real test webhook was sent after confirmation")
+            else:
+                check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "FAIL", f"Doctor test webhook through {provider} delivery failed", "The approved test webhook could not be delivered", recovery_fix_with_guide("Review the webhook error above and correct the destination settings", WEBHOOK_GUIDE_URL))
         else:
             check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", f"Test webhook through {provider} was not sent", "You declined the real delivery test. Run doctor again and approve the webhook test when ready")
         results.append(check)
@@ -9518,16 +9532,19 @@ def _wizard_ask_choice(question: str, options, default_index: int = 0) -> int:
 
 
 # Prompts until the user provides a positive integer
-def _wizard_ask_positive_int(question: str, default: int) -> int:
+def _wizard_ask_positive_int(question: str, default: int, maximum: Optional[int] = None) -> int:
     while True:
         value = _wizard_ask_text(question, default=str(default), required=True)
+        # An empty answer means the retry offer was declined, so the default stands instead of asking again
+        if not value:
+            return int(default)
         try:
             parsed = int(value)
         except ValueError:
             parsed = 0
-        if parsed > 0:
+        if parsed > 0 and (maximum is None or parsed <= maximum):
             return parsed
-        print("  Enter a positive whole number.")
+        print(f"  Enter a whole number from 1 through {maximum}." if maximum is not None else "  Enter a positive whole number.")
 
 
 # Converts seconds into a compact setup duration label
@@ -9887,7 +9904,7 @@ def _wizard_collect_email(config_values: dict, secret_updates: dict, env_path: P
         host = _wizard_ask_text("SMTP host", default=_wizard_default(pending.get("SMTP_HOST")), required=True)
         if _wizard_email_answer_missing(config_values, host, secret_updates):
             return []
-        port = _wizard_ask_positive_int("SMTP port", int(pending.get("SMTP_PORT") or 587))
+        port = _wizard_ask_positive_int("SMTP port", int(pending.get("SMTP_PORT") or 587), maximum=65535)
         use_ssl = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=bool(pending.get("SMTP_SSL", True)))
         user = _wizard_ask_text("SMTP username", default=_wizard_default(pending.get("SMTP_USER")), required=True)
         if _wizard_email_answer_missing(config_values, user, secret_updates):
