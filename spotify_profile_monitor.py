@@ -8442,11 +8442,12 @@ def _wizard_set_webhook_url_cmd(method: str, env_path=None, exact: bool = False,
 
 
 # Prints the exact monitoring command after a successful Doctor run
-def _wizard_print_monitor_after_doctor(config_path, env_path, target: Optional[str] = None, target_is_saved: bool = False) -> None:
+def _wizard_print_monitor_after_doctor(config_path, env_path, target: Optional[str] = None, target_is_saved: bool = False, doctor_exit: int = 0) -> None:
     command_target = None if target_is_saved else target or "SPOTIFY_TARGET"
     command = _wizard_action_command(_wizard_install_method(), "", config_path, env_path, command_target)
     print(colorize('header', "\nNext steps\n"))
-    _wizard_print_command("After Doctor passes, start monitoring:", command)
+    _wizard_print_command("After Doctor passes, start monitoring:" if doctor_exit else "Start monitoring:", command)
+    print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}")
 
 
 # Renders the --help examples: one heading per task, then a comment and the command it describes
@@ -12289,10 +12290,9 @@ def main():
     if args.doctor:
         doctor_target = args.user_id if args.user_id is not None else TARGET_USER_URI_ID
         doctor_exit = run_doctor(doctor_target, cfg_path or CLI_CONFIG_PATH, env_path, doctor_startup_checks)
-        if doctor_exit == 0:
-            command_config = "none" if config_discovery_disabled else cfg_path or CLI_CONFIG_PATH
-            command_env = "none" if args.env_file and args.env_file.casefold() == "none" else env_path
-            _wizard_print_monitor_after_doctor(command_config, command_env, args.user_id, target_is_saved=args.user_id is None and bool(TARGET_USER_URI_ID))
+        command_config = "none" if config_discovery_disabled else cfg_path or CLI_CONFIG_PATH
+        command_env = "none" if args.env_file and args.env_file.casefold() == "none" else env_path
+        _wizard_print_monitor_after_doctor(command_config, command_env, args.user_id, target_is_saved=args.user_id is None and bool(TARGET_USER_URI_ID), doctor_exit=doctor_exit)
         sys.exit(doctor_exit)
 
     if (EMAIL_IMAGES or NTFY_IMAGES) and not NOTIFICATION_IMAGES_AVAILABLE:

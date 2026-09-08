@@ -623,3 +623,30 @@ def test_the_connectivity_row_names_the_shared_endpoint(monkeypatch):
     assert (passing.status, passing.label, passing.detail) == ("PASS", "The connectivity endpoint is reachable", "Endpoint: https://probe.example/ping")
     assert (failing.status, failing.label, failing.detail) == ("FAIL", "The connectivity endpoint could not be reached", "Endpoint: https://probe.example/ping")
     assert failing.fix == "Check network, DNS, proxy and CHECK_INTERNET_URL settings"
+
+
+# Verifies a report read on its own ends with the command that starts monitoring, carrying this run's files
+def test_the_report_ends_with_the_command_that_starts_monitoring(capsys):
+    monitor._wizard_print_monitor_after_doctor("/etc/spm.conf", "/etc/spm.env", "friend.user", doctor_exit=0)
+
+    transcript = capsys.readouterr().out
+    assert "Next steps" in transcript
+    assert "Start monitoring:" in transcript
+    # The paths are resolved before printing, so the flags and file names are what this pins
+    assert "--config-file" in transcript and "spm.conf" in transcript
+    assert "--env-file" in transcript and "spm.env" in transcript
+    assert transcript.rstrip().endswith(monitor.QUICK_START_GUIDE_URL)
+
+
+# Verifies a failing report names the order to work in, rather than inviting a run that cannot succeed yet
+def test_a_failing_report_asks_for_the_failures_first(capsys):
+    monitor._wizard_print_monitor_after_doctor("/etc/spm.conf", "/etc/spm.env", "friend.user", doctor_exit=1)
+
+    assert "After Doctor passes, start monitoring:" in capsys.readouterr().out
+
+
+# Verifies the dotenv sentinel is carried, since monitoring only reads the file the sentinel disables
+def test_the_dotenv_sentinel_is_carried_into_the_command(capsys):
+    monitor._wizard_print_monitor_after_doctor("none", "none", "friend.user", doctor_exit=0)
+
+    assert "--env-file none" in capsys.readouterr().out

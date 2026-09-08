@@ -17,6 +17,8 @@ Doctor shows the current check phase, opens with the raw install method, then re
 
 When a terminal is interactive and passive checks pass, Doctor separately offers one real email test and one real webhook test. Each prompt defaults to No. Warnings do not fail the command. A failed check or approved delivery test returns a nonzero exit status. The `Summary` line is printed after the tests finish and counts their results, so the sentence and the exit code always describe the same run.
 
+The report ends with a **Next steps** block naming the command that starts monitoring, carrying the same `--config-file` and `--env-file` this run checked. While a check is failing it asks for the failures first.
+
 
 <a id="choosing-the-right-logging-level"></a>
 ## Choosing the Right Logging Level
