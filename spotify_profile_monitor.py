@@ -11553,7 +11553,7 @@ def main():
     conf.add_argument(
         "--setup",
         action="store_true",
-        help="Run the interactive first-run setup wizard",
+        help="Run the guided setup and write a ready-to-run configuration",
     )
     conf.add_argument(
         "--config-file",
@@ -11596,7 +11596,7 @@ def main():
     conf.add_argument(
         "--doctor",
         action="store_true",
-        help="Run preflight checks with separately approved delivery tests then exit",
+        help="Run read-only preflight checks and report what is ready and what is not",
     )
 
     cookie_auth = parser.add_argument_group("Auth details for 'cookie' token source")
