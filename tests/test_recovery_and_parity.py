@@ -408,7 +408,7 @@ def test_doctor_build_reports_progress(monkeypatch):
 
     monitor.build_doctor_report(progress=phases.append)
 
-    assert phases == ["environment", "configuration", "Spotify authentication", "connectivity and target", "metadata", "notifications"]
+    assert phases == ["environment", "configuration", "authentication", "connectivity and the monitored profile", "metadata", "notifications"]
 
 
 # Verifies Doctor preserves a startup failure for an explicitly missing dotenv file

@@ -8090,7 +8090,7 @@ def run_browser_cookie_import(browser="firefox", browser_profile=None, cookie_fi
             raise BrowserCookieImportError(f"Dotenv destination '{destination}' already contains SP_DC_COOKIE. Re-run with --force to replace it in a noninteractive environment.")
         prompt = input if input_func is None else input_func
         try:
-            confirmed = read_interactively(prompt, f"Replace SP_DC_COOKIE in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+            confirmed = read_interactively(prompt, f"Replace the saved Spotify cookie in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
         except (EOFError, KeyboardInterrupt):
             confirmed = False
         if not confirmed:
@@ -8118,7 +8118,7 @@ def run_set_sp_dc(env_file=None, interactive=None, input_func=None, getpass_func
     prompt = input if input_func is None else input_func
     if _dotenv_contains_key(destination, "SP_DC_COOKIE", SpDcConfigurationError):
         try:
-            confirmed = read_interactively(prompt, f"Replace SP_DC_COOKIE in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
+            confirmed = read_interactively(prompt, f"Replace the saved Spotify cookie in '{destination}'? [y/N]: ").strip().casefold() in ("y", "yes")
         except (EOFError, KeyboardInterrupt):
             print()
             raise RecoveryError(secret_entry_cancelled_advice("Spotify cookie", "--set-sp-dc", MANUAL_COOKIE_GUIDE_URL)) from None
@@ -9380,10 +9380,10 @@ def build_doctor_report(target_value=None, config_path=None, env_path=None, star
         progress("configuration")
     report.checks.extend(doctor_check_configuration(config_path, env_path, startup_checks, target_value, timezone_advice))
     if progress is not None:
-        progress("Spotify authentication")
+        progress("authentication")
     report.checks.extend(doctor_check_authentication(report))
     if progress is not None:
-        progress("connectivity and target")
+        progress("connectivity and the monitored profile")
     report.checks.extend(doctor_check_connectivity(report))
     report.checks.extend(doctor_check_target(report, target_value))
     if progress is not None:

@@ -74,3 +74,16 @@ def test_validate_sp_dc_cookie_restores_runtime_settings(monkeypatch):
     assert monitor.TOKEN_SOURCE == "client"
     assert monitor.USER_AGENT == ""
     assert monitor.DEBUG_MODE is True
+
+
+# Verifies the replace question names the secret the way every sibling one-shot command names its own
+def test_set_sp_dc_replace_question_uses_the_shared_wording(monkeypatch):
+    with make_test_directory() as directory_name:
+        destination = Path(directory_name) / ".env"
+        destination.write_text("SP_DC_COOKIE=old-value\n", encoding="utf-8")
+        prompts = []
+        monkeypatch.setattr(monitor, "validate_sp_dc_cookie", Mock(return_value=True))
+
+        monitor.run_set_sp_dc(env_file=destination, interactive=True, input_func=lambda prompt: prompts.append(prompt) or "y", getpass_func=lambda prompt: "new-private-sp-dc")
+
+        assert prompts == [f"Replace the saved Spotify cookie in '{destination.resolve()}'? [y/N]: "]
