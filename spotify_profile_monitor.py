@@ -833,6 +833,9 @@ SECRET_KEYS = ("SP_DC_COOKIE", "SP_APP_CLIENT_ID", "SP_APP_CLIENT_SECRET", "SP_U
 # Effective source name for each configured secret without storing another copy of its value
 SECRET_SOURCES = {}
 
+# Secret keys that were already exported when the tool started, so a dotenv file cannot be credited for them
+EXPORTED_SECRET_KEYS: frozenset = frozenset()
+
 # Config values that retain safe template defaults in generated files
 SENSITIVE_CONFIG_KEYS = frozenset((*SECRET_KEYS, "WEBHOOK_HEADERS"))
 
@@ -10050,6 +10053,8 @@ def _wizard_load_effective_setup(config_path: Path, env_path: Path) -> bool:
             for key in SECRET_KEYS:
                 if parsed.get(key) is not None:
                     globals()[key] = parsed[key]
+                    # A secret exported before startup still wins at the next start, so the export keeps the credit
+                    SECRET_SOURCES[key] = "environment" if key in EXPORTED_SECRET_KEYS else "dotenv file"
         except Exception:
             print(f"* Error: Dotenv file '{env_path}' could not be loaded")
             return False
@@ -11532,7 +11537,7 @@ def apply_diagnostic_cli_overrides(args: argparse.Namespace) -> None:
 # Parses configuration and command-line options then runs the selected operation
 def main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, JSON_DIR, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, VERBOSE_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, EMAIL_IMAGES, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, CLEAN_OUTPUT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TARGET_USER_URI_ID, TRUNCATE_CHARS, NTFY_IMAGES, COLORED_OUTPUT, COLOR_THEME
-    global EXPORT_ALL, EXPORT_ALL_FORCE, PLAYLIST_INFO_CACHE_TTL, WEBHOOK_ENABLED
+    global EXPORT_ALL, EXPORT_ALL_FORCE, PLAYLIST_INFO_CACHE_TTL, WEBHOOK_ENABLED, EXPORTED_SECRET_KEYS
 
     stdout_bck = sys.stdout
 
@@ -12117,7 +12122,7 @@ def main():
         if DOTENV_FILE:
             DOTENV_FILE = os.path.expanduser(DOTENV_FILE)
 
-    exported_secret_keys = frozenset(secret for secret in SECRET_KEYS if os.getenv(secret) is not None)
+    EXPORTED_SECRET_KEYS = frozenset(secret for secret in SECRET_KEYS if os.getenv(secret) is not None)
     SECRET_SOURCES.clear()
     for secret in SECRET_KEYS:
         if doctor_secret_is_set(globals().get(secret)):
@@ -12182,7 +12187,7 @@ def main():
         val = os.getenv(secret)
         if val is not None:
             globals()[secret] = val
-            SECRET_SOURCES[secret] = "environment" if secret in exported_secret_keys else "dotenv file"
+            SECRET_SOURCES[secret] = "environment" if secret in EXPORTED_SECRET_KEYS else "dotenv file"
 
     if args.no_color is True:
         COLORED_OUTPUT = False
