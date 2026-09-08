@@ -258,12 +258,13 @@ def test_doctor_target_classifies_authentication_mode_restriction(monkeypatch):
     assert "cookie or client" in check.fix
 
 
-# Verifies Doctor resolves the automatic timezone instead of accepting it without checking
+# Verifies Doctor reports the automatic timezone the shared resolver settled on rather than the literal Auto value
 def test_doctor_configuration_resolves_auto_timezone(monkeypatch):
     monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "Auto")
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE_STATE", "config")
     monkeypatch.setattr(monitor, "get_localzone", Mock(return_value="Europe/Warsaw"))
 
-    checks = monitor.doctor_check_configuration()
+    checks = monitor.doctor_check_configuration(timezone_advice=monitor.resolve_local_timezone())
 
     assert any(check.status == "PASS" and check.label == "Local timezone can be detected" and check.detail == "Time zone: Europe/Warsaw" for check in checks)
 
@@ -650,3 +651,15 @@ def test_the_dotenv_sentinel_is_carried_into_the_command(capsys):
     monitor._wizard_print_monitor_after_doctor("none", "none", "friend.user", doctor_exit=0)
 
     assert "--env-file none" in capsys.readouterr().out
+
+
+# Verifies the row names the state the shared resolver settled on, so it says what a restart would say
+def test_the_timezone_row_follows_the_shared_resolver(monkeypatch):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "Mars/Olympus_Mons")
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE_STATE", "config")
+
+    advice = monitor.resolve_local_timezone()
+
+    assert monitor.LOCAL_TIMEZONE_STATE == "invalid"
+    row = next(item for item in monitor.doctor_check_configuration(timezone_advice=advice) if item.label in monitor.TIMEZONE_CHECK_LABELS.values())
+    assert (row.status, row.label, row.detail) == ("FAIL", "Local timezone is invalid", "Time zone: Mars/Olympus_Mons")
