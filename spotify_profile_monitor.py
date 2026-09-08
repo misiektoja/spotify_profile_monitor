@@ -989,10 +989,8 @@ COLLABORATORS_PENDING_CACHE = {}
 PLAYLISTS_BASELINE_CACHE = {}
 PLAYLISTS_PENDING_CACHE = {}
 
-# Whole checks, so a check interval longer than the liveness interval still waits one check instead of reporting on every check
-LIVENESS_CHECK_COUNTER = max(1, -(-LIVENESS_CHECK_INTERVAL // SPOTIFY_CHECK_INTERVAL)) if LIVENESS_CHECK_INTERVAL else 0
 # Seconds rather than checks, because a failing run usually retries on a different interval than a healthy one
-LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_COUNTER else 0
+LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL > 0 else 0
 
 stdout_bck = None
 csvfieldnames = ['Date', 'Type', 'Name', 'Old', 'New']
@@ -10682,7 +10680,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     time.sleep(SPOTIFY_CHECK_INTERVAL)
     email_sent = False
     webhook_sent = False
-    alive_counter = 0
+    alive_since = int(time.time())
     check_count = 0
 
     # Primary loop
@@ -10709,6 +10707,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             outage_lasted = outage.recovered()
             if outage_lasted is not None:
                 print_outage_recovery(user_uri_id, outage_lasted)
+                alive_since = int(time.time())
             _restore_timeout_alarm(alarm_state)
         except TimeoutException as e:
             _restore_timeout_alarm(alarm_state)
@@ -10781,6 +10780,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             follower_lasted = follower_outage.recovered()
             if follower_lasted is not None:
                 print_outage_recovery(user_uri_id, follower_lasted)
+                alive_since = int(time.time())
         except Exception as e:
             follower_advice = classify_recovery_error(e, f"{TOKEN_SOURCE}_auth")
 
@@ -11614,13 +11614,12 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 debug_print("Playlist processing was partial: advancing successful baselines while retaining failed baselines")
             list_of_playlists_old = merge_playlist_snapshots(list_of_playlists_old, list_of_playlists, playlists_old)
 
-        alive_counter += 1
 
         debug_print("Completed check", check=f"#{check_count}", user=user_uri_id, next=display_time(SPOTIFY_CHECK_INTERVAL))
 
-        if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER:
+        if LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
             print_liveness_banner(f"Monitoring healthy for {user_uri_id}. No profile or playlist change since the last check")
-            alive_counter = 0
+            alive_since = int(time.time())
 
         time.sleep(SPOTIFY_CHECK_INTERVAL)
 
@@ -11683,7 +11682,7 @@ def apply_diagnostic_cli_overrides(args: argparse.Namespace) -> None:
 
 # Parses configuration and command-line options then runs the selected operation
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, LIVENESS_REMINDER_SECONDS, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, JSON_DIR, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, VERBOSE_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, EMAIL_IMAGES, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, CLEAN_OUTPUT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TARGET_USER_URI_ID, TRUNCATE_CHARS, NTFY_IMAGES, COLORED_OUTPUT, COLOR_THEME
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_REMINDER_SECONDS, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, JSON_DIR, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, VERBOSE_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, EMAIL_IMAGES, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, CLEAN_OUTPUT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TARGET_USER_URI_ID, TRUNCATE_CHARS, NTFY_IMAGES, COLORED_OUTPUT, COLOR_THEME
     global EXPORT_ALL, EXPORT_ALL_FORCE, PLAYLIST_INFO_CACHE_TTL, WEBHOOK_ENABLED, EXPORTED_SECRET_KEYS
 
     stdout_bck = sys.stdout
@@ -12414,8 +12413,7 @@ def main():
     # Recompute interval-derived values after config file and CLI resolution so a config-file
     # SPOTIFY_CHECK_INTERVAL is honored, not only a --check-interval override
     if SPOTIFY_CHECK_INTERVAL > 0:
-        LIVENESS_CHECK_COUNTER = max(1, -(-LIVENESS_CHECK_INTERVAL // SPOTIFY_CHECK_INTERVAL)) if LIVENESS_CHECK_INTERVAL else 0
-        LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_COUNTER else 0
+        LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL > 0 else 0
     PLAYLIST_INFO_CACHE_TTL = (SPOTIFY_CHECK_INTERVAL * 2 if SPOTIFY_CHECK_INTERVAL > 43200 else 43200)
     if args.profile_notification is True:
         PROFILE_NOTIFICATION = True

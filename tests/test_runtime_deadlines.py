@@ -232,6 +232,7 @@ def test_the_loop_routes_its_failures_through_the_outage_reporter():
     assert re.search(r"outage\.failed\(advice, LIVENESS_REMINDER_SECONDS\)", source)
     assert "print_liveness_banner(" in source, "the healthy banner and its timestamp belong in one call"
     assert "verbose_print(f\"Monitoring healthy" not in source, "the healthy banner is no longer verbose-only"
+    assert "int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS" in source, "the healthy banner is timed rather than counted"
 
 
 # Confirms a SIGHUP reload picks up rotated secrets from the dotenv file
