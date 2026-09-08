@@ -250,17 +250,30 @@ def test_recovery_hint_tracker_deduplicates_and_resets(capsys):
     tracker = monitor.RecoveryHintTracker()
     error = RuntimeError("401 Unauthorized sp_dc")
 
-    monitor.print_monitor_recovery(error, "cookie_auth", tracker, "* Retry: ")
+    monitor.print_monitor_recovery(error, "cookie_auth", tracker, "retrying in 5 minutes")
     first = capsys.readouterr().out
-    monitor.print_monitor_recovery(error, "cookie_auth", tracker, "* Retry: ")
+    monitor.print_monitor_recovery(error, "cookie_auth", tracker, "retrying in 5 minutes")
     second = capsys.readouterr().out
     tracker.reset()
-    monitor.print_monitor_recovery(error, "cookie_auth", tracker, "* Retry: ")
+    monitor.print_monitor_recovery(error, "cookie_auth", tracker, "retrying in 5 minutes")
     third = capsys.readouterr().out
 
+    assert first.splitlines()[0].startswith("* Error: ")
+    assert first.splitlines()[0].endswith(" (retrying in 5 minutes)")
     assert "To fix:" in first
-    assert "To fix:" not in second
-    assert "To fix:" in third
+    assert second == first.splitlines()[0] + "\n"
+    assert third == first
+
+
+# Verifies a named sub-operation keeps the shared line shape rather than inventing its own
+def test_a_labelled_failure_keeps_the_shared_shape(capsys):
+    error = RuntimeError("401 Unauthorized sp_dc")
+
+    monitor.print_monitor_recovery(error, "cookie_auth", None, "retrying in 5 minutes", "Error while getting followers and followings")
+
+    first_line = capsys.readouterr().out.splitlines()[0]
+    assert first_line.startswith("* Error while getting followers and followings: ")
+    assert first_line.endswith(" (retrying in 5 minutes)")
 
 
 # Verifies a lasting failure is reported once and then only on the liveness cadence

@@ -2377,14 +2377,20 @@ def print_recovery_error(error: Any = None, context: str = "runtime", debug: Opt
     return advice
 
 
-# Prints one recurring error while suppressing unchanged recovery instructions
-def print_monitor_recovery(error: Any, context: str, tracker: RecoveryHintTracker, prefix: str) -> RecoveryAdvice:
-    advice = classify_recovery_error(error, context)
-    print(prefix + advice.summary)
-    if tracker.should_render(advice):
-        print(f"To fix: {advice.fix}")
+# Renders one monitoring failure in the shape every monitor in this family prints
+def render_monitor_recovery(advice: RecoveryAdvice, retry_note: str = "", with_fix: bool = True, label: str = "Error") -> str:
+    lines = [f"* {label}: {advice.summary}" + (f" ({retry_note})" if retry_note else "")]
+    if with_fix:
+        lines.append(f"To fix: {advice.fix}")
         if DEBUG_MODE and advice.detail:
-            print(f"Technical detail: {sanitize_error_text(advice.detail)}")
+            lines.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
+    return "\n".join(lines)
+
+
+# Prints one recurring error while suppressing unchanged recovery instructions
+def print_monitor_recovery(error: Any, context: str, tracker: Optional[RecoveryHintTracker] = None, retry_note: str = "", label: str = "Error") -> RecoveryAdvice:
+    advice = classify_recovery_error(error, context)
+    print(render_monitor_recovery(advice, retry_note, tracker is None or tracker.should_render(advice), label))
     return advice
 
 
@@ -10697,7 +10703,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             _restore_timeout_alarm(alarm_state)
         except TimeoutException as e:
             _restore_timeout_alarm(alarm_state)
-            print_monitor_recovery(e, "runtime", monitor_recovery_tracker, f"* Error, retrying in {display_time(ALARM_RETRY)}: ")
+            print_monitor_recovery(e, "runtime", monitor_recovery_tracker, f"retrying in {display_time(ALARM_RETRY)}")
             print_cur_ts("Timestamp:\t\t\t")
             time.sleep(ALARM_RETRY)
             continue
@@ -10719,7 +10725,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
             outage_outcome = outage.failed(advice, LIVENESS_CHECK_COUNTER)
             if outage_outcome in ("full", "repeat"):
-                print_monitor_recovery(e, context, monitor_recovery_tracker, f"* Error, retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}: ")
+                print_monitor_recovery(e, context, monitor_recovery_tracker, f"retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}")
             elif outage_outcome == "degraded":
                 print_outage_liveness(user_uri_id, advice, outage.since)
 
@@ -10772,7 +10778,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
             follower_outcome = follower_outage.failed(follower_advice, LIVENESS_CHECK_COUNTER)
             if follower_outcome in ("full", "repeat"):
-                print_monitor_recovery(e, f"{TOKEN_SOURCE}_auth", follower_recovery_tracker, f"* Error while getting followers and followings, retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}: ")
+                print_monitor_recovery(e, f"{TOKEN_SOURCE}_auth", follower_recovery_tracker, f"retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}", "Error while getting followers and followings")
                 print_cur_ts("Timestamp:\t\t\t")
             elif follower_outcome == "degraded":
                 print_outage_liveness(user_uri_id, follower_advice, follower_outage.since)
