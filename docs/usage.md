@@ -401,6 +401,8 @@ If you want to customize polling interval, use `-c` flag (or `SPOTIFY_CHECK_INTE
 spotify_profile_monitor <spotify_target> -c 900
 ```
 
+An interval below 30 seconds invites the Spotify rate limiter, which stops the tool seeing anything. `--doctor` warns when the configured interval is that short.
+
 <a id="terminal-output-modes"></a>
 ## Terminal Output Modes
 
