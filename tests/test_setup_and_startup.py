@@ -909,6 +909,18 @@ def test_the_cookie_recovery_command_leaves_the_dotenv_sentinel_out(monkeypatch)
     assert fix.endswith("python3 spotify_profile_monitor.py --import-browser-cookie --browser firefox")
 
 
+# Verifies the config sentinel is carried, since the import it suggests reads the config rather than writing it
+def test_the_cookie_recovery_command_carries_the_config_sentinel(monkeypatch):
+    monkeypatch.setattr(monitor.sys, "argv", ["spotify_profile_monitor.py"])
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", None)
+    monkeypatch.setattr(monitor, "CONFIG_DISCOVERY_DISABLED", True)
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "")
+
+    fix = monitor.cookie_auth_recovery_fix()
+
+    assert fix.endswith("python3 spotify_profile_monitor.py --import-browser-cookie --browser firefox --config-file none")
+
+
 # Verifies the no-target error opens with the banner, the way every other error path in the sibling monitors does
 def test_a_missing_target_prints_the_banner_first():
     project_root = Path(__file__).resolve().parents[1]

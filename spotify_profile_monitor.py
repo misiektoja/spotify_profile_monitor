@@ -999,6 +999,9 @@ imgcat_exe = ""
 
 CLI_CONFIG_PATH = None
 
+# Set when --config-file none switches discovery off, so no later lookup can find a file the run rejected
+CONFIG_DISCOVERY_DISABLED = False
+
 # To solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
 
@@ -2165,10 +2168,15 @@ def active_dotenv_path():
     return None if not DOTENV_FILE or str(DOTENV_FILE).casefold() == "none" else DOTENV_FILE
 
 
+# Returns the config path this run was given, or the "none" sentinel when discovery was switched off
+def active_config_path():
+    return CLI_CONFIG_PATH or ("none" if CONFIG_DISCOVERY_DISABLED else None)
+
+
 # Returns an install-aware Firefox cookie recovery command
 def cookie_auth_recovery_fix() -> str:
-    # The sentinel is left out rather than carried, since the import writes the dotenv and refuses --env-file none
-    command = _wizard_action_command(_wizard_install_method(), "--import-browser-cookie --browser firefox", CLI_CONFIG_PATH, active_dotenv_path())
+    # The import reads the config and writes the dotenv, so the config sentinel is carried while the dotenv one is not
+    command = _wizard_action_command(_wizard_install_method(), "--import-browser-cookie --browser firefox", active_config_path(), active_dotenv_path())
     return f"Open {SPOTIFY_WEB_LOGIN_URL} in Firefox. Sign in to the Spotify account used for monitoring then run: {command}"
 
 
@@ -12067,13 +12075,13 @@ def main():
             parser.error(f"{', '.join(import_only_flags)} require --import-browser-cookie")
 
     doctor_startup_checks = []
-    config_discovery_disabled = args.config_file is not None and args.config_file.casefold() == "none"
-    if config_discovery_disabled:
+    CONFIG_DISCOVERY_DISABLED = args.config_file is not None and args.config_file.casefold() == "none"
+    if CONFIG_DISCOVERY_DISABLED:
         CLI_CONFIG_PATH = None
     elif args.config_file:
         CLI_CONFIG_PATH = os.path.expanduser(args.config_file)
 
-    cfg_path = None if config_discovery_disabled else find_config_file(CLI_CONFIG_PATH)
+    cfg_path = None if CONFIG_DISCOVERY_DISABLED else find_config_file(CLI_CONFIG_PATH)
 
     if not cfg_path and CLI_CONFIG_PATH:
         advice = classify_recovery_error(context="config_missing", detail=f"Configuration file not found: {CLI_CONFIG_PATH}")
@@ -12318,7 +12326,7 @@ def main():
             LOCAL_TIMEZONE = "UTC"
         doctor_target = args.user_id if args.user_id is not None else TARGET_USER_URI_ID
         doctor_exit = run_doctor(doctor_target, cfg_path or CLI_CONFIG_PATH, env_path, doctor_startup_checks, timezone_advice=timezone_advice)
-        command_config = "none" if config_discovery_disabled else cfg_path or CLI_CONFIG_PATH
+        command_config = "none" if CONFIG_DISCOVERY_DISABLED else cfg_path or CLI_CONFIG_PATH
         command_env = "none" if args.env_file and args.env_file.casefold() == "none" else env_path
         _wizard_print_monitor_after_doctor(command_config, command_env, args.user_id, target_is_saved=args.user_id is None and bool(TARGET_USER_URI_ID), doctor_exit=doctor_exit)
         sys.exit(doctor_exit)
