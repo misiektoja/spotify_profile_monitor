@@ -9155,7 +9155,7 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> List[DoctorCheck]:
     if webhook_ready:
         provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
-            result = send_webhook("Spotify Profile Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "profile", force=True)
+            result = send_webhook("spotify_profile_monitor: doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "profile", force=True)
             check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if result == 0 else "FAIL", "Doctor test webhook delivered" if result == 0 else "Doctor test webhook delivery failed")
         else:
             check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test webhook was not sent")
@@ -12267,7 +12267,7 @@ def main():
         prepare_startup_screen()
         report_retired_settings(config_retired, cfg_path)
         print("* Sending a test webhook ...\n")
-        if send_webhook("Spotify Profile Monitor test", "Your webhook alerts are set up correctly.", "profile", force=True) == 0:
+        if send_webhook("spotify_profile_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.", "profile", force=True) == 0:
             print("* Test webhook sent successfully !")
         else:
             sys.exit(1)
@@ -12311,7 +12311,7 @@ def main():
 
     if args.send_test_email:
         print("* Sending test email notification ...\n")
-        if send_email("spotify_profile_monitor: test email", "This is test email - your SMTP settings seems to be correct !", "", SMTP_SSL, smtp_timeout=5) == 0:
+        if send_email("spotify_profile_monitor: test email", "This test email was sent by --send-test-email. Your SMTP settings work.", "", SMTP_SSL, smtp_timeout=5) == 0:
             print("* Email sent successfully !")
         else:
             sys.exit(1)

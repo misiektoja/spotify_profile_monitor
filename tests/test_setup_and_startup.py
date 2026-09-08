@@ -906,3 +906,26 @@ def test_a_missing_target_prints_the_banner_first():
     assert result.returncode == 1
     assert monitor.STARTUP_BANNER.strip() in output
     assert output.index(monitor.STARTUP_BANNER.strip()) < output.index("* Error: No Spotify target was provided")
+
+
+# Verifies both test commands carry the subject, title and body shared with the sibling monitors
+def test_the_test_messages_use_the_shared_wording(monkeypatch):
+    email = Mock(return_value=0)
+    delivery = Mock(return_value=0)
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", None)
+    monkeypatch.setattr(monitor, "DOTENV_FILE", "")
+    monkeypatch.setattr(monitor, "TOKEN_SOURCE", "cookie")
+    monkeypatch.setattr(monitor, "USER_AGENT", "test-agent")
+    monkeypatch.setattr(monitor, "find_config_file", lambda path=None: None)
+    monkeypatch.setattr(monitor, "prepare_startup_screen", Mock())
+    monkeypatch.setattr(monitor, "send_email", email)
+    monkeypatch.setattr(monitor, "send_webhook", delivery)
+
+    for flag in ("--send-test-email", "--send-test-webhook"):
+        monkeypatch.setattr(monitor.sys, "argv", ["spotify_profile_monitor", flag, "--env-file", "none"])
+        with pytest.raises(SystemExit) as error:
+            monitor.main()
+        assert error.value.code == 0
+
+    assert email.call_args.args[:2] == ("spotify_profile_monitor: test email", "This test email was sent by --send-test-email. Your SMTP settings work.")
+    assert delivery.call_args.args[:2] == ("spotify_profile_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.")
