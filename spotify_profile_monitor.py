@@ -7498,6 +7498,20 @@ def _config_allowed_names() -> FrozenSet[str]:
     return frozenset(statement.targets[0].id for statement in template_tree.body if isinstance(statement, ast.Assign) and len(statement.targets) == 1 and isinstance(statement.targets[0], ast.Name)) | COMMENTED_CONFIG_SETTINGS
 
 
+# Returns the literal values the built-in config template ships with, used to clear a section the user declined
+def _config_template_defaults() -> dict:
+    template_tree = ast.parse(CONFIG_BLOCK, "<built-in-config>", "exec")
+    defaults = {}
+    for statement in template_tree.body:
+        if not isinstance(statement, ast.Assign) or len(statement.targets) != 1 or not isinstance(statement.targets[0], ast.Name):
+            continue
+        try:
+            defaults[statement.targets[0].id] = ast.literal_eval(statement.value)
+        except ValueError:
+            continue
+    return defaults
+
+
 # Parses allowlisted literal config assignments without executing any file content
 def parse_config_content(content: str, filename: str = "<config>", retired_out: Optional[List[str]] = None) -> Dict[str, Any]:
     tree = ast.parse(content, filename, "exec")
@@ -9631,7 +9645,7 @@ def _wizard_destinations(config_file=None, env_file=None):
 # Confirms replacement or selects another config destination before collecting secrets
 def _wizard_choose_config_destination(config_path: Path) -> Path:
     selected = config_path
-    while selected.exists() and not _wizard_ask_yes_no(f"Configuration file '{selected}' exists. Replace it with a fresh configuration built from defaults and create a timestamped backup?", default=False):
+    while selected.exists() and not _wizard_ask_yes_no(f"Configuration file '{selected}' exists. A timestamped backup is kept. Rebuild it from your answers, starting from its current settings?", default=False):
         alternative = _wizard_ask_text("Another config destination or leave empty to cancel")
         if not alternative:
             print("\n" + colorize("warning", "Setup cancelled. Destination files were not changed."))
@@ -9828,47 +9842,61 @@ def _wizard_smtp_sign_in_accepted(values: dict, password: str) -> Optional[bool]
     return None
 
 
+# Returns one declined section to the built-in template values, so nothing the user turned down is written
+def _wizard_clear_section(config_values: dict, config_keys: Sequence[str], secret_updates: Optional[dict] = None, secret_keys: Sequence[str] = ()) -> None:
+    defaults = _config_template_defaults()
+    for name in config_keys:
+        if name in defaults:
+            config_values[name] = defaults[name]
+        else:
+            config_values.pop(name, None)
+    for name in secret_keys:
+        if secret_updates is not None:
+            secret_updates.pop(name, None)
+
+
 # Switches every email alert off together, so an abandoned answer cannot leave half a mail server configured
-def _wizard_disable_email(config_values: dict) -> None:
+def _wizard_disable_email(config_values: dict, secret_updates: Optional[dict] = None) -> None:
+    _wizard_clear_section(config_values, WIZARD_SMTP_CONFIG_KEYS, secret_updates, ("SMTP_PASSWORD",))
     config_values.update({"PROFILE_NOTIFICATION": False, "FOLLOWERS_FOLLOWINGS_NOTIFICATION": False, "ERROR_NOTIFICATION": False, "EMAIL_IMAGES": False})
 
 
 # Reports whether one required mail server answer was abandoned, switching the channel off when it was
-def _wizard_email_answer_missing(config_values: dict, answer: str) -> bool:
+def _wizard_email_answer_missing(config_values: dict, answer: str, secret_updates: Optional[dict] = None) -> bool:
     if answer:
         return False
     print("  Email notifications stay off until every mail server setting is answered.")
-    _wizard_disable_email(config_values)
+    _wizard_disable_email(config_values, secret_updates)
     return True
 
 
 # Collects SMTP settings and profile-monitor notification choices
 def _wizard_collect_email(config_values: dict, secret_updates: dict, env_path: Path) -> List[str]:
     if not _wizard_ask_yes_no("Configure email notifications?", default=False):
-        _wizard_disable_email(config_values)
+        _wizard_disable_email(config_values, secret_updates)
         return []
     pending = dict(config_values)
     while True:
         host = _wizard_ask_text("SMTP host", default=_wizard_default(pending.get("SMTP_HOST")), required=True)
-        if _wizard_email_answer_missing(config_values, host):
+        if _wizard_email_answer_missing(config_values, host, secret_updates):
             return []
         port = _wizard_ask_positive_int("SMTP port", int(pending.get("SMTP_PORT") or 587))
         use_ssl = _wizard_ask_yes_no("Enable TLS/SSL for SMTP?", default=bool(pending.get("SMTP_SSL", True)))
         user = _wizard_ask_text("SMTP username", default=_wizard_default(pending.get("SMTP_USER")), required=True)
-        if _wizard_email_answer_missing(config_values, user):
+        if _wizard_email_answer_missing(config_values, user, secret_updates):
             return []
         sender = _wizard_ask_text("Sender email", default=_wizard_default(pending.get("SENDER_EMAIL")), required=True)
-        if _wizard_email_answer_missing(config_values, sender):
+        if _wizard_email_answer_missing(config_values, sender, secret_updates):
             return []
         receiver = _wizard_ask_text("Receiver email", default=_wizard_default(pending.get("RECEIVER_EMAIL")), required=True)
-        if _wizard_email_answer_missing(config_values, receiver):
+        if _wizard_email_answer_missing(config_values, receiver, secret_updates):
             return []
         smtp_values = {"SMTP_HOST": host, "SMTP_PORT": port, "SMTP_SSL": use_ssl, "SMTP_USER": user, "SENDER_EMAIL": sender, "RECEIVER_EMAIL": receiver}
         pending.update(smtp_values)
         smtp_password = _wizard_ask_secret("SMTP password")
         outcome = _wizard_smtp_sign_in_accepted(smtp_values, smtp_password)
         if outcome is None:
-            _wizard_disable_email(config_values)
+            _wizard_disable_email(config_values, secret_updates)
             return []
         if outcome:
             break
@@ -9922,14 +9950,15 @@ def _wizard_collect_ntfy_access_token(secret_updates: dict, env_path: Path) -> N
 
 
 # Switches the channel and every alert it owns off together, so a half-configured webhook cannot be written
-def _wizard_disable_webhook(config_values: dict) -> None:
+def _wizard_disable_webhook(config_values: dict, secret_updates: Optional[dict] = None) -> None:
+    _wizard_clear_section(config_values, ("WEBHOOK_PROVIDER",), secret_updates, ("WEBHOOK_URL", "NTFY_ACCESS_TOKEN"))
     config_values.update({"WEBHOOK_ENABLED": False, "WEBHOOK_PROFILE_NOTIFICATION": False, "WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION": False, "WEBHOOK_ERROR_NOTIFICATION": False, "NTFY_IMAGES": False})
 
 
 # Collects hidden webhook details and profile-monitor alert choices
 def _wizard_collect_webhook(config_values: dict, secret_updates: dict, env_path: Path) -> List[str]:
     if not _wizard_ask_yes_no("Set up webhook alerts (Discord, ntfy etc.)?", default=False):
-        _wizard_disable_webhook(config_values)
+        _wizard_disable_webhook(config_values, secret_updates)
         return []
     provider_choice = _wizard_ask_choice("Which webhook service should receive alerts?", [("Discord", "Sends a Discord embed to one channel webhook."), ("ntfy", "Sends a native notification to one ntfy topic URL.")])
     provider = "discord" if provider_choice == 0 else "ntfy"
@@ -9950,14 +9979,14 @@ def _wizard_collect_webhook(config_values: dict, secret_updates: dict, env_path:
             if not webhook_input.strip():
                 if _wizard_offer_retry("webhook URL", "Webhook alerts stay off until one is set"):
                     continue
-                _wizard_disable_webhook(config_values)
+                _wizard_disable_webhook(config_values, secret_updates)
                 return []
             if provider == "ntfy":
                 print("  Enter a complete HTTPS ntfy topic URL or a topic name containing up to 64 letters, numbers, dashes or underscores.")
             else:
                 print("  That does not look like a complete HTTPS webhook URL. Copy it from the webhook service and try again.")
             if not _wizard_offer_retry("webhook URL"):
-                _wizard_disable_webhook(config_values)
+                _wizard_disable_webhook(config_values, secret_updates)
                 return []
         if existing_webhook:
             secret_updates["WEBHOOK_URL"] = webhook_url
@@ -10054,11 +10083,19 @@ def _wizard_collect_webhook_section(state: WizardSetupState) -> None:
     state.enabled_webhooks = _wizard_collect_webhook(state.config_values, state.secret_updates, state.env_path)
 
 
+# Adds the .csv extension when the answer carries none, so a bare name still names a CSV file
+def _wizard_normalize_csv_path(answer: str) -> str:
+    text = str(answer).strip()
+    if not text or Path(text).suffix:
+        return text
+    return text + ".csv"
+
+
 # Collects the log and CSV output destinations monitoring would write
 def _wizard_collect_output_section(state: WizardSetupState) -> None:
     _wizard_reset_section(state, WIZARD_OUTPUT_CONFIG_KEYS, ())
     state.config_values["DISABLE_LOGGING"] = not _wizard_ask_yes_no("Write the normal per-target log file?", default=not bool(state.config_values.get("DISABLE_LOGGING")))
-    state.config_values["CSV_FILE"] = _wizard_ask_text("Optional CSV output path (blank disables it)", default=str(state.config_values.get("CSV_FILE") or ""))
+    state.config_values["CSV_FILE"] = _wizard_normalize_csv_path(_wizard_ask_text("Optional CSV output path (blank disables it)", default=str(state.config_values.get("CSV_FILE") or "")))
 
 
 # Lets the user change file destinations and recollects secret-bearing sections

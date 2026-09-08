@@ -258,6 +258,17 @@ def test_startup_summary_shows_current_json_directory_path(tmp_path, monkeypatch
     assert json_row.value == str(tmp_path)
 
 
+# Verifies a CSV answer without an extension is saved as a .csv file while an explicit extension is left alone
+def test_the_csv_answer_gains_a_csv_extension_when_it_has_none(tmp_path, monkeypatch):
+    baseline = dict(vars(monitor))
+    state = monitor.WizardSetupState(tmp_path / "config.conf", tmp_path / ".env", baseline, dict(baseline), {}, "target.user", True, {"complete": False, "validated": False, "browser": None, "source": "not configured"}, [], [])
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: True)
+    for typed, expected in (("activity", "activity.csv"), ("activity.csv", "activity.csv"), ("activity.txt", "activity.txt"), ("", "")):
+        monkeypatch.setattr(monitor, "_wizard_ask_text", lambda question, default="", **kwargs: typed)
+        monitor._wizard_collect_output_section(state)
+        assert state.config_values["CSV_FILE"] == expected
+
+
 # Verifies setup review can edit one section without losing other answers
 def test_setup_review_edits_polling_without_losing_state(tmp_path, monkeypatch):
     baseline = dict(vars(monitor))
@@ -509,7 +520,8 @@ def test_an_abandoned_mail_server_answer_switches_email_off(monkeypatch, tmp_pat
     monkeypatch.setattr(monitor, "_wizard_ask_secret", lambda question: "private-password")
 
     assert monitor._wizard_collect_email(config_values, secret_updates, tmp_path / ".env") == []
-    assert config_values == {"PROFILE_NOTIFICATION": False, "FOLLOWERS_FOLLOWINGS_NOTIFICATION": False, "ERROR_NOTIFICATION": False, "EMAIL_IMAGES": False}
+    assert not any(config_values[name] for name in ("PROFILE_NOTIFICATION", "FOLLOWERS_FOLLOWINGS_NOTIFICATION", "ERROR_NOTIFICATION", "EMAIL_IMAGES"))
+    assert config_values["SMTP_HOST"] == "your_smtp_server_ssl"
     assert secret_updates == {}
 
 
