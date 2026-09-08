@@ -260,7 +260,7 @@ def test_doctor_configuration_resolves_auto_timezone(monkeypatch):
 
     checks = monitor.doctor_check_configuration()
 
-    assert any(check.status == "PASS" and check.label == "Local timezone can be detected" and check.detail == "Europe/Warsaw" for check in checks)
+    assert any(check.status == "PASS" and check.label == "Local timezone can be detected" and check.detail == "Time zone: Europe/Warsaw" for check in checks)
 
 
 # Verifies Doctor checks the final target-specific log filename
@@ -343,8 +343,9 @@ def test_doctor_names_disabled_output_destinations(monkeypatch):
     checks = monitor.doctor_check_configuration()
 
     rows = {(check.status, check.label, check.detail) for check in checks}
-    assert ("PASS", "CSV logging is disabled", "No CSV file will be written") in rows
-    assert ("PASS", "Output logging is disabled", "No log file will be written") in rows
+    # The labels say everything, so neither row carries a detail that only repeats them
+    assert ("PASS", "CSV logging is disabled", "") in rows
+    assert ("PASS", "Output logging is disabled", "") in rows
 
 
 # Verifies Doctor visually attaches explanatory details to their check rows
@@ -508,3 +509,35 @@ def test_unusable_email_settings_warn_and_name_the_same_settings(monkeypatch):
     assert check.detail == "SMTP_USER or SMTP_PASSWORD is empty or still set to its placeholder"
     assert "Set SMTP_USER and SMTP_PASSWORD or turn the email alerts off" in check.fix
     assert monitor.SMTP_GUIDE_URL in check.fix
+
+
+# Verifies every doctor detail keeps to the agreed shapes: it never repeats its label, gives an instruction or joins values with a pipe
+def test_doctor_details_keep_to_the_agreed_shapes():
+    import ast
+    import inspect
+
+    # Renders one detail argument as text, standing in {} for the parts an f-string fills at runtime
+    def detail_text(node):
+        if isinstance(node, ast.Constant):
+            return node.value if isinstance(node.value, str) else None
+        if isinstance(node, ast.JoinedStr):
+            return "".join(part.value if isinstance(part, ast.Constant) else "{}" for part in node.values)
+        return None
+
+    offenders = []
+    for node in ast.walk(ast.parse(inspect.getsource(monitor))):
+        if not isinstance(node, ast.Call) or ast.unparse(node.func) not in {"make_doctor_check", "report.add"} or len(node.args) < 4:
+            continue
+        label, text = node.args[2], detail_text(node.args[3])
+        if text is None:
+            continue
+        if isinstance(label, ast.Constant) and text == label.value:
+            offenders.append(f"{node.lineno}: the detail repeats its label")
+        if text.startswith(("Use ", "Set ", "Run ")):
+            offenders.append(f"{node.lineno}: the detail gives an instruction, which belongs in the fix line")
+        if " | " in text:
+            offenders.append(f"{node.lineno}: the detail joins two values with a pipe")
+        if text.endswith("."):
+            offenders.append(f"{node.lineno}: the detail ends with a full stop")
+
+    assert not offenders, "doctor details outside the agreed shapes:\n" + "\n".join(offenders)

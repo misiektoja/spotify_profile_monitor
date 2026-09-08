@@ -8843,7 +8843,7 @@ def doctor_check_configuration(config_path=None, env_path=None, startup_checks: 
         else:
             timezone_error = None
         if detected_timezone and is_valid_timezone(detected_timezone):
-            checks.append(make_doctor_check("Configuration", "PASS", "Local timezone can be detected", detected_timezone))
+            checks.append(make_doctor_check("Configuration", "PASS", "Local timezone can be detected", f"Time zone: {detected_timezone}"))
         elif get_localzone is None:
             advice = make_recovery_advice("dependency.missing", "The local timezone could not be detected", recovery_fix_with_guide("Install tzlocal or set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_GUIDE_URL), False, "LOCAL_TIMEZONE is Auto but tzlocal is unavailable")
             checks.append(make_doctor_check("Configuration", "FAIL", "Automatic timezone detection is unavailable", advice.detail, advice.fix, advice))
@@ -8851,7 +8851,7 @@ def doctor_check_configuration(config_path=None, env_path=None, startup_checks: 
             advice = make_recovery_advice("config.invalid", "The local timezone could not be detected", recovery_fix_with_guide("Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_GUIDE_URL), False, f"tzlocal did not return a supported timezone{f': {timezone_error}' if timezone_error else ''}")
             checks.append(make_doctor_check("Configuration", "FAIL", "Automatic timezone detection failed", advice.detail, advice.fix, advice))
     elif is_valid_timezone(LOCAL_TIMEZONE):
-        checks.append(make_doctor_check("Configuration", "PASS", "Local timezone is valid", str(LOCAL_TIMEZONE)))
+        checks.append(make_doctor_check("Configuration", "PASS", "Local timezone is valid", f"Time zone: {LOCAL_TIMEZONE}"))
     else:
         advice = make_recovery_advice("config.invalid", "The local timezone is invalid", recovery_fix_with_guide("Set LOCAL_TIMEZONE to a valid pytz timezone", CONFIG_GUIDE_URL), False, str(LOCAL_TIMEZONE))
         checks.append(make_doctor_check("Configuration", "FAIL", "Local timezone is invalid", advice.detail, advice.fix, advice))
@@ -8874,7 +8874,7 @@ def doctor_check_configuration(config_path=None, env_path=None, startup_checks: 
     if CSV_FILE:
         destinations.append(("CSV destination", Path(CSV_FILE)))
     else:
-        checks.append(make_doctor_check("Configuration", "PASS", "CSV logging is disabled", "No CSV file will be written"))
+        checks.append(make_doctor_check("Configuration", "PASS", "CSV logging is disabled"))
     if not isinstance(JSON_DIR, str):
         advice = classify_recovery_error(context="config_invalid", detail=f"JSON_DIR must be a string, not {type(JSON_DIR).__name__}")
         checks.append(make_doctor_check("Configuration", "FAIL", "JSON_DIR is invalid", advice.detail, advice.fix, advice))
@@ -8888,7 +8888,7 @@ def doctor_check_configuration(config_path=None, env_path=None, startup_checks: 
         advice = None if writable else classify_recovery_error(context="file_write", detail=f"JSON directory is not writable: {json_destination}")
         checks.append(make_doctor_check("Configuration", "PASS" if writable else "FAIL", f"JSON directory {'appears writable' if writable else 'is not writable'}", f"Path: {json_destination}", advice.fix if advice else "", advice))
     if DISABLE_LOGGING:
-        checks.append(make_doctor_check("Configuration", "PASS", "Output logging is disabled", "No log file will be written"))
+        checks.append(make_doctor_check("Configuration", "PASS", "Output logging is disabled"))
     elif SP_LOGFILE:
         log_suffix = FILE_SUFFIX
         if not log_suffix and target_value:
@@ -9089,7 +9089,7 @@ def doctor_check_notifications() -> List[DoctorCheck]:
                     except Exception:
                         pass
     if not WEBHOOK_ENABLED:
-        checks.append(make_doctor_check("Notifications", "PASS", "Webhook alerts are disabled", "No webhook was sent"))
+        checks.append(make_doctor_check("Notifications", "PASS", "Webhook alerts are disabled"))
     elif not normalized_webhook_provider():
         advice = classify_recovery_error(context="webhook_config", detail=f"WEBHOOK_PROVIDER must be discord or ntfy, not {WEBHOOK_PROVIDER!r}")
         checks.append(make_doctor_check("Notifications", "FAIL", "Webhook provider is invalid", advice.detail, advice.fix, advice))
