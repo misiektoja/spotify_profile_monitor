@@ -929,3 +929,7 @@ def test_the_test_messages_use_the_shared_wording(monkeypatch):
 
     assert email.call_args.args[:2] == ("spotify_profile_monitor: test email", "This test email was sent by --send-test-email. Your SMTP settings work.")
     assert delivery.call_args.args[:2] == ("spotify_profile_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.")
+
+# Verifies the guide link opens the setup page the sibling monitors link, with no section fragment
+def test_the_welcome_guide_link_opens_the_shared_setup_page():
+    assert monitor.QUICK_START_GUIDE_URL.endswith("/setup-and-first-run/")
