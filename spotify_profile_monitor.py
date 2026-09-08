@@ -8031,8 +8031,8 @@ def run_browser_cookie_import(browser="firefox", browser_profile=None, cookie_fi
     print("* Browser cookie import completed successfully\n")
     method = _wizard_install_method()
     selected_config = config_path or find_config_file()
-    _wizard_print_command("Check setup again:", _wizard_action_command(method, "--doctor", selected_config, destination, target or "SPOTIFY_TARGET"))
-    _wizard_print_command("After Doctor passes, start monitoring:", _wizard_action_command(method, "", selected_config, destination, target or "SPOTIFY_TARGET"))
+    _wizard_print_command("Check setup again:", _wizard_action_command(method, "--doctor", selected_config, destination, target))
+    _wizard_print_command("After Doctor passes, start monitoring:", _wizard_action_command(method, "", selected_config, destination, target))
     return str(destination)
 
 
@@ -8069,9 +8069,8 @@ def run_set_sp_dc(env_file=None, interactive=None, input_func=None, getpass_func
     print(f"* Updated private settings file: {destination}")
     print()
     method = _wizard_install_method()
-    recovery_target = None if TARGET_USER_URI_ID else "SPOTIFY_TARGET"
-    _wizard_print_command("Check setup again:", _wizard_action_command(method, "--doctor", config_path or find_config_file(), destination, recovery_target))
-    _wizard_print_command("After Doctor passes, start monitoring:", _wizard_action_command(method, "", config_path or find_config_file(), destination, recovery_target))
+    _wizard_print_command("Check setup again:", _wizard_action_command(method, "--doctor", config_path or find_config_file(), destination))
+    _wizard_print_command("After Doctor passes, start monitoring:", _wizard_action_command(method, "", config_path or find_config_file(), destination))
     return str(destination)
 
 
@@ -8105,7 +8104,7 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
     method = _wizard_install_method()
     selected_config = config_path or find_config_file()
     test_command = _wizard_action_command(method, "--send-test-webhook", selected_config, destination)
-    doctor_command = _wizard_action_command(method, "--doctor", selected_config, destination, None if TARGET_USER_URI_ID else "SPOTIFY_TARGET")
+    doctor_command = _wizard_action_command(method, "--doctor", selected_config, destination)
     print("* Webhook URL looks valid")
     print(f"* Updated private settings file: {destination}")
     print()
@@ -8180,7 +8179,7 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     print(f"* Updated private settings file: {destination}")
     print()
     _wizard_print_command("Send a test email:", _wizard_action_command(method, "--send-test-email", selected_config, destination))
-    _wizard_print_command("Check setup again:", _wizard_action_command(method, "--doctor", selected_config, destination, None if TARGET_USER_URI_ID else "SPOTIFY_TARGET"))
+    _wizard_print_command("Check setup again:", _wizard_action_command(method, "--doctor", selected_config, destination))
     return str(destination)
 
 
@@ -8484,9 +8483,9 @@ def _wizard_set_webhook_url_cmd(method: str, env_path=None, exact: bool = False,
 
 
 # Prints the exact monitoring command after a successful Doctor run
-def _wizard_print_monitor_after_doctor(config_path, env_path, target: Optional[str] = None, target_is_saved: bool = False, doctor_exit: int = 0) -> None:
-    command_target = None if target_is_saved else target or "SPOTIFY_TARGET"
-    command = _wizard_action_command(_wizard_install_method(), "", config_path, env_path, command_target)
+def _wizard_print_monitor_after_doctor(config_path, env_path, target: Optional[str] = None, doctor_exit: int = 0) -> None:
+    # Only a target this run was given is printed, so the command stays pasteable rather than carrying a placeholder
+    command = _wizard_action_command(_wizard_install_method(), "", config_path, env_path, target)
     print(colorize('header', "\nNext steps\n"))
     _wizard_print_command("After Doctor passes, start monitoring:" if doctor_exit else "Start monitoring:", command)
     print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}")
@@ -9183,9 +9182,13 @@ def _doctor_ask_yes_no(question: str) -> bool:
     while True:
         try:
             value = read_interactively(input, f"{question} [y/N]: ").strip().casefold()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError:
             print("\nDelivery test skipped.")
             return False
+        except KeyboardInterrupt:
+            # Ctrl+C ends the run here the way it does anywhere else, rather than only declining this one test
+            signal_handler(signal.SIGINT, None)
+            raise
         if not value or value in ("n", "no"):
             return False
         if value in ("y", "yes"):
@@ -12328,7 +12331,7 @@ def main():
         doctor_exit = run_doctor(doctor_target, cfg_path or CLI_CONFIG_PATH, env_path, doctor_startup_checks, timezone_advice=timezone_advice)
         command_config = "none" if CONFIG_DISCOVERY_DISABLED else cfg_path or CLI_CONFIG_PATH
         command_env = "none" if args.env_file and args.env_file.casefold() == "none" else env_path
-        _wizard_print_monitor_after_doctor(command_config, command_env, args.user_id, target_is_saved=args.user_id is None and bool(TARGET_USER_URI_ID), doctor_exit=doctor_exit)
+        _wizard_print_monitor_after_doctor(command_config, command_env, args.user_id, doctor_exit=doctor_exit)
         sys.exit(doctor_exit)
 
     if (EMAIL_IMAGES or NTFY_IMAGES) and not NOTIFICATION_IMAGES_AVAILABLE:
