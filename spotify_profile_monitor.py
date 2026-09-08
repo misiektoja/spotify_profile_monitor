@@ -12069,6 +12069,9 @@ def main():
         sys.exit(1)
 
     if not args.user_id and not target_free_mode:
+        # Printed here because this gate exits long before the monitoring path reaches its own banner
+        prepare_startup_screen()
+        print_startup_banner()
         print_recovery_error(context="target_missing")
         sys.exit(1)
 

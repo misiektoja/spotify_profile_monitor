@@ -1,4 +1,6 @@
 import builtins
+import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -893,3 +895,14 @@ def test_the_cookie_recovery_command_names_the_files_this_run_was_given(monkeypa
     fix = monitor.cookie_auth_recovery_fix()
 
     assert f"python3 spotify_profile_monitor.py --import-browser-cookie --browser firefox --config-file {config_path} --env-file {env_path}" in fix
+
+
+# Verifies the no-target error opens with the banner, the way every other error path in the sibling monitors does
+def test_a_missing_target_prints_the_banner_first():
+    project_root = Path(__file__).resolve().parents[1]
+    result = subprocess.run([sys.executable, str(project_root / "spotify_profile_monitor.py"), "--config-file", "none", "--env-file", "none"], cwd=project_root, capture_output=True, text=True, check=False)
+
+    output = result.stdout + result.stderr
+    assert result.returncode == 1
+    assert monitor.STARTUP_BANNER.strip() in output
+    assert output.index(monitor.STARTUP_BANNER.strip()) < output.index("* Error: No Spotify target was provided")
