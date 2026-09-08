@@ -9835,7 +9835,7 @@ def _wizard_collect_webhook(config_values: dict, secret_updates: dict, env_path:
     if provider == "discord":
         print("  In Discord: Edit Channel > Integrations > Webhooks > New Webhook > Copy Webhook URL.")
     else:
-        print("  In ntfy: choose a hard-to-guess topic. Paste its name for ntfy.sh or use the complete HTTPS URL for a self-hosted server.")
+        print("  In ntfy: choose a hard-to-guess topic. Paste its complete topic URL, or just the topic name when it is hosted on ntfy.sh.")
     existing_webhook = _wizard_existing_secret("WEBHOOK_URL", env_path, ("your_webhook_url",))
     replace_webhook = not existing_webhook or _wizard_ask_choice("Which webhook URL should be used?", [("Keep the saved URL", "Keeps the private value without displaying or changing it."), ("Paste a new URL", "Uses a hidden prompt then saves the new private value in .env.")]) == 1
     if replace_webhook:
