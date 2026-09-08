@@ -1213,6 +1213,12 @@ class OutageReporter:
         return lasted
 
 
+# Reports that nothing changed, so a quiet run still says it is alive on the liveness cadence
+def print_liveness_banner(message: str) -> None:
+    print(f"* {sanitize_error_text(message)}")
+    print_cur_ts("Liveness check, timestamp:\t")
+
+
 # Reports a lasting failure on the liveness cadence, so a broken run still says it is alive without repeating itself
 def print_outage_liveness(target: str, advice: RecoveryAdvice, since: int) -> None:
     print(f"* Monitoring degraded for {target}. {advice.summary} since {get_date_from_ts(since)}")
@@ -11610,8 +11616,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         debug_print("Completed check", check=f"#{check_count}", user=user_uri_id, next=display_time(SPOTIFY_CHECK_INTERVAL))
 
         if LIVENESS_CHECK_COUNTER and alive_counter >= LIVENESS_CHECK_COUNTER:
-            verbose_print(f"Monitoring healthy for {user_uri_id}. No profile or playlist change since the last check")
-            print_cur_ts("Liveness check, timestamp:\t")
+            print_liveness_banner(f"Monitoring healthy for {user_uri_id}. No profile or playlist change since the last check")
             alive_counter = 0
 
         time.sleep(SPOTIFY_CHECK_INTERVAL)

@@ -316,6 +316,18 @@ def test_a_changed_failure_category_is_reported_in_full(monkeypatch, capsys):
     assert "* Monitoring recovered for watched-user after 1 minute" in output
 
 
+# Verifies the liveness banner explains itself without --verbose, so a plain run never prints a bare timestamp
+def test_the_liveness_banner_explains_itself_without_diagnostics(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor, "VERBOSE_MODE", False)
+
+    monitor.print_liveness_banner("Monitoring healthy for watched-user. No profile or playlist change since the last check")
+
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0] == "* Monitoring healthy for watched-user. No profile or playlist change since the last check"
+    assert lines[1].startswith("Liveness check, timestamp:")
+
+
 # Verifies existing generated configs require confirmation or explicit force
 def test_config_replacement_requires_confirmation_or_force(tmp_path):
     destination = tmp_path / "existing.conf"
