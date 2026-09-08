@@ -9250,10 +9250,12 @@ def doctor_email_unusable_check(detail: str, fix: str) -> DoctorCheck:
 def doctor_check_notifications() -> List[DoctorCheck]:
     checks = []
     email_enabled = bool(_startup_email_notification_categories()) and bool(SMTP_HOST) and not str(SMTP_HOST).startswith("your_smtp_server_")
-    if not email_enabled:
+    problem = email_settings_problem()
+    if not _startup_email_notification_categories() and problem is None:
+        checks.append(make_doctor_check("Notifications", "WARN", "Email is configured but no alert types are selected", "Nothing would ever be emailed", recovery_fix_with_guide("Turn on at least one email alert in the configuration file", SMTP_GUIDE_URL)))
+    elif not email_enabled:
         checks.append(make_doctor_check("Notifications", "PASS", "Email notifications are disabled", "No SMTP connection was attempted and no email was sent"))
     else:
-        problem = email_settings_problem()
         if problem is not None:
             checks.append(doctor_email_unusable_check(*problem))
         else:
@@ -9270,8 +9272,11 @@ def doctor_check_notifications() -> List[DoctorCheck]:
                         smtp_object.quit()
                     except Exception:
                         pass
-    if not WEBHOOK_ENABLED:
+    # The error alert ships on by default, so it alone cannot mean the channel was meant to be on
+    if not WEBHOOK_ENABLED and not WEBHOOK_PROFILE_NOTIFICATION:
         checks.append(make_doctor_check("Notifications", "PASS", "Webhook alerts are disabled"))
+    elif not WEBHOOK_ENABLED:
+        checks.append(make_doctor_check("Notifications", "WARN", "Webhook alert types are selected but webhooks are switched off", "Nothing would ever be delivered", recovery_fix_with_guide("Set WEBHOOK_ENABLED to True, or turn the alert types off", WEBHOOK_GUIDE_URL)))
     elif not normalized_webhook_provider():
         advice = classify_recovery_error(context="webhook_config", detail=f"WEBHOOK_PROVIDER must be discord or ntfy, not {WEBHOOK_PROVIDER!r}")
         checks.append(make_doctor_check("Notifications", "FAIL", "Webhook provider is invalid", advice.detail, advice.fix, advice))
@@ -9284,7 +9289,7 @@ def doctor_check_notifications() -> List[DoctorCheck]:
             advice = classify_recovery_error(context="webhook_config", detail=customization_error)
             checks.append(make_doctor_check("Notifications", "FAIL", "Webhook customization is invalid", advice.detail, advice.fix, advice))
         elif not _startup_webhook_notification_categories():
-            checks.append(make_doctor_check("Notifications", "WARN", "Webhook alerts are on but no alert types are selected", "No webhook was sent", "Enable at least one webhook alert or turn WEBHOOK_ENABLED off"))
+            checks.append(make_doctor_check("Notifications", "WARN", "Webhook alerts are on but no alert types are selected", "Nothing would ever be delivered", recovery_fix_with_guide("Turn on at least one webhook alert in the configuration file, or set WEBHOOK_ENABLED to False", WEBHOOK_GUIDE_URL)))
         else:
             checks.append(make_doctor_check("Notifications", "PASS", f"{WEBHOOK_READY_CHECK_LABEL} for {webhook_provider_display_name()}", f"Alerts: {', '.join(_startup_webhook_notification_categories())}. The private link was not displayed. No webhook was sent during this passive check"))
     return checks
@@ -12356,7 +12361,7 @@ def main():
                 if not os.path.isfile(env_path):
                     advice = classify_recovery_error(context="config_missing", detail=f"Dotenv file not found: {env_path}")
                     if args.doctor:
-                        doctor_startup_checks.append(make_doctor_check("Configuration", "FAIL", "The requested dotenv file was not found", advice.detail, advice.fix, advice))
+                        doctor_startup_checks.append(make_doctor_check("Configuration", "WARN", "The requested dotenv file was not found", advice.detail, advice.fix, advice))
                     else:
                         print(f"* Warning: dotenv file '{env_path}' does not exist")
                         print(f"Guide: {SECRETS_GUIDE_URL}\n")
