@@ -3,6 +3,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import unicodedata
 from unittest.mock import Mock
 
@@ -260,6 +261,46 @@ def test_recovery_hint_tracker_deduplicates_and_resets(capsys):
     assert "To fix:" in first
     assert "To fix:" not in second
     assert "To fix:" in third
+
+
+# Verifies a lasting failure is reported once and then only on the liveness cadence
+def test_the_outage_reporter_reports_once_then_on_the_cadence():
+    reporter = monitor.OutageReporter()
+    advice = monitor.classify_recovery_error(RuntimeError("503 Server Error"), "cookie_auth")
+
+    assert reporter.failed(advice, 3) == "full"
+    assert [reporter.failed(advice, 3) for _ in range(3)] == ["", "", "degraded"]
+    assert reporter.recovered() is not None
+    assert reporter.recovered() is None
+
+
+# Verifies the summary keeps its every-check cadence when the liveness banner is switched off
+def test_the_outage_reporter_keeps_repeating_without_a_liveness_banner():
+    reporter = monitor.OutageReporter()
+    advice = monitor.classify_recovery_error(RuntimeError("503 Server Error"), "cookie_auth")
+
+    assert reporter.failed(advice, 0) == "full"
+    assert [reporter.failed(advice, 0) for _ in range(2)] == ["repeat", "repeat"]
+
+
+# Verifies a failure category that changes is reported in full again rather than hidden by the previous one
+def test_a_changed_failure_category_is_reported_in_full(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    reporter = monitor.OutageReporter()
+    unavailable = monitor.classify_recovery_error(RuntimeError("503 Server Error"), "cookie_auth")
+    rejected = monitor.classify_recovery_error(RuntimeError("401 Unauthorized sp_dc"), "cookie_auth")
+
+    assert reporter.failed(unavailable, 5) == "full"
+    assert reporter.failed(unavailable, 5) == ""
+    assert reporter.failed(rejected, 5) == "full"
+
+    monitor.print_outage_liveness("watched-user", rejected, int(time.time()) - 60)
+    monitor.print_outage_recovery("watched-user", 60)
+
+    output = capsys.readouterr().out
+    assert f"* Monitoring degraded for watched-user. {rejected.summary} since " in output
+    assert "Liveness check, timestamp:" in output
+    assert "* Monitoring recovered for watched-user after 1 minute" in output
 
 
 # Verifies existing generated configs require confirmation or explicit force

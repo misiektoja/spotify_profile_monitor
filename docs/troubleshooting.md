@@ -34,7 +34,7 @@ spotify_profile_monitor <spotify_target> --verbose
 spotify_profile_monitor <spotify_target> --debug
 ```
 
-Recoverable failures use a short `Error`, `To fix` and relevant guide format. A command in the fix text matches how you installed the tool and carries the `--config-file` or `--env-file` you started with, so it can be pasted as it is. Repeated monitoring failures keep the short error visible but suppress unchanged recovery instructions until the operation succeeds or the failure category changes. Raw exception detail is shown only in debug mode.
+Recoverable failures use a short `Error`, `To fix` and relevant guide format. A command in the fix text matches how you installed the tool and carries the `--config-file` or `--env-file` you started with, so it can be pasted as it is. During a long outage the failure is reported in full once, then the liveness banner takes over with `* Monitoring degraded for <spotify_target>` and the summary of what is still failing, so a broken run keeps saying it is alive without repeating the same paragraph. When the failure clears, `* Monitoring recovered for <spotify_target>` reports how long it lasted. Setting `LIVENESS_CHECK_INTERVAL` to 0 removes the banner that carries the reminder, so the one-line summary goes back to printing on every check. Raw exception detail is shown only in debug mode.
 
 Cookies, tokens, passwords, authorization headers and webhook URLs are redacted from verbose and debug output, so sanitized output is safe to attach to a GitHub issue.
 

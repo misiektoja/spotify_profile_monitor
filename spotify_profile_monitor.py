@@ -1177,6 +1177,54 @@ class RecoveryError(Exception):
         super().__init__(advice.summary)
 
 
+# Decides how a lasting failure is reported: in full when it is new, then on the liveness cadence while it lasts
+class OutageReporter:
+    # Starts with no failure recorded, so the first failure of any category is reported in full
+    def __init__(self) -> None:
+        self.code: Optional[str] = None
+        self.since: int = 0
+        self.checks: int = 0
+
+    # Records one failed check and returns "full" for a new failure, "degraded" on the liveness cadence,
+    # "repeat" while the liveness banner is switched off or "" while the same failure is merely continuing
+    def failed(self, advice: RecoveryAdvice, liveness_counter: int) -> str:
+        if advice.code != self.code:
+            self.code = advice.code
+            self.since = int(time.time())
+            self.checks = 0
+            return "full"
+        self.checks += 1
+        # With the liveness banner off there is nothing to carry the reminder, so the summary keeps its old cadence
+        if not liveness_counter:
+            return "repeat"
+        if self.checks >= liveness_counter:
+            self.checks = 0
+            return "degraded"
+        return ""
+
+    # Clears the failure after a successful check and returns how long it lasted, or None when none was active
+    def recovered(self) -> Optional[int]:
+        if not self.code:
+            return None
+        lasted = int(time.time()) - self.since
+        self.code = None
+        self.since = 0
+        self.checks = 0
+        return lasted
+
+
+# Reports a lasting failure on the liveness cadence, so a broken run still says it is alive without repeating itself
+def print_outage_liveness(target: str, advice: RecoveryAdvice, since: int) -> None:
+    print(f"* Monitoring degraded for {target}. {advice.summary} since {get_date_from_ts(since)}")
+    print_cur_ts("Liveness check, timestamp:\t")
+
+
+# Reports that a failure cleared, since a throttled failure no longer stops printing when it is over
+def print_outage_recovery(target: str, lasted: int) -> None:
+    print(f"* Monitoring recovered for {target} after {display_time(max(1, lasted))}")
+    print_cur_ts("Timestamp:\t\t\t")
+
+
 # Suppresses repeated recovery hints until a successful operation resets the category
 @dataclass
 class RecoveryHintTracker:
@@ -10309,6 +10357,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     sp_accessToken = ""
     monitor_recovery_tracker = RecoveryHintTracker()
     follower_recovery_tracker = RecoveryHintTracker()
+    outage = OutageReporter()
+    follower_outage = OutageReporter()
 
     try:
         if csv_file_name:
@@ -10641,6 +10691,9 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             email_sent = False
             webhook_sent = False
             monitor_recovery_tracker.reset()
+            outage_lasted = outage.recovered()
+            if outage_lasted is not None:
+                print_outage_recovery(user_uri_id, outage_lasted)
             _restore_timeout_alarm(alarm_state)
         except TimeoutException as e:
             _restore_timeout_alarm(alarm_state)
@@ -10661,7 +10714,15 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             context = f"{TOKEN_SOURCE}_auth"
             if 'not found' in err or '404' in err:
                 context = "target_not_found"
-            advice = print_monitor_recovery(e, context, monitor_recovery_tracker, f"* Error, retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}: ")
+            advice = classify_recovery_error(e, context)
+
+            # A failure that has not changed is left to the liveness cadence rather than repeated every check
+            outage_outcome = outage.failed(advice, LIVENESS_CHECK_COUNTER)
+            if outage_outcome in ("full", "repeat"):
+                print_monitor_recovery(e, context, monitor_recovery_tracker, f"* Error, retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}: ")
+            elif outage_outcome == "degraded":
+                print_outage_liveness(user_uri_id, advice, outage.since)
+
             if notification_channels_pending("error", ERROR_NOTIFICATION, email_sent, webhook_sent):
                 safe_detail = sanitize_error_text(e)
                 m_subject = f"spotify_profile_monitor: {advice.summary} (uri: {user_uri_id})"
@@ -10669,7 +10730,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 m_body_html = f"<html><head></head><body>{escape(advice.summary)}<br><br>To fix: {escape(advice.fix)}<br><br>Technical detail: {escape(safe_detail)}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
                 email_sent, webhook_sent = send_pending_error_notification(m_subject, m_body, m_body_html, email_sent, webhook_sent)
 
-            print_cur_ts("Timestamp:\t\t\t")
+            if outage_outcome in ("full", "repeat"):
+                print_cur_ts("Timestamp:\t\t\t")
             time.sleep(SPOTIFY_ERROR_INTERVAL)
             continue
 
@@ -10701,9 +10763,19 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
             sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
             follower_recovery_tracker.reset()
+            follower_lasted = follower_outage.recovered()
+            if follower_lasted is not None:
+                print_outage_recovery(user_uri_id, follower_lasted)
         except Exception as e:
-            print_monitor_recovery(e, f"{TOKEN_SOURCE}_auth", follower_recovery_tracker, f"* Error while getting followers and followings, retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}: ")
-            print_cur_ts("Timestamp:\t\t\t")
+            follower_advice = classify_recovery_error(e, f"{TOKEN_SOURCE}_auth")
+
+            # A failure that has not changed is left to the liveness cadence rather than repeated every check
+            follower_outcome = follower_outage.failed(follower_advice, LIVENESS_CHECK_COUNTER)
+            if follower_outcome in ("full", "repeat"):
+                print_monitor_recovery(e, f"{TOKEN_SOURCE}_auth", follower_recovery_tracker, f"* Error while getting followers and followings, retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}: ")
+                print_cur_ts("Timestamp:\t\t\t")
+            elif follower_outcome == "degraded":
+                print_outage_liveness(user_uri_id, follower_advice, follower_outage.since)
             time.sleep(SPOTIFY_ERROR_INTERVAL)
             continue
 
