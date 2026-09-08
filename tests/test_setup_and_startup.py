@@ -387,6 +387,45 @@ def test_setup_saves_confirmed_incomplete_configuration(tmp_path, monkeypatch, c
     assert str(env_path) in output
 
 
+# Verifies the wizard tells the import runner whether the config will supply the target, so its printed
+# commands carry the target exactly when the config does not hold it
+@pytest.mark.parametrize(("persist", "expected_saved"), ((True, "target.user"), (False, "")))
+def test_browser_import_receives_the_persisted_target_decision(tmp_path, monkeypatch, capsys, persist, expected_saved):
+    config_path = tmp_path / "spotify_profile_monitor.conf"
+    env_path = tmp_path / ".env"
+    monkeypatch.setattr(monitor.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(monitor, "_wizard_choose_config_destination", lambda path: path)
+
+    # Supplies deterministic answers without bypassing setup persistence
+    def collect_target(state, initial_target=None):
+        state.target = "target.user"
+        state.persist_target = persist
+        state.config_values["TARGET_USER_URI_ID"] = state.target if persist else ""
+
+    # Selects browser import so the wizard reaches the shared import runner
+    def collect_auth(state, method):
+        state.config_values["TOKEN_SOURCE"] = "cookie"
+        state.auth = {"complete": False, "validated": False, "browser": "firefox", "source": "browser import (Firefox)"}
+
+    calls = []
+    monkeypatch.setattr(monitor, "_wizard_collect_target_section", collect_target)
+    monkeypatch.setattr(monitor, "_wizard_collect_auth_section", collect_auth)
+    monkeypatch.setattr(monitor, "_wizard_collect_polling_section", lambda state: None)
+    monkeypatch.setattr(monitor, "_wizard_collect_email_section", lambda state: setattr(state, "enabled_notifications", []))
+    monkeypatch.setattr(monitor, "_wizard_collect_webhook_section", lambda state: setattr(state, "enabled_webhooks", []))
+    monkeypatch.setattr(monitor, "_wizard_collect_output_section", lambda state: None)
+    monkeypatch.setattr(monitor, "_wizard_review_setup", lambda state, method: True)
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda *args, **kwargs: False)
+    monkeypatch.setattr(monitor, "_wizard_finish_browser_import", lambda *args: calls.append(args) or {"complete": True, "validated": True, "browser": "firefox", "source": "browser import (Firefox)"})
+
+    with pytest.raises(SystemExit) as error:
+        monitor.run_setup_wizard(config_file=config_path, env_file=env_path)
+
+    assert error.value.code == 0
+    assert calls[0][3] == "target.user"
+    assert calls[0][4] == expected_saved
+
+
 # Verifies the output section records the log choice and the CSV destination it was given
 def test_the_output_section_records_the_log_and_csv_choices(monkeypatch, tmp_path):
     baseline = dict(vars(monitor))

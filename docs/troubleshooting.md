@@ -17,7 +17,7 @@ Doctor shows the current check phase, opens with the raw install method, then re
 
 When a terminal is interactive and passive checks pass, Doctor separately offers one real email test and one real webhook test. Each prompt defaults to No. Ctrl+C at either prompt ends the run rather than declining one test and asking the next. Warnings do not fail the command. A failed check or approved delivery test returns a nonzero exit status. The `Summary` line is printed after the tests finish and counts their results, so the sentence and the exit code always describe the same run.
 
-The report ends with a **Next steps** block naming the command that starts monitoring, carrying the same `--config-file` and `--env-file` this run checked. While a check is failing it asks for the failures first.
+The report ends with a **Next steps** block naming the command that starts monitoring, carrying the same `--config-file` and `--env-file` this run checked. It carries the target this run used, leaves it out when the configuration file already supplies one and otherwise shows `<spotify_target>` for you to replace. While a check is failing it asks for the failures first.
 
 
 <a id="choosing-the-right-logging-level"></a>
