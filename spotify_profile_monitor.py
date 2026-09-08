@@ -9163,7 +9163,7 @@ def doctor_check_target(report: DoctorReport, target_value=None) -> List[DoctorC
         advice = classify_recovery_error(exc, "target_invalid")
         return [make_doctor_check("Target", "FAIL", advice.summary, advice.detail, advice.fix, advice)]
     if not report.access_token:
-        return [make_doctor_check("Target", "SKIP", f"Target '{target_id}' live check was skipped", "Authentication did not produce an access token", "Fix authentication then rerun Doctor")]
+        return [make_doctor_check("Target", "SKIP", f"Target '{target_id}' live check was skipped", "Authentication did not produce a reusable access token", "Fix authentication then run --doctor again")]
     try:
         report.target_profile = spotify_get_user_info(report.access_token, target_id, True, 0)
         return [make_doctor_check("Target", "PASS", f"Target '{target_id}' can be monitored", "A live Spotify profile request succeeded")]

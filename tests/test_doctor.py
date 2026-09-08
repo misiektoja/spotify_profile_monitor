@@ -150,6 +150,19 @@ def test_doctor_reuses_access_token_for_target(monkeypatch):
     profile_request.assert_called_once_with("access-token", "target.user", True, 0)
 
 
+# Verifies the connectivity and target rows skipped for the same missing token share one detail and one fix
+def test_skipped_connectivity_and_target_rows_share_the_same_fix(monkeypatch):
+    monkeypatch.setattr(monitor, "doctor_connectivity_endpoint_check", lambda: monitor.make_doctor_check("Connectivity", "PASS", "Endpoint answered"))
+    report = monitor.DoctorReport()
+
+    connectivity_skip = monitor.doctor_check_connectivity(report)[-1]
+    target_skip = monitor.doctor_check_target(report, "spotify:user:target.user")[0]
+
+    assert connectivity_skip.status == target_skip.status == "SKIP"
+    assert connectivity_skip.detail == target_skip.detail == "Authentication did not produce a reusable access token"
+    assert connectivity_skip.fix == target_skip.fix == "Fix authentication then run --doctor again"
+
+
 # Verifies Doctor tests legacy OAuth against the target playlist endpoint instead of token issuance alone
 def test_doctor_checks_legacy_metadata_with_target_playlist(monkeypatch):
     monkeypatch.setattr(monitor, "SP_APP_CLIENT_ID", "legacy-client")
