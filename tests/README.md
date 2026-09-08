@@ -60,8 +60,8 @@ would see.
 * Exported secrets are cleared before every test by the autouse fixture in `conftest.py`, because
   loading a dotenv writes them into `os.environ` and nothing removes them again. Set the one a test
   needs with `monkeypatch.setenv` inside that test.
-* Put disposable artifacts under `local/`, never in the repository root or the system temp
-  directory.
+* Write disposable artifacts to pytest's `tmp_path` or to the gitignored `local/` directory the
+  existing tests use. Do not leave them in the repository root.
 * Never use a real cookie, Protobuf login file, OAuth client secret, SMTP password or webhook URL.
 
 Online tests that authenticate against Spotify are excluded, because automated logins could trigger

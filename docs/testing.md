@@ -84,5 +84,5 @@ mkdocs build --strict
 
 - Keep everything offline. If a code path needs network access, stub it with `monkeypatch` rather than skipping the test.
 - Restore module-level globals you change. Tests share one imported module, so a leaked global affects whatever runs next.
-- Put disposable artifacts under `local/`, never in the repository root or the system temp directory.
+- Write disposable artifacts to pytest's `tmp_path` or to the gitignored `local/` directory the existing tests use. Do not leave them in the repository root.
 - Never use a real cookie, Protobuf login file, OAuth client secret, SMTP password or webhook URL.
