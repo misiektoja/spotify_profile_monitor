@@ -1932,9 +1932,12 @@ def smtp_ssl_context():
         context.verify_mode = ssl.CERT_NONE
     return context
 
+# The last connectivity failure, so a quiet caller can classify it instead of the check printing it
+LAST_CONNECTIVITY_ERROR = None
+
 
 # Checks internet connectivity
-def check_internet(url=None, timeout=None, verify=None):
+def check_internet(url=None, timeout=None, verify=None, quiet=False):
     # Resolve at call time so config file and dotenv overrides take effect (these globals change after import)
     url = CHECK_INTERNET_URL if url is None else url
     timeout = CHECK_INTERNET_TIMEOUT if timeout is None else timeout
@@ -1946,7 +1949,11 @@ def check_internet(url=None, timeout=None, verify=None):
         return True
     except req.RequestException as e:
         debug_print("HTTP GET", url=url, status=f"failed: {sanitize_error_text(e)}")
-        print_recovery_error(e, "runtime")
+        global LAST_CONNECTIVITY_ERROR
+        LAST_CONNECTIVITY_ERROR = e
+        # Quiet callers render the failure themselves, which doctor needs so nothing lands on its progress line
+        if not quiet:
+            print_recovery_error(e, "runtime")
         return False
 
 
@@ -8969,14 +8976,26 @@ def doctor_check_authentication(report: DoctorReport) -> List[DoctorCheck]:
         SP_APP_TOKENS_FILE = saved_oauth_cache
 
 
+# Confirms the endpoint the tool checks at startup answers, using the configured URL, timeout and TLS setting
+def doctor_connectivity_endpoint_check() -> DoctorCheck:
+    global LAST_CONNECTIVITY_ERROR
+    LAST_CONNECTIVITY_ERROR = None
+    if check_internet(quiet=True):
+        return make_doctor_check("Connectivity", "PASS", "The connectivity endpoint is reachable", f"Endpoint: {CHECK_INTERNET_URL}")
+    advice = classify_recovery_error(LAST_CONNECTIVITY_ERROR, "runtime", f"Could not reach {CHECK_INTERNET_URL}")
+    # The advice object is not attached, because this renderer hides the detail when one is present
+    return make_doctor_check("Connectivity", "FAIL", "The connectivity endpoint could not be reached", f"Endpoint: {CHECK_INTERNET_URL}", advice.fix)
+
+
 # Reports connectivity using the authenticated request when available
 def doctor_check_connectivity(report: DoctorReport) -> List[DoctorCheck]:
+    checks = [doctor_connectivity_endpoint_check()]
     if report.access_token:
-        return [make_doctor_check("Connectivity", "PASS", "Spotify is reachable", "Confirmed through the authentication request")]
+        return checks + [make_doctor_check("Connectivity", "PASS", "Spotify is reachable", "Confirmed through the authentication request")]
     if report.authentication_error and _looks_like_network_failure(report.authentication_error):
         advice = classify_recovery_error(req.ConnectionError(report.authentication_error), "runtime", report.authentication_error)
-        return [make_doctor_check("Connectivity", "FAIL", advice.summary, advice.detail, advice.fix, advice)]
-    return [make_doctor_check("Connectivity", "SKIP", "Spotify connectivity check was skipped", "Authentication did not produce a reusable access token", "Fix authentication then run --doctor again")]
+        return checks + [make_doctor_check("Connectivity", "FAIL", advice.summary, advice.detail, advice.fix, advice)]
+    return checks + [make_doctor_check("Connectivity", "SKIP", "Spotify connectivity check was skipped", "Authentication did not produce a reusable access token", "Fix authentication then run --doctor again")]
 
 
 # Validates an optional target through one live profile request
