@@ -2154,9 +2154,15 @@ def secret_replacement_declined_advice(subject, flag, guide_url, plural=False):
     return make_recovery_advice("secret.entry", f"The saved {subject} {kept} and the dotenv file was not changed", recovery_fix_with_guide(f"Run {flag} again and answer y to replace the saved value", guide_url), False)
 
 
+# Returns the dotenv path this run was given when a file was named and discovery is on, otherwise None
+def active_dotenv_path():
+    return None if not DOTENV_FILE or str(DOTENV_FILE).casefold() == "none" else DOTENV_FILE
+
+
 # Returns an install-aware Firefox cookie recovery command
 def cookie_auth_recovery_fix() -> str:
-    command = _wizard_action_command(_wizard_install_method(), "--import-browser-cookie --browser firefox", CLI_CONFIG_PATH, DOTENV_FILE or None)
+    # The sentinel is left out rather than carried, since the import writes the dotenv and refuses --env-file none
+    command = _wizard_action_command(_wizard_install_method(), "--import-browser-cookie --browser firefox", CLI_CONFIG_PATH, active_dotenv_path())
     return f"Open {SPOTIFY_WEB_LOGIN_URL} in Firefox. Sign in to the Spotify account used for monitoring then run: {command}"
 
 
