@@ -7998,7 +7998,7 @@ def run_browser_cookie_import(browser="firefox", browser_profile=None, cookie_fi
         print(f"* Browser profile: {selected_profile['name']} [{selected_profile['dir']}]")
     print(f"* Cookie database: {selected_cookie_file}")
     sp_dc = read_firefox_sp_dc(selected_cookie_file) if browser == "firefox" else read_chromium_sp_dc(browser, selected_cookie_file)
-    print("* Cookie extracted. Validating it with Spotify ...")
+    print("* Cookie extracted. Checking it with Spotify ...")
     try:
         validate_sp_dc_cookie(sp_dc)
     except SpDcConfigurationError as exc:
@@ -8051,7 +8051,7 @@ def run_set_sp_dc(env_file=None, interactive=None, input_func=None, getpass_func
         raise RecoveryError(secret_entry_cancelled_advice("Spotify cookie", "--set-sp-dc", MANUAL_COOKIE_GUIDE_URL)) from None
     if not sp_dc:
         raise SpDcConfigurationError("No nonempty sp_dc cookie was entered. The private settings file was not changed.")
-    print("* Validating the entered Spotify cookie before changing the private settings file ...")
+    print("* Checking the entered Spotify cookie before changing the private settings file ...")
     validate_sp_dc_cookie(sp_dc)
     try:
         update_dotenv_file(destination, {"SP_DC_COOKIE": sp_dc})
@@ -9628,7 +9628,7 @@ def _wizard_collect_cookie_auth(method: str, env_path: Path, secret_updates: dic
                 if _wizard_offer_retry("sp_dc cookie", "Monitoring cannot start until one is set"):
                     continue
                 return {"complete": False, "validated": False, "browser": None, "source": "not configured"}
-            print("  Validating the entered Spotify cookie before saving it ...")
+            print("  Checking the cookie with Spotify ...")
             try:
                 validate_sp_dc_cookie(cookie)
             except Exception as exc:

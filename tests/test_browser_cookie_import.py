@@ -2,6 +2,7 @@ import json
 import sqlite3
 import sys
 import types
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import pytest
@@ -98,3 +99,16 @@ def test_browser_import_noninteractive_replacement_needs_force(tmp_path, monkeyp
         monitor.run_browser_cookie_import(cookie_file=cookie_file, env_file=destination, interactive=False)
 
     assert dotenv_values(destination, interpolate=False)["SP_DC_COOKIE"] == "old"
+
+
+PROGRESS_LINES = (
+    "* Cookie extracted. Checking it with Spotify ...",
+    "* Checking the entered Spotify cookie before changing the private settings file ...",
+    "  Checking the cookie with Spotify ...",
+)
+
+
+# Verifies each wait on a remote service is announced with the wording every sibling monitor uses
+@pytest.mark.parametrize("line", PROGRESS_LINES)
+def test_the_progress_lines_use_the_shared_checking_wording(line):
+    assert line in Path(monitor.__file__).read_text(encoding="utf-8"), line
