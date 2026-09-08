@@ -380,6 +380,28 @@ def test_delivery_gate_matches_the_provider_named_label(monkeypatch):
     assert "Send one test webhook through Discord now?" in consent.call_args[0][0]
 
 
+# Verifies the delivery rows print the same label and detail the sibling tools print
+def test_the_delivery_rows_print_the_shared_label_and_detail(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
+    email_label = monitor.SMTP_READY_CHECK_LABEL
+    webhook_label = f"{monitor.WEBHOOK_READY_CHECK_LABEL} for {monitor.webhook_provider_display_name()}"
+    report = monitor.DoctorReport(checks=[monitor.make_doctor_check("Notifications", "PASS", email_label), monitor.make_doctor_check("Notifications", "PASS", webhook_label)])
+    monkeypatch.setattr(monitor.sys.stdin, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(monitor.sys.stdout, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(monitor, "_doctor_ask_yes_no", lambda question: "webhook" not in question)
+    monkeypatch.setattr(monitor, "send_email", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(monitor, "send_webhook", Mock(side_effect=AssertionError("webhook sent without approval")))
+
+    monitor._doctor_offer_notification_tests(report)
+    output = capsys.readouterr().out
+
+    assert "Optional delivery tests" in output
+    assert "[PASS] Doctor test email delivered" in output
+    assert "  One real test email was sent after confirmation" in output
+    assert "[SKIP] Test webhook through Discord was not sent" in output
+    assert "  You declined the real delivery test. Run doctor again and approve the webhook test when ready" in output
+
+
 # Verifies disabled notifications cause no network delivery attempts
 def test_doctor_disabled_notifications_are_passive(monkeypatch):
     monkeypatch.setattr(monitor, "PROFILE_NOTIFICATION", False)

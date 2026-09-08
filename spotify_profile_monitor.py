@@ -383,11 +383,11 @@ DOTENV_FILE = ""
 # Can also be set using the -y flag
 FILE_SUFFIX = ""
 
-# Base name for the log file. Output will be saved to spotify_profile_monitor_<user_uri_id/file_suffix>.log
+# Base name for the log file. Output will be saved to spotify_profile_monitor_<user_id/file_suffix>.log
 # Can include a directory path to specify the location, e.g. ~/some_dir/spotify_profile_monitor
 SP_LOGFILE = "spotify_profile_monitor"
 
-# Whether to disable logging to spotify_profile_monitor_<user_uri_id/file_suffix>.log
+# Whether to disable logging to spotify_profile_monitor_<user_id/file_suffix>.log
 # Can also be disabled via the -d flag
 DISABLE_LOGGING = False
 
@@ -9230,30 +9230,37 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> List[DoctorCheck]:
     webhook_ready = any(check.status == "PASS" and check.label.startswith(WEBHOOK_READY_CHECK_LABEL) for check in report.checks)
     if not email_ready and not webhook_ready:
         return []
-    print("\nOptional delivery tests\n")
+    print("\n" + colorize("section", "Optional delivery tests") + "\n")
     print("Doctor will not write files. Each approved test sends one real message.\n")
     results = []
     if email_ready:
         if _doctor_ask_yes_no("Send one test email now? This will deliver a real message"):
             result = send_email("spotify_profile_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "", SMTP_SSL, smtp_timeout=5)
-            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if result == 0 else "FAIL", "Doctor test email delivered" if result == 0 else "Doctor test email delivery failed")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if result == 0 else "FAIL", "Doctor test email delivered" if result == 0 else "Doctor test email delivery failed", "One real test email was sent after confirmation" if result == 0 else "The approved test email could not be delivered. Review the SMTP error above")
         else:
-            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email was not sent")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email was not sent", "You declined the real delivery test. Run doctor again and approve the email test when ready")
         results.append(check)
         # Recorded on the report so the summary sentence and the exit code cannot disagree about the same run
         report.checks.append(check)
-        print(f"[{check.status}] {check.label}")
+        _doctor_print_check(check)
     if webhook_ready:
         provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
             result = send_webhook("spotify_profile_monitor: doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "profile", force=True)
-            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if result == 0 else "FAIL", "Doctor test webhook delivered" if result == 0 else "Doctor test webhook delivery failed")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if result == 0 else "FAIL", f"Doctor test webhook through {provider} delivered" if result == 0 else f"Doctor test webhook through {provider} delivery failed", "One real test webhook was sent after confirmation" if result == 0 else "The approved test webhook could not be delivered. Review the webhook error above")
         else:
-            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test webhook was not sent")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", f"Test webhook through {provider} was not sent", "You declined the real delivery test. Run doctor again and approve the webhook test when ready")
         results.append(check)
         report.checks.append(check)
-        print(f"[{check.status}] {check.label}")
+        _doctor_print_check(check)
     return results
+
+
+# Prints one result the way the report renders it, so a row printed after the report matches the rows above it
+def _doctor_print_check(check) -> None:
+    print(f"[{check.status}] {check.label}")
+    if check.detail:
+        print(f"  {check.detail}")
 
 
 # Returns the raw terminal stream for trusted Doctor cursor movement
