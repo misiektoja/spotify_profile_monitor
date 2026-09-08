@@ -8369,7 +8369,7 @@ def _wizard_print_command(label: str, command: str, suffix: str = "") -> None:
 
 # Builds one action command with portable interpreter and explicit file paths
 def _wizard_action_command(method: str, action: str, config_path, env_path, target: Optional[str] = None) -> str:
-    parts = list(_wizard_local_command_args(method, exact=True))
+    parts = list(_wizard_local_command_args(method))
     if action:
         parts.extend(shlex.split(action))
     if target:

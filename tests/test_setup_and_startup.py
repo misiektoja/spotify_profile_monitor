@@ -183,15 +183,15 @@ def test_write_config_validates_and_backs_up(tmp_path):
     assert destination.read_text(encoding="utf-8") == "TRUNCATE_CHARS = 2\n"
 
 
-# Verifies generated recovery commands preserve interpreter and custom paths
-def test_action_command_uses_active_interpreter_and_custom_paths(tmp_path, monkeypatch):
+# Verifies generated recovery commands use the portable entry point and preserve custom paths
+def test_action_command_uses_portable_entry_point_and_custom_paths(tmp_path, monkeypatch):
     config_path = tmp_path / "custom config.conf"
     env_path = tmp_path / "private.env"
     monkeypatch.setattr(monitor.sys, "executable", "/custom/venv/bin/python")
 
     command = monitor._wizard_action_command("pip", "--doctor", config_path, env_path, "target.user")
 
-    assert command.startswith("/custom/venv/bin/python -m spotify_profile_monitor --doctor target.user")
+    assert command.startswith("spotify_profile_monitor --doctor target.user")
     assert str(config_path.resolve()) in command
     assert str(env_path.resolve()) in command
 
@@ -880,3 +880,16 @@ def test_the_polling_question_starts_its_own_group(tmp_path, monkeypatch, capsys
         monitor.run_setup_wizard(config_file=tmp_path / "spotify_profile_monitor.conf", env_file=tmp_path / ".env")
 
     assert "\n\nSpotify polling interval (seconds or use s/m/h/d)" in capsys.readouterr().out
+
+
+# Verifies the cookie recovery command is pasteable as printed and reaches the files this run was given
+def test_the_cookie_recovery_command_names_the_files_this_run_was_given(monkeypatch, tmp_path):
+    config_path = tmp_path / "spotify_profile_monitor.conf"
+    env_path = tmp_path / "private.env"
+    monkeypatch.setattr(monitor.sys, "argv", ["spotify_profile_monitor.py"])
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", str(config_path))
+    monkeypatch.setattr(monitor, "DOTENV_FILE", str(env_path))
+
+    fix = monitor.cookie_auth_recovery_fix()
+
+    assert f"python3 spotify_profile_monitor.py --import-browser-cookie --browser firefox --config-file {config_path} --env-file {env_path}" in fix
