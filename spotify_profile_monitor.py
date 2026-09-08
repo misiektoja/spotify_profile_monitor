@@ -1389,7 +1389,7 @@ _FROM_TO_COUNT_RE = re.compile(r"(from\s+)(\d+)(\s+to\s+)(\d+)")
 _DIFF_COUNT_UP_RE = re.compile(r"(\(\+\d+\))")
 _DIFF_COUNT_DOWN_RE = re.compile(r"(\(-\d+\))")
 # The separator is a space in prose and an equals sign in the key=value diagnostic fields
-_USER_TAG_RE = re.compile(r"((?:for user|by user|of user|Spotify user|Monitoring\s+Spotify\s+user|\* User|owned by|\buser):?)([\t ]+|=)((?!ID\b)[\w.:-]+)")
+_USER_TAG_RE = re.compile(r"((?:for user|by user|of user|Spotify user|Monitoring\s+Spotify\s+user|\* User|owned by|(?<!:)\buser):?)([\t ]+|=)((?!ID\b)[\w.:-]+)")
 
 # Change headers name the monitored user between "user" and whatever they report next. A Spotify display name
 # can hold spaces and emoji, so it is matched up to that boundary instead of as a single word

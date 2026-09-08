@@ -169,6 +169,15 @@ def test_quoted_names_follow_the_subject_of_the_line(colored):
     assert colored["username"] in monitor._colorize_line("* User 'oldname' has changed username to 'newname'")
 
 
+# Verifies the word "user" inside a URI form is not read as the label that introduces a user name
+def test_a_uri_form_named_in_prose_is_not_coloured_as_a_user_name(colored):
+    line = "For <spotify_target>, use a complete Spotify profile URL, spotify:user URI or user ID."
+
+    assert monitor._colorize_line(line) == line
+    assert colored["id"] in monitor._colorize_line("for user martus")
+    assert colored["id"] in monitor._colorize_line("Monitoring user martus")
+
+
 # Verifies a quoted file name stays plain so log and state paths are not read as content
 def test_quoted_file_names_stay_plain(colored):
     line = "* Playlists (12) loaded from file 'spotify_profile_monitor_john.json'"
