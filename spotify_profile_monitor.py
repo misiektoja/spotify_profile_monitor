@@ -8743,6 +8743,9 @@ DOCTOR_MIN_SAFE_CHECK_INTERVAL = 30
 # Delivery results are printed as they happen rather than inside a section, but they still count in the summary
 DOCTOR_DELIVERY_SECTION = "Optional delivery tests"
 
+# The theme entry each doctor result marker is drawn in, so a failure reads as one at a glance
+DOCTOR_MARK_STYLES = {"PASS": "boolean_true", "WARN": "warning", "FAIL": "error", "SKIP": "info"}
+
 
 # Stores one Doctor result before the report is rendered
 @dataclass(frozen=True)
@@ -8875,8 +8878,8 @@ def make_doctor_check(section: str, status: str, label: str, detail: Any = "", f
 # Explains what missing artwork support means for the current image settings and how to install it
 def doctor_notification_images_detail() -> str:
     if EMAIL_IMAGES or NTFY_IMAGES:
-        return "Artwork attachments are enabled, so email and ntfy alerts stay text-only until Pillow is installed. Normal monitoring is unaffected"
-    return "Required only when EMAIL_IMAGES or NTFY_IMAGES attaches artwork to alerts, which is currently disabled. Normal monitoring is unaffected"
+        return "Artwork attachments are enabled, so email and ntfy alerts stay text-only until Pillow is installed. Every other feature is unaffected"
+    return "Required only when EMAIL_IMAGES or NTFY_IMAGES attaches artwork to alerts, which is currently disabled. Every other feature is unaffected"
 
 
 # Checks the active Python version plus required and optional dependencies
@@ -8901,7 +8904,7 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
             continue
         install_command = _wizard_render_command([sys.executable or ("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", package_name])
         advice = classify_recovery_error(ModuleNotFoundError(package_name), "dependency", f"Missing Python package: {package_name}")
-        fix = recovery_fix_with_guide(f"Install it through the active Python environment then retry: {install_command}", INSTALLATION_GUIDE_URL)
+        fix = recovery_fix_with_guide(f"Install it with: {install_command}", INSTALLATION_GUIDE_URL)
         checks.append(make_doctor_check("Environment", "FAIL", f"Required dependency {package_name} is missing", advice.detail, fix, advice))
     optional = (("pycookiecheat", "pycookiecheat"), ("PIL", "Pillow"))
     # The classic Command Prompt is the only place this library changes anything, so a machine it cannot affect is not warned about a package it does not need
@@ -8917,10 +8920,10 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
             purpose = "Used only for email and ntfy artwork attachments" if present else doctor_notification_images_detail()
             missing_fix = f"Install it with: {notification_images_install_command()}"
         elif module_name == "colorama":
-            purpose = "Used only for coloured output in the classic Windows Command Prompt" if present else "Coloured output may not render in the classic Windows Command Prompt. Normal monitoring is unaffected"
+            purpose = "Used only for coloured output in the classic Windows Command Prompt" if present else "Coloured output may not render in the classic Windows Command Prompt. Every other feature is unaffected"
             missing_fix = "Install it with: pip3 install colorama. Or use Windows Terminal, which needs nothing extra"
         else:
-            purpose = "Used only for importing cookies from Chromium-based browsers. Firefox cookie import does not need it" if present else "Required only for importing cookies from Chromium-based browsers. Normal monitoring is unaffected. Firefox cookie import is also unaffected"
+            purpose = "Used only for importing cookies from Chromium-based browsers. Firefox cookie import does not need it" if present else "Required only for importing cookies from Chromium-based browsers. Every other feature is unaffected. Firefox cookie import is also unaffected"
         if present:
             checks.append(make_doctor_check("Environment", "PASS", f"Optional dependency {package_name} is installed", purpose))
         else:
@@ -8982,11 +8985,11 @@ def doctor_secret_checks(env_path=None) -> List[DoctorCheck]:
     if from_environment:
         checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the environment", ", ".join(from_environment)))
     if from_settings:
-        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the configuration file or command line", ", ".join(from_settings)))
+        checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the configuration file", ", ".join(from_settings)))
     if from_command_line:
         checks.append(make_doctor_check("Configuration", "PASS", "Secrets loaded from the command line", ", ".join(from_command_line)))
     if not checks:
-        checks.append(make_doctor_check("Configuration", "PASS", "No secrets loaded", "Nothing was read from a dotenv file, the environment or the command line"))
+        checks.append(make_doctor_check("Configuration", "PASS", "No secrets loaded", "Nothing was read from a dotenv file, the environment, the configuration file or the command line"))
     return checks
 
 
@@ -9143,14 +9146,14 @@ def doctor_connectivity_endpoint_check() -> DoctorCheck:
 
 
 # Reports connectivity using the authenticated request when available
-def doctor_check_connectivity(report: DoctorReport) -> List[DoctorCheck]:
-    checks = [doctor_connectivity_endpoint_check()]
+def doctor_check_connectivity(report: DoctorReport, endpoint_check: Optional[DoctorCheck] = None) -> List[DoctorCheck]:
+    checks = [doctor_connectivity_endpoint_check() if endpoint_check is None else endpoint_check]
     if report.access_token:
         return checks + [make_doctor_check("Connectivity", "PASS", "Spotify is reachable", "Confirmed through the authentication request")]
     if report.authentication_error and _looks_like_network_failure(report.authentication_error):
         advice = classify_recovery_error(req.ConnectionError(report.authentication_error), "runtime", report.authentication_error)
         return checks + [make_doctor_check("Connectivity", "FAIL", advice.summary, advice.detail, advice.fix, advice)]
-    return checks + [make_doctor_check("Connectivity", "SKIP", "Spotify connectivity check was skipped", "Authentication did not produce a reusable access token", "Fix authentication then run --doctor again")]
+    return checks + [make_doctor_check("Connectivity", "SKIP", "Spotify connectivity was not checked", "Authentication did not succeed, so no request was attempted")]
 
 
 # Validates an optional target through one live profile request
@@ -9163,7 +9166,7 @@ def doctor_check_target(report: DoctorReport, target_value=None) -> List[DoctorC
         advice = classify_recovery_error(exc, "target_invalid")
         return [make_doctor_check("Target", "FAIL", advice.summary, advice.detail, advice.fix, advice)]
     if not report.access_token:
-        return [make_doctor_check("Target", "SKIP", f"Target '{target_id}' live check was skipped", "Authentication did not produce a reusable access token", "Fix authentication then run --doctor again")]
+        return [make_doctor_check("Target", "SKIP", "The monitored profile was not checked", "Authentication did not succeed, so no lookup was attempted")]
     try:
         report.target_profile = spotify_get_user_info(report.access_token, target_id, True, 0)
         return [make_doctor_check("Target", "PASS", f"Target '{target_id}' can be monitored", "A live Spotify profile request succeeded")]
@@ -9299,7 +9302,7 @@ def doctor_check_notifications() -> List[DoctorCheck]:
 def _doctor_ask_yes_no(question: str) -> bool:
     while True:
         try:
-            value = read_interactively(input, f"{question} [y/N]: ").strip().casefold()
+            value = read_interactively(input, colorize("info", f"{question} [y/N]: ")).strip().casefold()
         except EOFError:
             print("\nDelivery test skipped.")
             return False
@@ -9354,9 +9357,14 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> List[DoctorCheck]:
     return results
 
 
+# Renders one doctor result marker in the colour its status calls for
+def render_doctor_marker(status: str) -> str:
+    return colorize(DOCTOR_MARK_STYLES.get(status, "info"), f"[{status}]")
+
+
 # Prints one result the way the report renders it, so a row printed after the report matches the rows above it
 def _doctor_print_check(check) -> None:
-    print(f"[{check.status}] {check.label}")
+    print(f"{render_doctor_marker(check.status)} {check.label}")
     if check.detail:
         print(f"  {check.detail}")
 
@@ -9406,15 +9414,19 @@ def build_doctor_report(target_value=None, config_path=None, env_path=None, star
         progress("configuration")
     report.checks.extend(doctor_check_configuration(config_path, env_path, startup_checks, target_value, timezone_advice))
     if progress is not None:
+        progress("connectivity")
+    endpoint_check = doctor_connectivity_endpoint_check()
+    if progress is not None:
         progress("authentication")
     report.checks.extend(doctor_check_authentication(report))
     if progress is not None:
-        progress("connectivity and the monitored profile")
-    report.checks.extend(doctor_check_connectivity(report))
-    report.checks.extend(doctor_check_target(report, target_value))
-    if progress is not None:
         progress("metadata")
     report.checks.extend(doctor_check_optional_oauth(report))
+    # The Spotify reachability row reuses the authentication response, so it is added once that is known
+    report.checks.extend(doctor_check_connectivity(report, endpoint_check))
+    if progress is not None:
+        progress("the monitored profile")
+    report.checks.extend(doctor_check_target(report, target_value))
     if progress is not None:
         progress("notifications")
     report.checks.extend(doctor_check_notifications())
@@ -9437,12 +9449,13 @@ def render_doctor_sections(report: DoctorReport) -> str:
             continue
         lines.extend(("", colorize("section", section)))
         for check in section_checks:
-            lines.append(f"[{check.status}] {check.label}")
-            if check.detail and (check.advice is None or DEBUG_MODE):
+            lines.append(f"{render_doctor_marker(check.status)} {check.label}")
+            if check.detail:
                 lines.append(f"  {check.detail}")
             if check.fix and check.status != "PASS":
-                # The fix carries its own guide line, so each line is indented on its own
-                lines.extend(f"  {fix_line}" for fix_line in f"To fix: {check.fix}".splitlines())
+                # The fix carries its own guide line, so each line is indented and styled on its own rather
+                # than leaving one colour sequence open across the newline
+                lines.extend(f"  {colorize('info', fix_line)}" for fix_line in f"To fix: {check.fix}".splitlines())
     return sanitize_error_text("\n".join(lines))
 
 
@@ -9456,7 +9469,7 @@ def render_doctor_summary(checks: Sequence[DoctorCheck]) -> str:
         summary_line = colorize("warning", f"  All critical checks passed with {warnings} warning(s). Review the warnings above.")
     else:
         summary_line = colorize("boolean_true", "  All checks passed. You are good to go!")
-    return "\n".join(("", colorize("header", "Summary"), summary_line, "", f"Guide: {DOCTOR_GUIDE_URL}"))
+    return "\n".join(("", colorize("header", "Summary"), summary_line, "", colorize("info", f"Guide: {DOCTOR_GUIDE_URL}")))
 
 
 # Runs Doctor preflight plus approved delivery tests
@@ -10197,7 +10210,7 @@ def _wizard_print_setup_summary(state: WizardSetupState, method: str) -> None:
 
 # Opens one selected setup section then returns to the summary
 def _wizard_edit_setup_section(state: WizardSetupState, method: str) -> None:
-    section = _wizard_ask_choice("Which setup section should be changed?", [("Target and persistence", "Change the Spotify profile and whether it is saved."), ("Polling interval", "Change how often Spotify is checked."), ("Authentication", "Choose cookie or advanced client authentication again."), ("Email notifications", "Change SMTP details and email events."), ("Webhook alerts", "Change Discord or ntfy details and events."), ("Output files", "Change log and CSV output settings."), ("File destinations", "Change the configuration or dotenv output path."), ("Return to summary", "Keep every current answer.")])
+    section = _wizard_ask_choice("Which setup section should be changed?", [("Target", "Change the Spotify profile that is monitored."), ("Polling interval", "Change how often Spotify is checked."), ("Authentication", "Choose cookie or advanced client authentication again."), ("Email notifications", "Change SMTP details and email events."), ("Webhook alerts", "Change Discord or ntfy details and events."), ("Output files", "Change log and CSV output settings."), ("File destinations", "Change the configuration or dotenv output path."), ("Return to summary", "Keep every current answer.")])
     if section == 0:
         print()
         _wizard_collect_target_section(state, state.target)

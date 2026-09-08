@@ -408,7 +408,7 @@ def test_doctor_build_reports_progress(monkeypatch):
 
     monitor.build_doctor_report(progress=phases.append)
 
-    assert phases == ["environment", "configuration", "authentication", "connectivity and the monitored profile", "metadata", "notifications"]
+    assert phases == ["environment", "configuration", "connectivity", "authentication", "metadata", "the monitored profile", "notifications"]
 
 
 # Verifies Doctor preserves a startup failure for an explicitly missing dotenv file
@@ -422,8 +422,8 @@ def test_doctor_preserves_explicit_missing_dotenv_failure():
     assert not any(check.label == "No dotenv file selected" for check in checks)
 
 
-# Verifies Doctor keeps structured technical detail behind debug mode
-def test_doctor_hides_recovery_detail_until_debug(monkeypatch):
+# Verifies Doctor prints the detail of a failed row the way the sibling monitors do, with or without debug mode
+def test_doctor_prints_recovery_detail_without_debug(monkeypatch):
     advice = monitor.make_recovery_advice("auth.cookie_invalid", "Spotify rejected authentication", "Import the cookie again", False, "HTTP 401 internal detail")
     report = monitor.DoctorReport(checks=[monitor.make_doctor_check("Authentication", "FAIL", advice.summary, advice.detail, advice=advice)])
 
@@ -432,7 +432,7 @@ def test_doctor_hides_recovery_detail_until_debug(monkeypatch):
     monkeypatch.setattr(monitor, "DEBUG_MODE", True)
     debug = render_doctor_report(report)
 
-    assert "HTTP 401 internal detail" not in normal
+    assert "HTTP 401 internal detail" in normal
     assert "HTTP 401 internal detail" in debug
 
 

@@ -73,7 +73,7 @@ def test_doctor_treats_missing_artwork_support_as_optional():
     check = next(item for item in checks if "Pillow" in item.label)
     assert check.status == "WARN"
     # The rendered command follows the entry point, so assert the part that holds either way
-    assert "-m pip install" in check.fix and "Normal monitoring is unaffected" in check.detail
+    assert "-m pip install" in check.fix and "Every other feature is unaffected" in check.detail
 
 
 # A user who turned artwork on needs to be told the alerts are silently text-only until Pillow is installed
@@ -150,8 +150,8 @@ def test_doctor_reuses_access_token_for_target(monkeypatch):
     profile_request.assert_called_once_with("access-token", "target.user", True, 0)
 
 
-# Verifies the connectivity and target rows skipped for the same missing token share one detail and one fix
-def test_skipped_connectivity_and_target_rows_share_the_same_fix(monkeypatch):
+# Verifies the connectivity and target rows skipped for the same missing token name that cause without a fix line
+def test_skipped_connectivity_and_target_rows_name_the_same_cause(monkeypatch):
     monkeypatch.setattr(monitor, "doctor_connectivity_endpoint_check", lambda: monitor.make_doctor_check("Connectivity", "PASS", "Endpoint answered"))
     report = monitor.DoctorReport()
 
@@ -159,8 +159,11 @@ def test_skipped_connectivity_and_target_rows_share_the_same_fix(monkeypatch):
     target_skip = monitor.doctor_check_target(report, "spotify:user:target.user")[0]
 
     assert connectivity_skip.status == target_skip.status == "SKIP"
-    assert connectivity_skip.detail == target_skip.detail == "Authentication did not produce a reusable access token"
-    assert connectivity_skip.fix == target_skip.fix == "Fix authentication then run --doctor again"
+    assert connectivity_skip.label == "Spotify connectivity was not checked"
+    assert target_skip.label == "The monitored profile was not checked"
+    assert connectivity_skip.detail == "Authentication did not succeed, so no request was attempted"
+    assert target_skip.detail == "Authentication did not succeed, so no lookup was attempted"
+    assert connectivity_skip.fix == target_skip.fix == ""
 
 
 # Verifies Doctor tests legacy OAuth against the target playlist endpoint instead of token issuance alone

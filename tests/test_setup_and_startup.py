@@ -356,7 +356,7 @@ def test_setup_summary_and_editor_order_polling_before_authentication(tmp_path, 
 
     assert summary.index("Polling interval:") < summary.index("Token source:")
     assert "Polling interval:      90s - 1m 30s" in summary
-    assert labels[:3] == ["Target and persistence", "Polling interval", "Authentication"]
+    assert labels[:3] == ["Target", "Polling interval", "Authentication"]
 
 
 # Verifies confirmed setup writes both files and prints portable next steps
