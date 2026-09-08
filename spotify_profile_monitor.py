@@ -8574,6 +8574,9 @@ class StartupSummaryRow:
 # tools, because every state it would cover is a state the others already call PASS
 DOCTOR_STATUSES = ("PASS", "WARN", "FAIL", "SKIP")
 
+# Delivery results are printed as they happen rather than inside a section, but they still count in the summary
+DOCTOR_DELIVERY_SECTION = "Optional delivery tests"
+
 
 # Stores one Doctor result before the report is rendered
 @dataclass(frozen=True)
@@ -9142,24 +9145,23 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> List[DoctorCheck]:
     if email_ready:
         if _doctor_ask_yes_no("Send one test email now? This will deliver a real message"):
             result = send_email("spotify_profile_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "", SMTP_SSL, smtp_timeout=5)
-            check = make_doctor_check("Notifications", "PASS" if result == 0 else "FAIL", "Doctor test email delivered" if result == 0 else "Doctor test email delivery failed")
-            results.append(check)
-            print(f"[{check.status}] {check.label}")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if result == 0 else "FAIL", "Doctor test email delivered" if result == 0 else "Doctor test email delivery failed")
         else:
-            check = make_doctor_check("Notifications", "SKIP", "Test email was not sent")
-            results.append(check)
-            print(f"[{check.status}] {check.label}")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test email was not sent")
+        results.append(check)
+        # Recorded on the report so the summary sentence and the exit code cannot disagree about the same run
+        report.checks.append(check)
+        print(f"[{check.status}] {check.label}")
     if webhook_ready:
         provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
             result = send_webhook("Spotify Profile Monitor doctor test", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "profile", force=True)
-            check = make_doctor_check("Notifications", "PASS" if result == 0 else "FAIL", "Doctor test webhook delivered" if result == 0 else "Doctor test webhook delivery failed")
-            results.append(check)
-            print(f"[{check.status}] {check.label}")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS" if result == 0 else "FAIL", "Doctor test webhook delivered" if result == 0 else "Doctor test webhook delivery failed")
         else:
-            check = make_doctor_check("Notifications", "SKIP", "Test webhook was not sent")
-            results.append(check)
-            print(f"[{check.status}] {check.label}")
+            check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "SKIP", "Test webhook was not sent")
+        results.append(check)
+        report.checks.append(check)
+        print(f"[{check.status}] {check.label}")
     return results
 
 
@@ -9228,8 +9230,8 @@ def render_doctor_notice() -> None:
     print("Running preflight checks. No files will be written. Interactive email and webhook tests run only after separate approval.\n")
 
 
-# Renders one sectioned ASCII Doctor report with recovery actions
-def render_doctor_report(report: DoctorReport) -> str:
+# Renders the heading and every non-empty section, with an action line on the rows that are not a pass
+def render_doctor_sections(report: DoctorReport) -> str:
     # The install method is context rather than a check: it cannot fail, so it is stated once here
     # instead of taking a result row that no marker describes
     lines = [colorize("header", "Doctor"), f"Detected install method: {colorize('username', _wizard_install_method())}"]
@@ -9245,16 +9247,20 @@ def render_doctor_report(report: DoctorReport) -> str:
             if check.fix and check.status != "PASS":
                 # The fix carries its own guide line, so each line is indented on its own
                 lines.extend(f"  {fix_line}" for fix_line in f"To fix: {check.fix}".splitlines())
-    failures = sum(check.status == "FAIL" for check in report.checks)
-    warnings = sum(check.status == "WARN" for check in report.checks)
+    return sanitize_error_text("\n".join(lines))
+
+
+# Renders the one sentence that says whether the setup is usable and where to read more
+def render_doctor_summary(checks: Sequence[DoctorCheck]) -> str:
+    failures = sum(check.status == "FAIL" for check in checks)
+    warnings = sum(check.status == "WARN" for check in checks)
     if failures:
         summary_line = colorize("error", f"  {failures} check(s) failed, {warnings} warning(s). Fix the failures above before relying on the tool.")
     elif warnings:
         summary_line = colorize("warning", f"  All critical checks passed with {warnings} warning(s). Review the warnings above.")
     else:
         summary_line = colorize("boolean_true", "  All checks passed. You are good to go!")
-    lines.extend(("", colorize("header", "Summary"), summary_line, "", f"Guide: {DOCTOR_GUIDE_URL}"))
-    return sanitize_error_text("\n".join(lines))
+    return "\n".join(("", colorize("header", "Summary"), summary_line, "", f"Guide: {DOCTOR_GUIDE_URL}"))
 
 
 # Runs Doctor preflight plus approved delivery tests
@@ -9264,9 +9270,10 @@ def run_doctor(target_value=None, config_path=None, env_path=None, startup_check
         report = build_doctor_report(target_value, config_path, env_path, startup_checks, progress=_doctor_progress)
     finally:
         _doctor_progress_clear()
-    print(render_doctor_report(report))
-    delivery_checks = _doctor_offer_notification_tests(report)
-    return 1 if any(check.status == "FAIL" for check in (*report.checks, *delivery_checks)) else 0
+    print(render_doctor_sections(report))
+    _doctor_offer_notification_tests(report)
+    print(render_doctor_summary(report.checks))
+    return 1 if any(check.status == "FAIL" for check in report.checks) else 0
 
 
 # Reads one setup line, letting a cancelled prompt reach the handler that knows what was written

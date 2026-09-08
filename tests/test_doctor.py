@@ -8,6 +8,11 @@ import spotify_profile_monitor as monitor
 
 
 # Provides one in-memory stream that behaves like an interactive terminal
+
+
+# Composes the two renderers the way run_doctor does, so a test can assert on the whole transcript
+def render_doctor_report(report):
+    return monitor.render_doctor_sections(report) + "\n" + monitor.render_doctor_summary(report.checks)
 class TTYBuffer(StringIO):
     def isatty(self):
         return True
@@ -305,7 +310,7 @@ def test_doctor_report_rendering_redacts_secrets(monkeypatch):
     monkeypatch.setattr(monitor, "SP_DC_COOKIE", "COOKIE-SECRET-SENTINEL")
     report = monitor.DoctorReport(checks=[monitor.make_doctor_check("Authentication", "FAIL", "Spotify authentication failed", "cookie=COOKIE-SECRET-SENTINEL", "Import again")])
 
-    rendered = monitor.render_doctor_report(report)
+    rendered = render_doctor_report(report)
 
     assert "Authentication" in rendered
     assert "[FAIL] Spotify authentication failed" in rendered
@@ -329,7 +334,7 @@ def test_doctor_preflight_notice_precedes_the_report(monkeypatch, capsys):
 def test_doctor_report_states_the_install_method_without_a_marker():
     report = monitor.DoctorReport(checks=[monitor.make_doctor_check("Environment", "PASS", "Python 3.12.1 is supported")])
 
-    rendered = monitor.render_doctor_report(report)
+    rendered = render_doctor_report(report)
 
     assert f"Doctor\nDetected install method: {monitor._wizard_install_method()}\n" in rendered
     assert "[PASS] Install method" not in rendered
@@ -352,7 +357,7 @@ def test_doctor_names_disabled_output_destinations(monkeypatch):
 def test_doctor_report_indents_check_details():
     report = monitor.DoctorReport(checks=[monitor.make_doctor_check("Configuration", "PASS", "Log destination appears writable", "Path: spotify_profile_monitor")])
 
-    rendered = monitor.render_doctor_report(report)
+    rendered = render_doctor_report(report)
 
     assert "[PASS] Log destination appears writable\n  Path: spotify_profile_monitor" in rendered
 
@@ -568,7 +573,40 @@ def test_the_action_lines_sit_indented_under_their_marker(monkeypatch):
         monitor.make_doctor_check("Configuration", "PASS", "a passing row", "", fix),
     ])
 
-    lines = monitor.render_doctor_report(report).splitlines()
+    lines = render_doctor_report(report).splitlines()
     rows = lines[lines.index("[WARN] a warning row"):]
 
     assert rows[:5] == ["[WARN] a warning row", "  a detail worth keeping", "  To fix: do the thing", f"  Guide: {monitor.DOCTOR_GUIDE_URL}", "[PASS] a passing row"]
+
+
+# Verifies an approved delivery test that failed reaches the summary, so a failing run cannot report a clean one
+def test_a_failed_delivery_test_reaches_the_summary(monkeypatch):
+    report = monitor.DoctorReport([monitor.make_doctor_check("Notifications", "PASS", monitor.SMTP_READY_CHECK_LABEL)])
+    monkeypatch.setattr(monitor.sys, "stdin", Mock(isatty=lambda: True))
+    monkeypatch.setattr(monitor.sys, "stdout", TTYBuffer())
+    monkeypatch.setattr(monitor, "_doctor_ask_yes_no", Mock(return_value=True))
+    monkeypatch.setattr(monitor, "send_email", Mock(return_value=1))
+
+    monitor._doctor_offer_notification_tests(report)
+
+    assert [(check.section, check.status, check.label) for check in report.checks][-1] == (monitor.DOCTOR_DELIVERY_SECTION, "FAIL", "Doctor test email delivery failed")
+    assert "1 check(s) failed, 0 warning(s)." in monitor.render_doctor_summary(report.checks)
+
+
+# Verifies every doctor entry point renders its summary after the delivery tests, so the sentence and the exit code describe one run
+def test_the_summary_is_rendered_after_the_delivery_tests():
+    import ast
+    import inspect
+
+    tree = ast.parse(inspect.getsource(monitor))
+    checked = 0
+    for function in [node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)]:
+        calls = [(call.lineno, ast.unparse(call.func)) for call in ast.walk(function) if isinstance(call, ast.Call)]
+        offers = [lineno for lineno, name in calls if name.endswith("_doctor_offer_notification_tests")]
+        summaries = [lineno for lineno, name in calls if name.endswith("render_doctor_summary")]
+        if not offers or not summaries:
+            continue
+        checked += 1
+        assert max(offers) < min(summaries), f"{function.name} renders the summary before the delivery tests"
+
+    assert checked, "no doctor entry point runs the delivery tests and then the summary"

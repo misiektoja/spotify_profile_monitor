@@ -11,6 +11,12 @@ import pytest
 import spotify_profile_monitor as monitor
 
 
+
+# Composes the two renderers the way run_doctor does, so a test can assert on the whole transcript
+def render_doctor_report(report):
+    return monitor.render_doctor_sections(report) + "\n" + monitor.render_doctor_summary(report.checks)
+
+
 # Guide constants may point at Spotify's own developer documentation, which this repository cannot resolve to a page
 EXTERNAL_GUIDE_PREFIXES = ("https://developer.spotify.com/",)
 
@@ -333,9 +339,9 @@ def test_doctor_hides_recovery_detail_until_debug(monkeypatch):
     report = monitor.DoctorReport(checks=[monitor.make_doctor_check("Authentication", "FAIL", advice.summary, advice.detail, advice=advice)])
 
     monkeypatch.setattr(monitor, "DEBUG_MODE", False)
-    normal = monitor.render_doctor_report(report)
+    normal = render_doctor_report(report)
     monkeypatch.setattr(monitor, "DEBUG_MODE", True)
-    debug = monitor.render_doctor_report(report)
+    debug = render_doctor_report(report)
 
     assert "HTTP 401 internal detail" not in normal
     assert "HTTP 401 internal detail" in debug
