@@ -142,7 +142,7 @@ def test_verbose_startup_shows_json_history_directory():
 
     assert result.returncode == 0, result.stderr
     assert "* JSON history directory:" in result.stdout
-    assert str(json_dir) in result.stdout
+    assert str(json_dir.resolve()) in result.stdout
 
 
 @pytest.mark.parametrize(("flag", "setting"), (("--verbose", "VERBOSE_MODE"), ("--debug", "DEBUG_MODE")))
