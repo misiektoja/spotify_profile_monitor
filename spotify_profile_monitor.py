@@ -991,6 +991,8 @@ PLAYLISTS_PENDING_CACHE = {}
 
 # Whole checks, so a check interval longer than the liveness interval still waits one check instead of reporting on every check
 LIVENESS_CHECK_COUNTER = max(1, -(-LIVENESS_CHECK_INTERVAL // SPOTIFY_CHECK_INTERVAL)) if LIVENESS_CHECK_INTERVAL else 0
+# Seconds rather than checks, because a failing run usually retries on a different interval than a healthy one
+LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_COUNTER else 0
 
 stdout_bck = None
 csvfieldnames = ['Date', 'Type', 'Name', 'Old', 'New']
@@ -1183,22 +1185,23 @@ class OutageReporter:
     def __init__(self) -> None:
         self.code: Optional[str] = None
         self.since: int = 0
-        self.checks: int = 0
+        self.reported_at: int = 0
 
-    # Records one failed check and returns "full" for a new failure, "degraded" on the liveness cadence,
+    # Records one failed check and returns "full" for a new failure, "degraded" once the liveness interval has passed,
     # "repeat" while the liveness banner is switched off or "" while the same failure is merely continuing
-    def failed(self, advice: RecoveryAdvice, liveness_counter: int) -> str:
+    def failed(self, advice: RecoveryAdvice, liveness_interval: int) -> str:
+        now = int(time.time())
         if advice.code != self.code:
             self.code = advice.code
-            self.since = int(time.time())
-            self.checks = 0
+            self.since = now
+            self.reported_at = now
             return "full"
-        self.checks += 1
         # With the liveness banner off there is nothing to carry the reminder, so the summary keeps its old cadence
-        if not liveness_counter:
+        if not liveness_interval:
             return "repeat"
-        if self.checks >= liveness_counter:
-            self.checks = 0
+        # Timed rather than counted, because a failing run usually retries on a different interval than a healthy one
+        if now - self.reported_at >= liveness_interval:
+            self.reported_at = now
             return "degraded"
         return ""
 
@@ -1209,7 +1212,7 @@ class OutageReporter:
         lasted = int(time.time()) - self.since
         self.code = None
         self.since = 0
-        self.checks = 0
+        self.reported_at = 0
         return lasted
 
 
@@ -10729,7 +10732,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             advice = classify_recovery_error(e, context)
 
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
-            outage_outcome = outage.failed(advice, LIVENESS_CHECK_COUNTER)
+            outage_outcome = outage.failed(advice, LIVENESS_REMINDER_SECONDS)
             if outage_outcome in ("full", "repeat"):
                 print_monitor_recovery(e, context, monitor_recovery_tracker, f"retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}")
             elif outage_outcome == "degraded":
@@ -10782,7 +10785,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             follower_advice = classify_recovery_error(e, f"{TOKEN_SOURCE}_auth")
 
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
-            follower_outcome = follower_outage.failed(follower_advice, LIVENESS_CHECK_COUNTER)
+            follower_outcome = follower_outage.failed(follower_advice, LIVENESS_REMINDER_SECONDS)
             if follower_outcome in ("full", "repeat"):
                 print_monitor_recovery(e, f"{TOKEN_SOURCE}_auth", follower_recovery_tracker, f"retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}", "Error while getting followers and followings")
                 print_cur_ts("Timestamp:\t\t\t")
@@ -11680,7 +11683,7 @@ def apply_diagnostic_cli_overrides(args: argparse.Namespace) -> None:
 
 # Parses configuration and command-line options then runs the selected operation
 def main():
-    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, JSON_DIR, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, VERBOSE_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, EMAIL_IMAGES, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, CLEAN_OUTPUT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TARGET_USER_URI_ID, TRUNCATE_CHARS, NTFY_IMAGES, COLORED_OUTPUT, COLOR_THEME
+    global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_CHECK_COUNTER, LIVENESS_REMINDER_SECONDS, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, JSON_DIR, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, VERBOSE_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, EMAIL_IMAGES, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, CLEAN_OUTPUT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TARGET_USER_URI_ID, TRUNCATE_CHARS, NTFY_IMAGES, COLORED_OUTPUT, COLOR_THEME
     global EXPORT_ALL, EXPORT_ALL_FORCE, PLAYLIST_INFO_CACHE_TTL, WEBHOOK_ENABLED, EXPORTED_SECRET_KEYS
 
     stdout_bck = sys.stdout
@@ -12412,6 +12415,7 @@ def main():
     # SPOTIFY_CHECK_INTERVAL is honored, not only a --check-interval override
     if SPOTIFY_CHECK_INTERVAL > 0:
         LIVENESS_CHECK_COUNTER = max(1, -(-LIVENESS_CHECK_INTERVAL // SPOTIFY_CHECK_INTERVAL)) if LIVENESS_CHECK_INTERVAL else 0
+        LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_COUNTER else 0
     PLAYLIST_INFO_CACHE_TTL = (SPOTIFY_CHECK_INTERVAL * 2 if SPOTIFY_CHECK_INTERVAL > 43200 else 43200)
     if args.profile_notification is True:
         PROFILE_NOTIFICATION = True
