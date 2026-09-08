@@ -391,12 +391,13 @@ def test_setup_saves_confirmed_incomplete_configuration(tmp_path, monkeypatch, c
     output = capsys.readouterr().out
     assert error.value.code == 0
     assert config_path.is_file()
-    assert env_path.is_file()
+    # No secret was entered, so no dotenv is created yet, but the sp_dc step will write it and every command names it
+    assert not env_path.exists()
     assert 'TARGET_USER_URI_ID = "target.user"' in config_path.read_text(encoding="utf-8")
-    assert "--config-file" in output
-    assert str(config_path) in output
-    assert "--env-file" in output
-    assert str(env_path) in output
+    assert "  Dotenv:        " not in output
+    command_lines = [line for line in output.splitlines() if "--config-file" in line]
+    assert len(command_lines) == 4
+    assert all(f"--env-file {env_path}" in line for line in command_lines)
 
 
 # Verifies the wizard tells the import runner whether the config will supply the target, so its printed
@@ -507,6 +508,28 @@ def test_an_unusable_target_can_be_abandoned(monkeypatch, answer, expected_offer
 
     assert monitor._wizard_target() == ""
     assert offers == expected_offers
+
+
+# Verifies a blank SMTP password keeps the stored one without queueing an empty secret or asking to replace it
+def test_a_blank_smtp_password_queues_nothing_and_asks_no_replace_question(monkeypatch, tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text('SMTP_PASSWORD="stored-private-value"\n', encoding="utf-8")
+    config_values = {"PROFILE_NOTIFICATION": True, "FOLLOWERS_FOLLOWINGS_NOTIFICATION": True, "ERROR_NOTIFICATION": True, "EMAIL_IMAGES": True}
+    secret_updates = {}
+    questions = []
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: questions.append(question) or True)
+    monkeypatch.setattr(monitor, "_wizard_ask_text", lambda question, default="", required=False: "answer@example.test")
+    monkeypatch.setattr(monitor, "_wizard_ask_positive_int", lambda question, default, maximum=None: default)
+    monkeypatch.setattr(monitor, "_wizard_ask_secret", lambda question: "")
+    monkeypatch.setattr(monitor, "_wizard_ask_choice", lambda question, options: 0)
+    monkeypatch.setattr(monitor, "_wizard_collect_notification_images", lambda question: False)
+    monkeypatch.setattr(monitor, "_wizard_verify_smtp", lambda values, password: None)
+
+    assert monitor._wizard_collect_email(config_values, secret_updates, env_path)
+    assert secret_updates == {}
+    assert config_values["SMTP_HOST"] == "answer@example.test"
+    assert not any("Replace" in question for question in questions)
+    assert env_path.read_text(encoding="utf-8") == 'SMTP_PASSWORD="stored-private-value"\n'
 
 
 # Verifies abandoning any mail server answer switches every email alert off rather than saving half a server
@@ -791,6 +814,34 @@ def test_interrupting_the_doctor_offer_keeps_the_saved_setup(tmp_path, monkeypat
     assert "Setup cancelled" not in output
     assert "Next steps" in output
     assert config_path.is_file()
+
+
+# Verifies a save without secrets creates no dotenv and the doctor, printed commands and launch leave --env-file out
+def test_a_secret_free_save_creates_no_dotenv_and_omits_the_env_file(tmp_path, monkeypatch, capsys):
+    config_path = tmp_path / "config.conf"
+    env_path = tmp_path / ".env"
+    install_saving_wizard_flow(monkeypatch, config_path, env_path, [True, True])
+    monkeypatch.setattr(monitor, "_wizard_load_effective_setup", lambda config, env: True)
+    doctor_mock = Mock(return_value=0)
+    monkeypatch.setattr(monitor, "run_doctor", doctor_mock)
+    execv_mock = Mock()
+    monkeypatch.setattr(monitor.os, "execv", execv_mock)
+
+    with pytest.raises(SystemExit) as error:
+        monitor.run_setup_wizard()
+
+    output = capsys.readouterr().out
+    assert error.value.code == 0
+    assert config_path.is_file()
+    assert not env_path.exists()
+    assert "  Dotenv:        " not in output
+    assert doctor_mock.call_args.args[2] is None
+    command_lines = [line for line in output.splitlines() if "--config-file" in line]
+    assert len(command_lines) == 2
+    assert all("--env-file" not in line for line in command_lines)
+    arguments = execv_mock.call_args.args[1]
+    assert "--config-file" in arguments
+    assert "--env-file" not in arguments
 
 
 # Verifies an interrupt at the launch offer reports the saved setup and points at the printed command

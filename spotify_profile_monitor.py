@@ -9697,6 +9697,9 @@ def _wizard_existing_secret(key: str, env_path: Path, placeholders: Sequence[str
 
 # Queues one secret after confirming replacement of an existing assignment
 def _wizard_queue_secret(updates: dict, env_path: Path, key: str, value: str) -> bool:
+    # A blank answer means the stored value stays, so there is nothing to queue and nothing to ask about
+    if not value:
+        return False
     error_type = SpDcConfigurationError if key == "SP_DC_COOKIE" else WebhookConfigurationError
     try:
         existing_assignment = _dotenv_contains_key(env_path, key, error_type)
@@ -10339,10 +10342,11 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
     print(f"  Configuration: {write_status['path']}")
     if write_status["backup_path"]:
         print(f"  Backup:        {write_status['backup_path']}")
-    if state.secret_updates or not state.env_path.exists():
+    # A dotenv with nothing in it is noise beside the config, so an empty one is never created
+    if state.secret_updates:
         try:
             update_status = update_dotenv_file(state.env_path, state.secret_updates)
-            print(f"  {'Secrets:' if state.secret_updates else 'Dotenv:':<15}{update_status['path']}")
+            print(f"  {'Secrets:':<15}{update_status['path']}")
         except Exception:
             print(f"Configuration was saved but dotenv destination '{state.env_path}' could not be updated.")
             raise SystemExit(1) from None
@@ -10358,7 +10362,7 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
             doctor_ran = True
             if _wizard_load_effective_setup(state.config_path, state.env_path):
                 # The shared resolver rather than the configured value, so doctor names the state a restart would find
-                doctor_failed = run_doctor(state.target, str(state.config_path), str(state.env_path), timezone_advice=resolve_local_timezone()) != 0
+                doctor_failed = run_doctor(state.target, str(state.config_path), str(state.env_path) if state.env_path.is_file() else None, timezone_advice=resolve_local_timezone()) != 0
                 state.auth["validated"] = not doctor_failed
             else:
                 doctor_failed = True
@@ -10366,8 +10370,10 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
         # The files are already written, so an interrupt here only skips the optional checks
         print(colorize("warning", "Setup is saved. Use the commands below when ready."))
     command_target = None if state.persist_target else state.target
-    doctor_command = _wizard_action_command(method, "--doctor", state.config_path, state.env_path, command_target)
-    monitor_command = _wizard_action_command(method, "", state.config_path, state.env_path, command_target)
+    # A dotenv that was never written does not exist, so the commands that only read it leave it out unless a later step still has to write it
+    saved_env = state.env_path if state.env_path.is_file() or not state.auth["complete"] else None
+    doctor_command = _wizard_action_command(method, "--doctor", state.config_path, saved_env, command_target)
+    monitor_command = _wizard_action_command(method, "", state.config_path, saved_env, command_target)
     print(colorize('header', "\nNext steps\n"))
     if not state.auth["complete"]:
         print("Setup was saved. Authentication still needs to be completed.\n")
@@ -10392,7 +10398,9 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
         exec_args = _wizard_local_command_args(method, exact=True)
         if not state.persist_target:
             exec_args.append(state.target)
-        exec_args.extend(("--config-file", str(state.config_path), "--env-file", str(state.env_path)))
+        exec_args.extend(("--config-file", str(state.config_path)))
+        if saved_env is not None:
+            exec_args.extend(("--env-file", str(saved_env)))
         sys.stdout.flush()
         raise SystemExit(_wizard_launch_monitor(exec_args))
     raise SystemExit(0)
