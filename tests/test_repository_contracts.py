@@ -241,6 +241,9 @@ class TestRepositoryMetadata:
         assert settings["*.toml"]["indent_size"] == "2"
         # Two trailing spaces are a Markdown line break, so they must stay exempt from trimming
         assert settings["*.md"]["trim_trailing_whitespace"] == "false"
+        # LICENSE is verbatim upstream text, so an editor must leave its ending and its spacing alone
+        assert settings["LICENSE"]["insert_final_newline"] == "unset"
+        assert settings["LICENSE"]["trim_trailing_whitespace"] == "unset"
 
     # An editor setting only warns on the machine that has it, so the tracked files are checked directly
     def test_tracked_text_files_obey_the_declared_whitespace_rules(self):
