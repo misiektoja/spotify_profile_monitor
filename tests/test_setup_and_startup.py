@@ -1,4 +1,5 @@
 import builtins
+import platform
 import time
 import subprocess
 import sys
@@ -17,6 +18,10 @@ def configure_mail(monkeypatch):
     monkeypatch.setattr(monitor, "SMTP_USER", "monitor@example.test")
     monkeypatch.setattr(monitor, "SENDER_EMAIL", "monitor@example.test")
     monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "owner@example.test")
+
+
+# Command hints name the interpreter the way the host platform does
+PYTHON_NAME = "python" if platform.system() == "Windows" else "python3"
 
 
 # The profile card is drawn 18 columns wide and every wordmark starts in the column beside it
@@ -914,8 +919,8 @@ def test_a_secret_free_save_creates_no_dotenv_and_omits_the_env_file(tmp_path, m
     monkeypatch.setattr(monitor, "_wizard_load_effective_setup", lambda config, env: True)
     doctor_mock = Mock(return_value=0)
     monkeypatch.setattr(monitor, "run_doctor", doctor_mock)
-    execv_mock = Mock()
-    monkeypatch.setattr(monitor.os, "execv", execv_mock)
+    launch_mock = Mock(return_value=0)
+    monkeypatch.setattr(monitor, "_wizard_launch_monitor", launch_mock)
 
     with pytest.raises(SystemExit) as error:
         monitor.run_setup_wizard()
@@ -929,7 +934,7 @@ def test_a_secret_free_save_creates_no_dotenv_and_omits_the_env_file(tmp_path, m
     command_lines = [line for line in output.splitlines() if "--config-file" in line]
     assert len(command_lines) == 2
     assert all("--env-file" not in line for line in command_lines)
-    arguments = execv_mock.call_args.args[1]
+    arguments = launch_mock.call_args.args[0]
     assert "--config-file" in arguments
     assert "--env-file" not in arguments
 
@@ -940,8 +945,8 @@ def test_interrupting_the_launch_offer_keeps_the_saved_setup(tmp_path, monkeypat
     install_saving_wizard_flow(monkeypatch, config_path, tmp_path / ".env", [True, KeyboardInterrupt])
     monkeypatch.setattr(monitor, "_wizard_load_effective_setup", lambda config, env: True)
     monkeypatch.setattr(monitor, "run_doctor", lambda *args, **kwargs: 0)
-    execv_mock = Mock()
-    monkeypatch.setattr(monitor.os, "execv", execv_mock)
+    launch_mock = Mock(return_value=0)
+    monkeypatch.setattr(monitor, "_wizard_launch_monitor", launch_mock)
 
     with pytest.raises(SystemExit) as error:
         monitor.run_setup_wizard()
@@ -950,7 +955,35 @@ def test_interrupting_the_launch_offer_keeps_the_saved_setup(tmp_path, monkeypat
     assert error.value.code == 0
     assert "Setup is saved. Start monitoring with the command above when ready." in output
     assert "Setup cancelled" not in output
-    execv_mock.assert_not_called()
+    launch_mock.assert_not_called()
+
+
+# Verifies the launch replaces the process off Windows, where a child would leave the wizard waiting behind it
+def test_the_launch_replaces_the_process_off_windows(monkeypatch):
+    monkeypatch.setattr(monitor.platform, "system", lambda: "Linux")
+    execv_mock = Mock()
+    monkeypatch.setattr(monitor.os, "execv", execv_mock)
+
+    assert monitor._wizard_launch_monitor(["/usr/bin/python3", "monitor.py", "--config-file", "config.conf"]) == 0
+    assert execv_mock.call_args.args == ("/usr/bin/python3", ["/usr/bin/python3", "monitor.py", "--config-file", "config.conf"])
+
+
+# Verifies Windows launches a child instead, since it has no process replacement, and passes its exit code on
+def test_the_windows_launch_runs_a_child_and_returns_its_exit_code(monkeypatch):
+    monkeypatch.setattr(monitor.platform, "system", lambda: "Windows")
+    run_mock = Mock(return_value=subprocess.CompletedProcess([], 3))
+    monkeypatch.setattr(monitor.subprocess, "run", run_mock)
+
+    assert monitor._wizard_launch_monitor(["python.exe", "monitor.py"]) == 3
+    assert run_mock.call_args.args[0] == ["python.exe", "monitor.py"]
+
+
+# Verifies Ctrl+C in the Windows child ends the launch quietly, since the monitor it started reports its own stop
+def test_the_windows_launch_treats_an_interrupt_as_a_clean_stop(monkeypatch):
+    monkeypatch.setattr(monitor.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(monitor.subprocess, "run", Mock(side_effect=KeyboardInterrupt))
+
+    assert monitor._wizard_launch_monitor(["python.exe", "monitor.py"]) == 0
 
 
 # Verifies a prompt runs with Python's default Ctrl+C behavior, so the signal handler cannot pre-empt it
@@ -1098,7 +1131,7 @@ def test_the_cookie_recovery_command_names_the_files_this_run_was_given(monkeypa
 
     fix = monitor.cookie_auth_recovery_fix()
 
-    assert f"python3 spotify_profile_monitor.py --import-browser-cookie --browser firefox --config-file {config_path} --env-file {env_path}" in fix
+    assert f"{PYTHON_NAME} spotify_profile_monitor.py --import-browser-cookie --browser firefox --config-file {config_path} --env-file {env_path}" in fix
 
 
 # Verifies the dotenv sentinel is left out, since the import it suggests refuses --env-file none
@@ -1110,7 +1143,7 @@ def test_the_cookie_recovery_command_leaves_the_dotenv_sentinel_out(monkeypatch)
     fix = monitor.cookie_auth_recovery_fix()
 
     assert "--env-file" not in fix
-    assert fix.endswith("python3 spotify_profile_monitor.py --import-browser-cookie --browser firefox")
+    assert fix.endswith(f"{PYTHON_NAME} spotify_profile_monitor.py --import-browser-cookie --browser firefox")
 
 
 # Verifies the config sentinel is carried, since the import it suggests reads the config rather than writing it
@@ -1122,7 +1155,7 @@ def test_the_cookie_recovery_command_carries_the_config_sentinel(monkeypatch):
 
     fix = monitor.cookie_auth_recovery_fix()
 
-    assert fix.endswith("python3 spotify_profile_monitor.py --import-browser-cookie --browser firefox --config-file none")
+    assert fix.endswith(f"{PYTHON_NAME} spotify_profile_monitor.py --import-browser-cookie --browser firefox --config-file none")
 
 
 # Verifies the no-target error opens with the banner, the way every other error path in the sibling monitors does
