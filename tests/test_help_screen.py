@@ -55,6 +55,21 @@ def test_the_examples_are_grouped_by_task(help_screen):
     assert examples.rstrip().endswith(f"Guide: {monitor.QUICK_START_GUIDE_URL}")
 
 
+# Verifies the examples open with the wizard, the one command a first-time reader can run knowing nothing
+def test_the_wizard_is_the_first_example(help_screen):
+    block = help_screen.split("Examples:", 1)[1]
+    first = [line.strip() for line in block.splitlines() if line.startswith("  ")][:2]
+
+    assert first == ["# Guided setup, recommended for the first run", "python3 spotify_profile_monitor.py --setup"]
+
+
+# Verifies the one-line description carries the repository link in the form the sibling monitors print
+def test_the_description_links_the_repository(help_screen):
+    header = help_screen.split("positional arguments:", 1)[0]
+
+    assert f"[ {monitor.PROJECT_URL}/ ]" in header
+
+
 # Verifies every example command is introduced by a comment saying what it is for
 def test_every_example_command_has_a_comment(help_screen):
     lines = [line for line in help_screen.split("Examples:", 1)[1].splitlines() if line.startswith("  ")]
