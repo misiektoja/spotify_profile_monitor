@@ -267,14 +267,16 @@ def test_startup_summary_shows_current_json_directory_path(tmp_path, monkeypatch
 
 
 # Verifies a CSV answer without an extension is saved as a .csv file while an explicit extension is left alone
-def test_the_csv_answer_gains_a_csv_extension_when_it_has_none(tmp_path, monkeypatch):
+@pytest.mark.parametrize(("typed", "expected"), (("activity", "activity.csv"), ("activity.csv", "activity.csv"), ("activity.txt", "activity.txt"), ("", "")))
+def test_the_csv_answer_gains_a_csv_extension_when_it_has_none(tmp_path, monkeypatch, typed, expected):
     baseline = dict(vars(monitor))
     state = monitor.WizardSetupState(tmp_path / "config.conf", tmp_path / ".env", baseline, dict(baseline), {}, "target.user", True, {"complete": False, "validated": False, "browser": None, "source": "not configured"}, [], [])
     monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: True)
-    for typed, expected in (("activity", "activity.csv"), ("activity.csv", "activity.csv"), ("activity.txt", "activity.txt"), ("", "")):
-        monkeypatch.setattr(monitor, "_wizard_ask_text", lambda question, default="", **kwargs: typed)
-        monitor._wizard_collect_output_section(state)
-        assert state.config_values["CSV_FILE"] == expected
+    monkeypatch.setattr(monitor, "_wizard_ask_text", lambda question, default="", **kwargs: typed)
+
+    monitor._wizard_collect_output_section(state)
+
+    assert state.config_values["CSV_FILE"] == expected
 
 
 # Verifies setup review can edit one section without losing other answers
