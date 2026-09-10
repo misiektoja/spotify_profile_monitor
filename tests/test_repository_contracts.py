@@ -136,6 +136,8 @@ class TestIssueTemplates:
     def test_bug_report_warns_before_collecting_output(self):
         bug_report = read_asset(".github/ISSUE_TEMPLATE/bug_report.yml")
         assert "SECURITY.md" in bug_report
+        # The instruction itself has to survive a rewording, not just the secrets it names
+        assert "Never paste" in bug_report
         for secret in ("sp_dc", "refresh token", "webhook URL"):
             assert secret in bug_report, secret
 
