@@ -2605,6 +2605,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
     except Exception as e:
         print_recovery_error(e, "smtp_connection")
         return 1
+    verbose_print(f"Email delivered to {RECEIVER_EMAIL}: {subject}")
     return 0
 
 
@@ -3112,6 +3113,7 @@ def send_webhook(title: str, description: str, notification_type: str = "profile
             else:
                 response = post_webhook_request(json=discord_payload, headers=request_headers)
             if 200 <= response.status_code <= 299:
+                verbose_print(f"Webhook delivered through {provider}: {webhook_values['title']}")
                 return 0
             last_error = response
             retryable = response.status_code == 429 or 500 <= response.status_code <= 599
