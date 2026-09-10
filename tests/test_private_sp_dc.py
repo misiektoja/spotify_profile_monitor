@@ -87,3 +87,26 @@ def test_set_sp_dc_replace_question_uses_the_shared_wording(monkeypatch):
         monitor.run_set_sp_dc(env_file=destination, interactive=True, input_func=lambda prompt: prompts.append(prompt) or "y", getpass_func=lambda prompt: "new-private-sp-dc")
 
         assert prompts == [f"Replace the saved Spotify cookie in '{destination.resolve()}'? [y/N]: "]
+
+
+# Verifies a secret cleared by its owner leaves the file rather than staying behind as an empty value
+def test_a_cleared_secret_is_removed_rather_than_emptied():
+    with make_test_directory() as directory_name:
+        destination = Path(directory_name) / ".env"
+        destination.write_text('UNRELATED=stay\nNTFY_ACCESS_TOKEN="tk_old"\n', encoding="utf-8")
+
+        monitor.update_dotenv_file(destination, {"NTFY_ACCESS_TOKEN": ""})
+
+        assert "NTFY_ACCESS_TOKEN" not in destination.read_text(encoding="utf-8")
+        assert dotenv_values(destination, interpolate=False) == {"UNRELATED": "stay"}
+
+
+# Verifies clearing a secret the file never held does not add an empty line for it
+def test_clearing_an_absent_secret_writes_nothing():
+    with make_test_directory() as directory_name:
+        destination = Path(directory_name) / ".env"
+        destination.write_text("UNRELATED=stay\n", encoding="utf-8")
+
+        monitor.update_dotenv_file(destination, {"NTFY_ACCESS_TOKEN": ""})
+
+        assert destination.read_text(encoding="utf-8") == "UNRELATED=stay\n"

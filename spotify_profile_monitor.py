@@ -1361,6 +1361,13 @@ def sanitize_terminal_text(message):
     return "".join(parts)
 
 
+# A block style paints a whole line and keeps the colours already inside it, so a value drawn in the
+# block's own colour would disappear inside it and the two sets are kept disjoint. Warnings and signals are
+# not on the block list: both were yellow, which is the playlist colour, so they mark their own opening
+# words instead of painting the line and the values inside keep carrying the meaning
+BLOCK_STYLE_PARTS = ("error", "email", "webhook", "info")
+NAME_STYLE_PARTS = ("username", "id", "track", "playlist", "link")
+
 # Internal flag & style map for colour handling
 COLOR_ENABLED = False
 _COLOR_STYLES: dict = {}
@@ -1511,6 +1518,10 @@ _BRACKET_META_RE = re.compile(r"^\[ (?:songs|likes|collaborators|tracks|owner|da
 _BRACKET_OWNER_RE = re.compile(r"(owner: )([^\]\n]+?)(\s*\])")
 _ACTIVE_WORD_RE = re.compile(r"\b(ACTIVE|PRIVATE MODE)\b")
 _INACTIVE_WORD_RE = re.compile(r"\b(INACTIVE|OFFLINE)\b")
+
+# The opening word of a warning and the name of a reported signal, marked instead of painting the line
+_WARNING_LABEL_RE = re.compile(r"^\*+\s*(Warning:|Caution:)")
+_SIGNAL_NAME_RE = re.compile(r"(?<=^\* Signal )(\w+)(?= received$)")
 
 
 # Builds ANSI escape sequence from a style description string
@@ -1784,6 +1795,10 @@ def _colorize_line(line):
     line = _sub_outside_color(_BOOLEAN_TRUE_RE, lambda mo: colorize("boolean_true", mo.group(0)), line)
     line = _sub_outside_color(_BOOLEAN_FALSE_RE, lambda mo: colorize("boolean_false", mo.group(0)), line)
 
+    # Mark the opening word of a warning and the name of a reported signal, rather than painting the whole line
+    line = _sub_outside_color(_WARNING_LABEL_RE, lambda mo: mo.group(0)[:mo.start(1) - mo.start(0)] + colorize("warning", mo.group(1)), line)
+    line = _sub_outside_color(_SIGNAL_NAME_RE, lambda mo: colorize("signal", mo.group(0)), line)
+
     # Highlight presence keywords
     line = _sub_outside_color(_ACTIVE_WORD_RE, lambda mo: colorize("status_active", mo.group(0)), line)
     line = _sub_outside_color(_INACTIVE_WORD_RE, lambda mo: colorize("status_inactive", mo.group(0)), line)
@@ -1798,18 +1813,12 @@ def _colorize_line(line):
             "* error" in lowered and "[errors =" not in lowered
         )
     )
-    is_warning = any(w in lowered for w in ("* warning:", "caution:")) and "[warnings =" not in lowered
-    is_signal = "* signal" in lowered and "received" in lowered
     is_info = "* info:" in lowered
 
     if lowered.startswith("to fix:"):
         line = _apply_style_nested(line, "info")
     elif is_error:
         line = _apply_style_nested(line, "error")
-    elif is_warning:
-        line = _apply_style_nested(line, "warning")
-    elif is_signal:
-        line = _apply_style_nested(line, "signal")
     elif "sending email" in lowered:
         line = _apply_style_nested(line, "email")
     elif "sending webhook" in lowered:
@@ -7720,10 +7729,13 @@ def update_dotenv_file(destination, updates) -> dict:
             continue
         if key in seen_keys:
             continue
-        output_lines.append(f"{key}={_format_dotenv_value(values_by_key[key])}")
         seen_keys.add(key)
+        # A secret cleared by its owner is removed rather than emptied, so a disabled value cannot linger here
+        if not values_by_key[key]:
+            continue
+        output_lines.append(f"{key}={_format_dotenv_value(values_by_key[key])}")
     for key, value in update_items:
-        if key not in seen_keys:
+        if key not in seen_keys and value:
             output_lines.append(f"{key}={_format_dotenv_value(value)}")
             seen_keys.add(key)
     content = "\n".join(output_lines)
@@ -8188,6 +8200,20 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
     return str(destination)
 
 
+# The settings a sign-in needs before a password can be checked, with the placeholder each one ships with
+MAIL_SIGN_IN_SETTINGS = (("SMTP_HOST", "your_smtp_server_ssl"), ("SMTP_USER", "your_smtp_user"), ("SENDER_EMAIL", "your_sender_email"), ("RECEIVER_EMAIL", "your_receiver_email"))
+
+
+# Returns the mail settings a sign-in needs that are still empty or still hold their shipped placeholder
+def mail_sign_in_settings_missing() -> List[str]:
+    return [name for name, placeholder in MAIL_SIGN_IN_SETTINGS if not str(globals().get(name) or "").strip() or globals().get(name) == placeholder]
+
+
+# Joins setting names into the phrase a message reads out, for example "SMTP_HOST and SMTP_USER"
+def join_setting_names(names: Sequence[str], conjunction: str) -> str:
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} {conjunction} {names[-1]}"
+
+
 # Signs in to the configured mail server with one entered password, so nothing is saved that cannot deliver
 def smtp_sign_in(password: str, timeout: int = 5) -> str:
     global SMTP_PASSWORD
@@ -8221,6 +8247,11 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
     if not terminal_is_interactive:
         raise RecoveryError(classify_recovery_error(context="secret", detail="--set-smtp-password needs an interactive terminal so the password stays hidden while you type it"))
+    # Checked before the prompts, so nobody types a password only to be told the mail server was never configured
+    missing = mail_sign_in_settings_missing()
+    if missing:
+        names = join_setting_names(missing, "and")
+        raise RecoveryError(make_recovery_advice("smtp.invalid", f"The mail server settings are incomplete, {names} {'is' if len(missing) == 1 else 'are'} not set", recovery_fix_with_guide(f"Set {names} in the config file, or run --setup, then run --set-smtp-password again", SMTP_GUIDE_URL), False))
     prompt = input if input_func is None else input_func
     if _dotenv_contains_key(destination, "SMTP_PASSWORD"):
         try:
@@ -11759,8 +11790,24 @@ def apply_webhook_cli_overrides(args: argparse.Namespace, parser: argparse.Argum
 CLI_EXPLICIT_FALSE_DESTINATIONS = frozenset({"disable_followers_followings_notification", "error_notification", "webhook_enabled", "webhook_followers_followings", "webhook_errors", "do_not_detect_changed_profile_pic", "do_not_monitor_playlists"})
 
 
+# Names one argument the way the user would have typed it, so a refused combination points at a real option
+def argument_display_name(parser, dest: str, argv=None) -> str:
+    typed = set(sys.argv[1:] if argv is None else argv)
+    # argparse exposes no public listing of its arguments, so the actions it holds are read directly. One
+    # destination can be reached from several actions, as an on switch and its off counterpart are, so the
+    # typed option is looked for across all of them before any of them supplies a default name
+    matching = [action for action in getattr(parser, "_actions", ()) if action.dest == dest]
+    for action in matching:
+        for option in action.option_strings:
+            if option in typed:
+                return option
+    for action in matching:
+        return str(action.metavar or dest.upper()) if not action.option_strings else action.option_strings[0]
+    return f"--{dest.replace('_', '-')}"
+
+
 # Lists command-line arguments that one exclusive action would otherwise ignore
-def cli_action_conflicts(args, allowed: Collection[str]) -> List[str]:
+def cli_action_conflicts(args, allowed: Collection[str], parser=None) -> List[str]:
     conflicts = []
     for name, value in vars(args).items():
         if name in allowed:
@@ -11769,7 +11816,7 @@ def cli_action_conflicts(args, allowed: Collection[str]) -> List[str]:
         if name in CLI_EXPLICIT_FALSE_DESTINATIONS and value is False:
             explicitly_enabled = True
         if explicitly_enabled:
-            conflicts.append("SPOTIFY_TARGET" if name == "user_id" else "--" + name.replace("_", "-"))
+            conflicts.append(argument_display_name(parser, name))
     return conflicts
 
 
@@ -12220,7 +12267,7 @@ def main():
     args = parser.parse_args()
 
     if args.generate_config is not None:
-        conflicts = cli_action_conflicts(args, {"generate_config", "force"})
+        conflicts = cli_action_conflicts(args, {"generate_config", "force"}, parser)
         if conflicts:
             parser.error("--generate-config cannot be combined with " + ", ".join(conflicts))
         config_content = generate_config_with_current_values()
@@ -12257,7 +12304,7 @@ def main():
     for enabled, action_name, allowed in exclusive_actions:
         if not enabled:
             continue
-        conflicts = cli_action_conflicts(args, allowed)
+        conflicts = cli_action_conflicts(args, allowed, parser)
         if conflicts:
             parser.error(f"{action_name} cannot be combined with " + ", ".join(conflicts))
 
