@@ -115,3 +115,34 @@ def test_the_shared_flags_use_the_shared_help_sentences(help_screen):
 
     for flag, sentence in SHARED_FLAG_HELP.items():
         assert f"{flag} {sentence}" in compact, f"the '{flag}' help sentence has drifted from the shared wording"
+
+
+# Runs the working-tree script and returns what it wrote, so a refused combination is read as a user sees it
+def run_cli(*arguments):
+    return subprocess.run([sys.executable, str(PROJECT_ROOT / "spotify_profile_monitor.py"), *arguments], cwd=PROJECT_ROOT, capture_output=True, text=True, check=False)
+
+
+# Returns the names one refusal listed, so an assertion compares whole names instead of matching a prefix
+def refused_names(result):
+    assert result.returncode != 0
+    return result.stderr.split("cannot be combined with ", 1)[1].strip().split(", ")
+
+
+# A refused combination has to name an option this tool accepts, not the internal name of its destination
+@pytest.mark.parametrize("typed", ["--debug", "-i", "--show-user-profile", "--no-webhook", "--verbose"])
+def test_a_refused_argument_is_named_the_way_it_was_typed(tmp_path, typed):
+    assert refused_names(run_cli("--generate-config", str(tmp_path / "out.conf"), typed)) == [typed]
+
+
+# The positional target keeps the name the help screen gives it rather than the name of its destination
+def test_a_refused_positional_is_named_by_its_metavar(tmp_path):
+    assert refused_names(run_cli("--generate-config", str(tmp_path / "out.conf"), "someuser")) == ["SPOTIFY_TARGET"]
+
+
+# Every name a refusal can print has to be an option the parser accepts, so no message points at nothing
+def test_every_reported_name_is_an_option_the_parser_accepts(help_screen, tmp_path):
+    reported = refused_names(run_cli("--generate-config", str(tmp_path / "out.conf"), "--debug", "--verbose", "-i"))
+
+    assert reported
+    for name in reported:
+        assert name in help_screen, f"{name} is not an option the help screen offers"

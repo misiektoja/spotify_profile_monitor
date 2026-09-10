@@ -507,7 +507,8 @@ Parts with the same name mean the same thing in [spotify_monitor](https://github
 | `duration` | Playlist durations and elapsed times |
 | `timestamp_label` | The `Timestamp:` label. Empty by default, so the label stays plain like in the sibling monitors |
 | `timestamp_value` | The timestamp value |
-| `info`, `warning`, `error`, `signal` | Informational, warning, error and received-signal lines |
+| `info`, `error` | Informational and error lines, coloured end to end |
+| `warning`, `signal` | The opening `Warning:` word and the name of a received signal. The rest of the line keeps the colours of the values in it |
 | `email`, `webhook` | Notification delivery lines |
 | `date`, `date_range` | Single dates and times, and date or hour ranges |
 | `boolean_true`, `boolean_false` | `True` / `Enabled` and `False` / `Disabled` |
@@ -521,7 +522,9 @@ To colour saved log files when you view them later, see [Coloring Log Output wit
 <a id="storing-secrets"></a>
 ## Storing Secrets
 
-It is recommended to store secrets like `SP_DC_COOKIE`, `SP_APP_CLIENT_ID`, `SP_APP_CLIENT_SECRET`, `SP_USER_CLIENT_ID`, `SP_USER_CLIENT_SECRET`, `REFRESH_TOKEN`, `SP_SHA256`, `SMTP_PASSWORD`, `WEBHOOK_URL` or `NTFY_ACCESS_TOKEN` as either an environment variable or in a dotenv file. An exported environment value wins when the same key also exists in the selected dotenv file. For `SP_DC_COOKIE`, prefer `spotify_profile_monitor --set-sp-dc` so the value is entered through a hidden prompt and validated before it is saved. Prefer `spotify_profile_monitor --set-smtp-password` for `SMTP_PASSWORD`: the value is entered through a hidden prompt and the mail server has to accept it before it is saved.
+It is recommended to store secrets like `SP_DC_COOKIE`, `SP_APP_CLIENT_ID`, `SP_APP_CLIENT_SECRET`, `SP_USER_CLIENT_ID`, `SP_USER_CLIENT_SECRET`, `REFRESH_TOKEN`, `SP_SHA256`, `SMTP_PASSWORD`, `WEBHOOK_URL` or `NTFY_ACCESS_TOKEN` as either an environment variable or in a dotenv file. An exported environment value wins when the same key also exists in the selected dotenv file. For `SP_DC_COOKIE`, prefer `spotify_profile_monitor --set-sp-dc` so the value is entered through a hidden prompt and validated before it is saved. Prefer `spotify_profile_monitor --set-smtp-password` for `SMTP_PASSWORD`: the value is entered through a hidden prompt and the mail server has to accept it before it is saved. It reports incomplete mail settings before asking for the password, naming the ones still to set.
+
+A secret you clear, such as declining the ntfy access token during setup, has its line removed from the dotenv file rather than left behind as an empty value.
 
 Set the needed environment variables using `export` on **Linux/Unix/macOS/WSL** systems:
 

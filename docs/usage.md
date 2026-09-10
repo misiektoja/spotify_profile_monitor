@@ -425,7 +425,7 @@ Cookies, tokens, passwords, authorization headers and webhook URLs are redacted 
 <a id="coloured-terminal-output"></a>
 ### Coloured Terminal Output
 
-Spotify Profile Monitor colours live terminal output by default. Usernames, Spotify IDs, playlist, track and album names, dates, durations, follower and playlist counters, links and change headers each get their own colour, and errors, warnings and received signals are highlighted as a whole line.
+Spotify Profile Monitor colours live terminal output by default. Usernames, Spotify IDs, playlist, track and album names, dates, durations, follower and playlist counters, links and change headers each get their own colour. Error lines are highlighted end to end. Warning and signal lines mark their opening word instead, so a playlist or track named inside one keeps its own colour.
 
 Colour never reaches saved output: log files are written with the escape sequences stripped, so `grep`, `tail` and any log viewer see plain text.
 
