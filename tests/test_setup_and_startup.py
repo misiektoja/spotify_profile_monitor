@@ -19,6 +19,14 @@ def configure_mail(monkeypatch):
     monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "owner@example.test")
 
 
+# The profile card is drawn 18 columns wide and every wordmark starts in the column beside it
+BOX_WIDTH = 18
+BODY_COLUMN = 21
+
+# The rows each wordmark occupies, since this tool stacks three of them where the siblings stack two
+WORDMARK_BLOCKS = {"Spotify": (1, 7), "Profile": (7, 12), "Monitor": (12, 17)}
+
+
 # Verifies the startup banner uses the selected profile card and aligned product wordmark
 def test_startup_banner_matches_selected_ascii_logo(capsys):
     monitor.print_startup_banner()
@@ -27,13 +35,52 @@ def test_startup_banner_matches_selected_ascii_logo(capsys):
     banner_lines = monitor.STARTUP_BANNER.splitlines()
 
     assert output == f"{monitor.STARTUP_BANNER}\n{'':21}v{monitor.VERSION}\n\n"
-    assert "| .-----.  ----  |   / ___| _ __   ___ | |_(_)/ _|_   _" in output
-    assert "                     |  _ \\ _ __ ___  / _(_) | ___" in output
-    assert "                     |  \\/  | ___  _ __ (_) |_ ___  _ __" in output
+    assert banner_lines[2][:BOX_WIDTH] == "| .-----.  ----  |"
     assert all(line[18:21] == "   " for line in banner_lines[1:7])
-    assert banner_lines[6][21:] == "      |_|                    |___/"
+    assert banner_lines[6][BODY_COLUMN:] == "      |_|                    |___/"
     assert "" not in banner_lines[1:]
     assert output.isascii()
+
+
+# Verifies the selected art remains exact and version independent, since the checks around it all allow
+# a drawing they were not written for
+def test_selected_banner_exact_content():
+    assert monitor.STARTUP_BANNER == r"""
+ .---------------.    ____              _   _  __
+| .-----.  ----  |   / ___| _ __   ___ | |_(_)/ _|_   _
+| |  o o  | ---- |   \___ \| '_ \ / _ \| __| | |_| | | |
+| |   -   | -))) |    ___) | |_) | (_) | |_| |  _| |_| |
+|  '-----'   ))) |   |____/| .__/ \___/ \__|_|_|  \__, |
+ '---------------'         |_|                    |___/
+                      ____             __ _ _
+                     |  _ \ _ __ ___  / _(_) | ___
+                     | |_) | '__/ _ \| |_| | |/ _ \
+                     |  __/| | | (_) |  _| | |  __/
+                     |_|   |_|  \___/|_| |_|_|\___|
+                      __  __             _ _
+                     |  \/  | ___  _ __ (_) |_ ___  _ __
+                     | |\/| |/ _ \| '_ \| | __/ _ \| '__|
+                     | |  | | (_) | | | | | || (_) | |
+                     |_|  |_|\___/|_| |_|_|\__\___/|_|"""
+
+
+# Verifies the art is portable, bounded and free of trailing whitespace
+def test_banner_ascii_width_and_whitespace():
+    monitor.STARTUP_BANNER.encode("ascii")
+    lines = monitor.STARTUP_BANNER.splitlines()
+
+    assert max(map(len, lines)) <= 90
+    assert all(line == line.rstrip() for line in lines)
+
+
+# Verifies each wordmark begins in the body column. Comparing an indented row with `in` cannot see this,
+# because a row moved one column right still contains the shorter indent it is compared against
+@pytest.mark.parametrize("name", sorted(WORDMARK_BLOCKS))
+def test_every_wordmark_starts_in_the_body_column(name):
+    first, stop = WORDMARK_BLOCKS[name]
+    beside_card = [line[BOX_WIDTH:] for line in monitor.STARTUP_BANNER.splitlines()[first:stop]]
+
+    assert BOX_WIDTH + min(len(row) - len(row.lstrip(" ")) for row in beside_card if row.strip()) == BODY_COLUMN
 
 
 # Verifies startup clearing asks for the interactive input conditions, since clear_screen owns the stdout check
