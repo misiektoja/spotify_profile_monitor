@@ -646,6 +646,24 @@ def test_a_failed_delivery_test_reaches_the_summary(monkeypatch):
     assert "1 check(s) failed, 0 warning(s)." in monitor.render_doctor_summary(report.checks)
 
 
+# Verifies a failed delivery test fails the whole run, so the exit code and the last sentence agree
+def test_a_failed_delivery_test_changes_the_exit_code(monkeypatch):
+    report = monitor.DoctorReport([monitor.make_doctor_check("Notifications", "PASS", monitor.SMTP_READY_CHECK_LABEL)])
+    stream = TTYBuffer()
+    monkeypatch.setattr(monitor.sys, "stdin", Mock(isatty=lambda: True))
+    monkeypatch.setattr(monitor.sys, "stdout", stream)
+    monkeypatch.setattr(monitor, "build_doctor_report", lambda *args, **kwargs: report)
+    monkeypatch.setattr(monitor, "_doctor_ask_yes_no", Mock(return_value=True))
+    monkeypatch.setattr(monitor, "send_email", Mock(return_value=1))
+
+    code = monitor.run_doctor()
+
+    assert code == 1
+    assert "[FAIL] Doctor test email delivery failed" in stream.getvalue()
+    assert "1 check(s) failed" in stream.getvalue()
+    assert "All checks passed" not in stream.getvalue()
+
+
 # Verifies every doctor entry point renders its summary after the delivery tests, so the sentence and the exit code describe one run
 def test_the_summary_is_rendered_after_the_delivery_tests():
     import ast
