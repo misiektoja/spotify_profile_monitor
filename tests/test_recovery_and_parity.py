@@ -485,3 +485,11 @@ def test_the_completed_check_is_a_debug_only_trace():
 
     assert "Monitoring check #" not in source
     assert 'debug_print("Completed check"' in source
+
+
+# Verifies the documented doctor sections are exactly the ones the report renders
+def test_the_documented_doctor_sections_match_the_code():
+    text = (Path(__file__).resolve().parents[1] / "docs" / "troubleshooting.md").read_text(encoding="utf-8")
+
+    for section in monitor.DOCTOR_SECTIONS:
+        assert f"**{section}**" in text, f"the {section} doctor section is not documented"
