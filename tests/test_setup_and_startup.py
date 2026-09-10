@@ -1193,7 +1193,7 @@ def test_the_wizard_reload_leaves_an_exported_secret_to_the_environment(monkeypa
 
 # Verifies the port question rejects a number no TCP port can be, instead of saving it for the doctor to reject
 def test_the_smtp_port_question_rejects_a_number_above_the_port_range(monkeypatch, capsys):
-    answers = iter(["70000", "2525"])
+    answers = iter(["70000", "y", "2525"])
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
 
     chosen = monitor._wizard_ask_positive_int("SMTP port", 587, maximum=65535)
@@ -1204,7 +1204,7 @@ def test_the_smtp_port_question_rejects_a_number_above_the_port_range(monkeypatc
 
 # Verifies declining the retry offer keeps the saved value rather than asking the same question forever
 def test_declining_the_retry_offer_keeps_the_saved_number(monkeypatch, capsys):
-    answers = iter(["", "n"])
+    answers = iter(["70000", "n"])
     monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
 
     assert monitor._wizard_ask_positive_int("SMTP port", 587, maximum=65535) == 587
@@ -1270,3 +1270,20 @@ def test_custom_webhook_alert_questions_default_to_off(monkeypatch, tmp_path):
     custom_defaults = [default for question, default in seen if not question.startswith("Set up webhook")]
     assert len(custom_defaults) == 3
     assert custom_defaults == [False, False, False]
+
+
+# Verifies declining the retry offer after a value the wizard cannot use keeps the default rather than asking again
+def test_a_rejected_duration_keeps_the_default(monkeypatch, capsys):
+    prompts = []
+    answers = iter(["later", "n"])
+
+    def script(prompt=""):
+        prompts.append(prompt)
+        return next(answers)
+
+    monkeypatch.setattr("builtins.input", script)
+
+    assert monitor._wizard_ask_duration("Spotify polling interval (seconds or use s/m/h/d)", 60) == 60
+    assert "Keeping 60s - 1m." in capsys.readouterr().out
+    # The hint the question carries belongs in the prompt, not in the offer that repeats it
+    assert any("Try entering the Spotify polling interval again? [Y/n]: " in prompt for prompt in prompts), prompts
