@@ -198,7 +198,7 @@ def test_no_stray_added_removed_prints():
     assert "nothing_to_report" in source
 
 
-# Confirms requirements.txt declares the same lower bounds as the package metadata
+# Confirms requirements.txt declares the same libraries and lower bounds as the package metadata
 def test_requirements_match_project_metadata():
     lines = (PROJECT_ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
     # Commented lines document the optional extras, which carry their own markers and are asserted separately
@@ -209,6 +209,14 @@ def test_requirements_match_project_metadata():
     for requirement in requirements:
         assert ">=" in requirement, f"{requirement} has no lower bound"
         assert f'"{requirement}"' in pyproject, f"{requirement} is missing from pyproject dependencies"
+
+    # The loop above cannot see a library the file leaves out, which is the direction a manual install breaks in
+    declared = re.search(r"^dependencies = \[(.*?)^\]", pyproject, re.S | re.M)
+    assert declared is not None
+    packaged = {name.casefold().replace("_", "-") for name in re.findall(r'"([A-Za-z0-9_.-]+)', declared.group(1))}
+    manual = {re.match(r"[A-Za-z0-9_.-]+", requirement).group(0).casefold().replace("_", "-") for requirement in requirements}
+
+    assert manual == packaged
 
 
 # Verifies artwork support ships as an optional extra that keeps Python 3.9 on the last Pillow it supports
