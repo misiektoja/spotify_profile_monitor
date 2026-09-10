@@ -1727,7 +1727,7 @@ def _colorize_line(line):
     line = _LIST_ROW_RE.sub(_colorize_list_row, line, count=1)
 
     # Timestamp lines get a dimmed label and a coloured value
-    labeled_value = _split_output_label(line, ("Timestamp:",))
+    labeled_value = _split_output_label(line, ("Timestamp:", "Liveness check, timestamp:"))
     if labeled_value:
         label, rest = labeled_value
         colored = f"{colorize('timestamp_label', label)}{colorize('timestamp_value', rest)}"
