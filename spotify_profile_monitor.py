@@ -1069,6 +1069,9 @@ CLI_CONFIG_PATH = None
 # Set when --config-file none switches discovery off, so no later lookup can find a file the run rejected
 CONFIG_DISCOVERY_DISABLED = False
 
+# The settings a configuration file actually assigned, so a built-in default is never mistaken for a choice
+CONFIGURED_SETTING_NAMES = set()
+
 # To solve the issue: 'SyntaxError: f-string expression part cannot include a backslash'
 nl_ch = "\n"
 
@@ -2026,6 +2029,9 @@ class Logger(object):
 
     # Limits the terminal line across separate writes while leaving the log complete
     def _truncate_terminal(self, message):
+        # The limit is fixed once at startup, so with truncation off there is no column to keep track of
+        if not TRUNCATE_CHARS:
+            return message
         try:
             from wcwidth import wcwidth
         except ImportError:
@@ -3529,8 +3535,6 @@ def send_webhook(title: str, description: str, notification_type: str = "profile
                     response = post_webhook_request(destination=destination, data=ntfy_image, params={"title": ntfy_title, "message": ntfy_message}, headers=dict(request_headers, **{"Content-Type": "image/jpeg", "X-Filename": NTFY_IMAGE_FILENAME}))
                 else:
                     response = post_webhook_request(destination=destination, data=ntfy_message.encode("utf-8"), params={"title": ntfy_title}, headers=request_headers)
-            elif isinstance(discord_payload, str):
-                response = post_webhook_request(destination=destination, data=discord_payload, headers=request_headers)
             else:
                 response = post_webhook_request(destination=destination, json=discord_payload, headers=request_headers)
             if 200 <= response.status_code <= 299:
@@ -3924,9 +3928,16 @@ def dotenv_reload_source(key):
 # Resolves dotenv references while keeping explicitly marked private values literal
 def resolve_dotenv_values(content, override=False, interpolate=True):
     from io import StringIO
-    from dotenv.main import with_warn_for_invalid_lines
-    from dotenv.parser import parse_stream
-    from dotenv.variables import parse_variables
+    try:
+        from dotenv.main import with_warn_for_invalid_lines
+        from dotenv.parser import parse_stream
+        from dotenv.variables import parse_variables
+    # A python-dotenv without these internals still reads the file, only without the literal marker. Writing a
+    # value that needs the marker then fails its own read-back check rather than saving something unreadable
+    except ImportError:
+        from dotenv.main import DotEnv
+        debug_print("Dotenv literal markers are unavailable in the installed python-dotenv", outcome="skipped")
+        return DotEnv(dotenv_path=None, stream=StringIO(content), override=override, interpolate=interpolate).dict()
     values = {}
     for binding in with_warn_for_invalid_lines(parse_stream(StringIO(content))):
         if binding.key is None:
@@ -9106,6 +9117,9 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
         # Parsed as data rather than executed, so a config file picked up from the working directory cannot run code
         parsed_values = parse_config_content(content, str(config_path), retired_settings)
         selected_namespace.update(parsed_values)
+        # Only a load that reaches the module settings records a choice, not a copy read for the wizard or a report
+        if selected_namespace is globals():
+            CONFIGURED_SETTING_NAMES.update(parsed_values)
         if report_errors:
             debug_print("Configuration applied", path=config_path, settings=len(parsed_values))
         if retired_out is not None:
@@ -12843,7 +12857,12 @@ def apply_webhook_cli_overrides(args: argparse.Namespace, parser: argparse.Argum
         configured_provider = normalized_webhook_provider()
         if detected_provider and detected_provider != configured_provider:
             WEBHOOK_PROVIDER = detected_provider
-            print(f"* Warning: Configured webhook provider did not match the URL. Using {webhook_provider_display_name(detected_provider)}.")
+            # The built-in default is not a choice anyone made, so detection there is the documented behaviour
+            # rather than a mismatch. Only a provider the configuration actually sets is worth warning about
+            if "WEBHOOK_PROVIDER" in CONFIGURED_SETTING_NAMES:
+                print(f"* Warning: Configured webhook provider did not match the URL. Using {webhook_provider_display_name(detected_provider)}.")
+            else:
+                verbose_print(f"Webhook provider detected from the URL: {webhook_provider_display_name(detected_provider)}")
 
 
 CLI_EXPLICIT_FALSE_DESTINATIONS = frozenset({"disable_followers_followings_notification", "error_notification", "webhook_enabled", "webhook_followers_followings", "webhook_errors", "do_not_detect_changed_profile_pic", "do_not_monitor_playlists"})

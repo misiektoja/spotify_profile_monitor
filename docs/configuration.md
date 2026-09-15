@@ -369,7 +369,7 @@ A delivery keeps its original destination and credentials for every retry. Provi
 
 Spotify Profile Monitor can send profile, follower and error alerts through Discord or the native [ntfy publish API](https://docs.ntfy.sh/publish/). Webhook delivery works with or without email.
 
-`WEBHOOK_PROVIDER` selects the request format. It defaults to `"discord"`. Standard Discord and public `ntfy.sh` URLs automatically select the matching format if this configured value is stale. Self-hosted ntfy and compatible endpoints still use the configured provider. Use `--webhook-provider discord` or `--webhook-provider ntfy` for an explicit one-run override.
+`WEBHOOK_PROVIDER` selects the request format. It defaults to `"discord"`. Standard Discord and public `ntfy.sh` URLs automatically select the matching format if this configured value is stale. While `WEBHOOK_PROVIDER` is left at its default, that detection is silent and `--verbose` reports it. A warning appears only when your configuration file sets a provider the URL disagrees with. Self-hosted ntfy and compatible endpoints still use the configured provider. Use `--webhook-provider discord` or `--webhook-provider ntfy` for an explicit one-run override.
 
 ### Discord
 

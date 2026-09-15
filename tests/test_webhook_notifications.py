@@ -603,6 +603,7 @@ def test_webhook_cli_overrides(monkeypatch):
 # Verifies a known ntfy URL corrects a stale configured provider and sends native text
 def test_runtime_provider_detection_corrects_config_mismatch(monkeypatch, capsys):
     configure_webhook(monkeypatch)
+    monkeypatch.setattr(monitor, "CONFIGURED_SETTING_NAMES", {"WEBHOOK_PROVIDER"})
     args = argparse.Namespace(webhook_provider=None, webhook_url="https://ntfy.sh/private-topic", webhook_enabled=None, webhook_profile=None, webhook_followers_followings=None, webhook_errors=None)
     monitor.apply_webhook_cli_overrides(args, argparse.ArgumentParser())
     assert monitor.WEBHOOK_PROVIDER == "ntfy"
