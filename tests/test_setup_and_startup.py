@@ -599,6 +599,65 @@ def test_a_blank_smtp_password_queues_nothing_and_asks_no_replace_question(monke
     assert env_path.read_text(encoding="utf-8") == 'SMTP_PASSWORD="stored-private-value"\n'
 
 
+# Setup reports the sign-in succeeded and then writes the files a restart reads, so the value it proves has to be
+# the value the next run resolves. Startup prefers an export over the dotenv file, and setup has to agree
+def test_the_effective_secret_follows_the_startup_precedence(monkeypatch, tmp_path):
+    env_path = tmp_path / ".env"
+    env_path.write_text('SMTP_PASSWORD="saved-in-file"\n', encoding="utf-8")
+    monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "from-config-file", raising=False)
+
+    assert monitor.effective_secret_after_setup("SMTP_PASSWORD", env_path, {}) == ("saved-in-file", False)
+    assert monitor.effective_secret_after_setup("SMTP_PASSWORD", env_path, {"SMTP_PASSWORD": "accepted"}) == ("accepted", False)
+    monkeypatch.setenv("SMTP_PASSWORD", "exported")
+    assert monitor.effective_secret_after_setup("SMTP_PASSWORD", env_path, {"SMTP_PASSWORD": "accepted"}) == ("exported", True)
+    monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+    assert monitor.effective_secret_after_setup("SMTP_PASSWORD", tmp_path / "absent.env", {}) == ("from-config-file", False)
+
+
+# Verifies keeping the saved password checks that one rather than the one just typed and thrown away
+def test_a_declined_replacement_checks_the_password_that_is_kept(monkeypatch, tmp_path):
+    checked = []
+    env_path = tmp_path / ".env"
+    env_path.write_text('SMTP_PASSWORD="saved-in-file"\n', encoding="utf-8")
+    monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+    config_values = {"PROFILE_NOTIFICATION": True, "FOLLOWERS_FOLLOWINGS_NOTIFICATION": True, "ERROR_NOTIFICATION": True, "EMAIL_IMAGES": True}
+    secret_updates = {}
+    answers = iter([True, True, False, True, True, True])
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: next(answers))
+    monkeypatch.setattr(monitor, "_wizard_ask_text", lambda question, default="", required=False: "answer@example.test")
+    monkeypatch.setattr(monitor, "_wizard_ask_positive_int", lambda question, default, maximum=None: default)
+    monkeypatch.setattr(monitor, "_wizard_ask_secret", lambda question: "typed-new")
+    monkeypatch.setattr(monitor, "_wizard_ask_choice", lambda question, options: 0)
+    monkeypatch.setattr(monitor, "_wizard_collect_notification_images", lambda question: False)
+    monkeypatch.setattr(monitor, "_wizard_verify_smtp", lambda values, password: checked.append(password))
+
+    assert monitor._wizard_collect_email(config_values, secret_updates, env_path)
+    assert checked == ["saved-in-file"]
+    assert "SMTP_PASSWORD" not in secret_updates
+
+
+# Verifies an exported password is the one signed in with and that setup says so, since an export wins at startup
+def test_an_exported_password_is_checked_and_reported(monkeypatch, tmp_path, capsys):
+    checked = []
+    env_path = tmp_path / ".env"
+    monkeypatch.setenv("SMTP_PASSWORD", "exported-elsewhere")
+    config_values = {"PROFILE_NOTIFICATION": True, "FOLLOWERS_FOLLOWINGS_NOTIFICATION": True, "ERROR_NOTIFICATION": True, "EMAIL_IMAGES": True}
+    secret_updates = {}
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: True)
+    monkeypatch.setattr(monitor, "_wizard_ask_text", lambda question, default="", required=False: "answer@example.test")
+    monkeypatch.setattr(monitor, "_wizard_ask_positive_int", lambda question, default, maximum=None: default)
+    monkeypatch.setattr(monitor, "_wizard_ask_secret", lambda question: "typed-new")
+    monkeypatch.setattr(monitor, "_wizard_ask_choice", lambda question, options: 0)
+    monkeypatch.setattr(monitor, "_wizard_collect_notification_images", lambda question: False)
+    monkeypatch.setattr(monitor, "_wizard_verify_smtp", lambda values, password: checked.append(password))
+
+    assert monitor._wizard_collect_email(config_values, secret_updates, env_path)
+    assert checked == ["exported-elsewhere"]
+    assert secret_updates["SMTP_PASSWORD"] == "typed-new"
+    assert "SMTP_PASSWORD is exported in this environment" in capsys.readouterr().out
+
+
 # Verifies abandoning any mail server answer switches every email alert off rather than saving half a server
 @pytest.mark.parametrize("abandoned", ["SMTP host", "SMTP username", "Sender email", "Receiver email"])
 def test_an_abandoned_mail_server_answer_switches_email_off(monkeypatch, tmp_path, abandoned):
