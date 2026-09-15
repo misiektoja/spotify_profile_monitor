@@ -221,21 +221,6 @@ def test_main_loop_arms_the_watchdog_with_alarm_timeout():
     assert re.search(r"except TimeoutException[\s\S]{0,400}?time\.sleep\(ALARM_RETRY\)", source), "a watchdog timeout must retry on the alarm delay"
 
 
-# Confirms both loop failure paths route through the outage reporter, so neither repeats itself every check
-def test_the_loop_routes_its_failures_through_the_outage_reporter():
-    source = inspect.getsource(monitor.spotify_profile_monitor_uri)
-
-    assert source.count("OutageReporter()") == 2, "the profile poll and the follower poll each need their own reporter"
-    assert source.count("print_outage_liveness(") == 2
-    assert source.count("print_outage_recovery(") == 2
-    assert "print_recovery_error(e, context, retry_note=" in source and "tracker=monitor_recovery_tracker)" in source
-    assert re.search(r"outage\.failed\(advice\)", source)
-    assert "follower_outage.failed(follower_advice)" in source
-    assert "print_liveness_banner(" in source, "the healthy banner and its timestamp belong in one call"
-    assert "verbose_print(f\"Monitoring healthy" not in source, "the healthy banner is no longer verbose-only"
-    assert "int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS" in source, "the healthy banner is timed rather than counted"
-
-
 # Confirms a SIGHUP reload picks up rotated secrets from the dotenv file
 def test_sighup_reloads_rotated_secrets(monkeypatch, tmp_path, capsys):
     if not hasattr(monitor.signal, "SIGHUP"):

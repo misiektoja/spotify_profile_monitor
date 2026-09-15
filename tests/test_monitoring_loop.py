@@ -17,11 +17,13 @@ def profile_snapshot():
 
 
 # Runs the loop until stop_after sleeps have passed and returns the error alerts it handed to the channels
-def error_alerts_for(monkeypatch, tmp_path, answers, stop_after):
+def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answers=(), check_interval=1800, liveness_seconds=None):
     calls = []
     sleeps = []
     now = [1_800_000_000.0]
     remaining = list(answers)
+    remaining_followers = list(follower_answers)
+    follower_calls = []
 
     def stopping_sleep(seconds):
         sleeps.append(seconds)
@@ -37,6 +39,16 @@ def error_alerts_for(monkeypatch, tmp_path, answers, stop_after):
             raise answer
         return answer
 
+    # The follower poll has its own outage reporter, so the harness can fail it while the profile poll succeeds.
+    # The startup snapshot reads the same list and a failure there ends the run, so only loop checks fail
+    def scripted_followers(*_arguments, **_keywords):
+        follower_calls.append(1)
+        if remaining_followers and len(follower_calls) > 1:
+            answer = remaining_followers.pop(0)
+            if isinstance(answer, BaseException):
+                raise answer
+        return {"sp_user_followers": []}
+
     def record_delivery(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, **_keywords):
         calls.append({"type": notification_type, "subject": subject, "body": body, "body_html": body_html, "email": email_enabled, "webhook": webhook_enabled})
         return True, True
@@ -49,9 +61,9 @@ def error_alerts_for(monkeypatch, tmp_path, answers, stop_after):
     monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
     monkeypatch.setattr(monitor, "TOKEN_SOURCE", "cookie")
     monkeypatch.setattr(monitor, "SP_DC_COOKIE", "cookie-value")
-    monkeypatch.setattr(monitor, "SPOTIFY_CHECK_INTERVAL", 1800)
+    monkeypatch.setattr(monitor, "SPOTIFY_CHECK_INTERVAL", check_interval)
     monkeypatch.setattr(monitor, "SPOTIFY_ERROR_INTERVAL", 300)
-    monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", 100 * 1800)
+    monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", liveness_seconds if liveness_seconds is not None else 100 * check_interval)
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
     monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", True)
     monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", True)
@@ -61,7 +73,7 @@ def error_alerts_for(monkeypatch, tmp_path, answers, stop_after):
     monkeypatch.setattr(monitor, "VERBOSE_MODE", False)
     monkeypatch.setattr(monitor, "spotify_get_access_token_from_sp_dc", lambda cookie: "access-token")
     monkeypatch.setattr(monitor, "spotify_get_user_info", scripted_user_info)
-    monkeypatch.setattr(monitor, "spotify_get_user_followers", lambda token, uri: {"sp_user_followers": []})
+    monkeypatch.setattr(monitor, "spotify_get_user_followers", scripted_followers)
     monkeypatch.setattr(monitor, "spotify_get_user_followings", lambda token, uri: {"sp_user_followings": []})
     monkeypatch.setattr(monitor, "send_notification_channels", record_delivery)
     with pytest.raises(LoopStopped):
@@ -139,3 +151,43 @@ def test_a_lasting_outage_is_carried_by_the_hourly_reminder(monkeypatch, tmp_pat
     assert output.count(f"* Monitoring degraded for {USER}. The Spotify request timed out since ") == 3
     assert ", 4 failed checks\n" in output and ", 10 failed checks\n" in output
     assert output.count("Liveness check, timestamp:") == 3
+
+
+# Verifies the follower poll carries its own outage, so a profile check that keeps succeeding is not reported failed
+def test_a_follower_failure_is_reported_on_its_own_without_the_profile_poll(monkeypatch, tmp_path, capsys):
+    error_alerts_for(monkeypatch, tmp_path, [profile_snapshot()], 3, follower_answers=[RuntimeError("The read operation timed out")] * 4)
+
+    lines = capsys.readouterr().out.splitlines()
+    reports = [line for line in lines if line.startswith("* Error while getting followers and followings: ")]
+    assert len(reports) == 1 and reports[0].endswith("(retrying in 5 minutes)")
+    assert not [line for line in lines if line.startswith("* Error:")]
+
+
+# Verifies each poll announces its own recovery on screen, not only ends the outage it was tracking
+@pytest.mark.parametrize("answers,follower_answers", [([profile_snapshot(), RuntimeError("503 Server Error")], ()), ([profile_snapshot()], [RuntimeError("503 Server Error")])])
+def test_a_check_that_succeeds_after_a_failure_announces_the_recovery(monkeypatch, tmp_path, capsys, answers, follower_answers):
+    error_alerts_for(monkeypatch, tmp_path, answers, 4, follower_answers=follower_answers)
+
+    output = capsys.readouterr().out
+    assert output.count(f"* Monitoring recovered for {USER} after ") == 1
+
+
+# Verifies a run that never fails announces no recovery, so the line marks a real return rather than every check
+def test_a_run_that_never_fails_announces_no_recovery(monkeypatch, tmp_path, capsys):
+    error_alerts_for(monkeypatch, tmp_path, [profile_snapshot()], 4)
+
+    output = capsys.readouterr().out
+    assert "* Monitoring recovered" not in output
+    assert "* Error" not in output
+
+
+# Verifies the healthy banner reaches a plain run and follows elapsed time rather than a count of checks, so the
+# same four checks report it once at a five-minute interval and three times at a fifteen-minute one
+@pytest.mark.parametrize("check_interval,expected", [(300, 1), (900, 3)])
+def test_the_healthy_banner_reaches_a_plain_run_on_its_own_clock(monkeypatch, tmp_path, capsys, check_interval, expected):
+    error_alerts_for(monkeypatch, tmp_path, [profile_snapshot()], 5, check_interval=check_interval, liveness_seconds=900)
+
+    lines = capsys.readouterr().out.splitlines()
+    banners = [number for number, line in enumerate(lines) if line == f"* Monitoring healthy for {USER}. No profile or playlist change since the last check"]
+    assert len(banners) == expected
+    assert all(lines[number + 1].startswith("Liveness check, timestamp:") for number in banners)
