@@ -1000,6 +1000,8 @@ PLAYLISTS_PENDING_CACHE = {}
 
 # Seconds rather than checks, because a failing run usually retries on a different interval than a healthy one
 LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL > 0 else 0
+# How long a failure the tool can retry away must last before it is alerted, a failure it cannot is alerted at once
+ERROR_ALERT_AFTER_SECONDS = 300  # 5 minutes
 
 stdout_bck = None
 csvfieldnames = ['Date', 'Type', 'Name', 'Old', 'New']
@@ -11000,7 +11002,9 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             elif outage_outcome == "degraded":
                 print_outage_liveness(user_uri_id, advice, outage.since)
 
-            if notification_channels_pending("error", ERROR_NOTIFICATION, email_sent, webhook_sent):
+            # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
+            alert_due = not advice.retryable or int(time.time()) - outage.since >= ERROR_ALERT_AFTER_SECONDS
+            if alert_due and notification_channels_pending("error", ERROR_NOTIFICATION, email_sent, webhook_sent):
                 safe_detail = sanitize_error_text(e)
                 m_subject = f"spotify_profile_monitor: {advice.summary} (uri: {user_uri_id})"
                 m_body = f"{advice.summary}\n\nTo fix: {advice.fix}\n\nTechnical detail: {safe_detail}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"

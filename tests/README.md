@@ -40,6 +40,7 @@ would see.
 | `test_web_playlist_backend.py` | TOTP generation and config, plus the generated config's token-source guidance |
 | `test_playlist_snapshot_baseline.py` | Playlist baseline advancement on partial failure, removal confirmation and membership acceptance |
 | `test_webhook_notifications.py` | Webhook URL validation, provider detection, startup rollups and `SIGHUP` reload |
+| `test_monitoring_loop.py` | Error alert timing in the monitoring loop: a retryable outage alerts once it has lasted the alert delay and a failure that cannot clear itself alerts at once |
 | `test_notification_escaping.py` | Source-level sweep proving every HTML email body escapes Spotify-supplied text |
 | `test_untrusted_output.py` | Terminal control-character stripping across the logger, output streams and early-exit listing modes |
 | `test_help_screen.py` | The `--help` screen: the shared argument group names, the task-grouped examples and the startup banner |
