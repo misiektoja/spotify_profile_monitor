@@ -466,6 +466,8 @@ As Windows supports limited number of signals, this functionality is available o
 
 Spotify Profile Monitor colours live terminal output through `COLORED_OUTPUT` and `COLOR_THEME`. To colour saved log files when you view them later, you can use [GRC](https://github.com/garabik/grc).
 
+The bundled recipe follows the same colours as the live output. It also covers the other monitors in the family, so one copy in `~/.grc/` colours every tool's logs.
+
 Add to your GRC config (`~/.grc/grc.conf`):
 
 ```
