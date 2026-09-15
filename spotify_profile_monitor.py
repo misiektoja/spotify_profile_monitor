@@ -4163,12 +4163,20 @@ def fetch_server_time(session: req.Session, ua: str) -> int:
     return int(parsedate_to_datetime(date_hdr).timestamp())
 
 
+# Reports whether configured web-player cipher bytes are a non-empty sequence of plain integers, checked before
+# iterating because a single number written in place of the sequence is truthy and would raise instead of reporting
+def totp_cipher_bytes_are_valid(cipher_bytes: Any) -> bool:
+    if not isinstance(cipher_bytes, (list, tuple)) or not cipher_bytes:
+        return False
+    return all(isinstance(value, int) and not isinstance(value, bool) for value in cipher_bytes)
+
+
 # Builds a pyotp TOTP object from the configured web-player cipher bytes
 def generate_totp():
     import pyotp
 
     cipher_bytes = TOTP_SECRET_CIPHER_BYTES
-    if not cipher_bytes or not all(isinstance(value, int) and not isinstance(value, bool) for value in cipher_bytes):
+    if not totp_cipher_bytes_are_valid(cipher_bytes):
         raise ValueError("TOTP_SECRET_CIPHER_BYTES must be a non-empty sequence of integers; refresh it with the spotify_monitor_secret_grabber tool if Spotify rotated the web-player secret")
     if not isinstance(TOTP_VERSION, int) or isinstance(TOTP_VERSION, bool) or TOTP_VERSION <= 0:
         raise ValueError("TOTP_VERSION must be a positive integer; refresh it with the spotify_monitor_secret_grabber tool if Spotify rotated the web-player secret")
@@ -8009,6 +8017,13 @@ def _format_dotenv_value(value: str) -> str:
     return f'"{escaped}"'
 
 
+# Returns the dotenv parser's own bindings for one file's text, where a quoted value written across several lines is one binding
+def _dotenv_bindings(text: str):
+    from io import StringIO
+    from dotenv.parser import parse_stream
+    return list(parse_stream(StringIO(text)))
+
+
 # Updates allowed secrets in a dotenv file through an atomic replacement
 def update_dotenv_file(destination, updates) -> dict:
     if not hasattr(updates, "items"):
@@ -8022,34 +8037,43 @@ def update_dotenv_file(destination, updates) -> dict:
 
     destination_path = Path(destination).expanduser()
     destination_path.parent.mkdir(parents=True, exist_ok=True)
-    existing_lines = destination_path.read_text(encoding="utf-8").splitlines() if destination_path.exists() else []
+    existing_bindings = _dotenv_bindings(destination_path.read_text(encoding="utf-8") if destination_path.exists() else "")
     update_keys = {key for key, _ in update_items}
     values_by_key = dict(update_items)
     seen_keys = set()
-    output_lines = []
-    assignment_pattern = re.compile(r"^(\s*(?:export\s+)?)([A-Za-z_][A-Za-z0-9_]*)\s*=")
-    for line in existing_lines:
-        match = assignment_pattern.match(line)
-        key = match.group(2) if match else None
-        written_prefix = match.group(1) if match else ""
-        if key not in update_keys:
-            output_lines.append(line)
+    output_parts = []
+    # Rebuilt from the parser's own bindings rather than physical lines, since a quoted value can span several
+    # of them and replacing only the first leaves the rest of the old secret behind as broken syntax
+    for binding in existing_bindings:
+        original = binding.original.string
+        blank_prefix = original[:len(original) - len(original.lstrip("\r\n"))]
+        if binding.key is None or binding.key not in update_keys:
+            output_parts.append(original)
             continue
-        if key in seen_keys:
+        if binding.key in seen_keys:
+            output_parts.append(blank_prefix)
             continue
-        seen_keys.add(key)
+        seen_keys.add(binding.key)
         # A secret cleared by its owner is removed rather than emptied, so a disabled value cannot linger here
-        if not values_by_key[key]:
+        if not values_by_key[binding.key]:
+            output_parts.append(blank_prefix)
             continue
         # An "export " the owner wrote is kept, since dropping it changes what a shell sourcing the file exports
-        output_lines.append(f"{written_prefix}{key}={_format_dotenv_value(values_by_key[key])}")
+        head = original[len(blank_prefix):]
+        written_prefix = head[:head.index(binding.key)]
+        output_parts.append(f"{blank_prefix}{written_prefix}{binding.key}={_format_dotenv_value(values_by_key[binding.key])}\n")
+    content = "".join(output_parts)
+    # A file that did not end in a newline would otherwise take the first new assignment onto its last line
+    if content and not content.endswith("\n"):
+        content += "\n"
     for key, value in update_items:
         if key not in seen_keys and value:
-            output_lines.append(f"{key}={_format_dotenv_value(value)}")
+            content += f"{key}={_format_dotenv_value(value)}\n"
             seen_keys.add(key)
-    content = "\n".join(output_lines)
-    if output_lines:
-        content += "\n"
+    # Checked before it replaces the file, so a rewrite can never publish a secret the next run cannot read back
+    rewritten = {binding.key: binding.value for binding in _dotenv_bindings(content) if binding.key is not None}
+    if any(rewritten.get(key, "") != value for key, value in update_items):
+        raise ValueError(f"Updating '{destination_path}' would not store the requested values")
 
     temporary_path = None
     try:
@@ -9431,7 +9455,7 @@ def doctor_check_configuration(config_path=None, env_path=None, startup_checks: 
     else:
         checks.append(make_doctor_check("Configuration", "PASS", f"TOKEN_SOURCE is {TOKEN_SOURCE}"))
     if TOKEN_SOURCE == "cookie":
-        totp_bytes_valid = bool(TOTP_SECRET_CIPHER_BYTES) and all(isinstance(value, int) and not isinstance(value, bool) for value in TOTP_SECRET_CIPHER_BYTES)
+        totp_bytes_valid = totp_cipher_bytes_are_valid(TOTP_SECRET_CIPHER_BYTES)
         totp_version_valid = isinstance(TOTP_VERSION, int) and not isinstance(TOTP_VERSION, bool) and TOTP_VERSION > 0
         if totp_bytes_valid and totp_version_valid:
             checks.append(make_doctor_check("Configuration", "PASS", f"Web-player TOTP parameters are valid (v{TOTP_VERSION})"))
