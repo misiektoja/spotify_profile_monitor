@@ -723,7 +723,7 @@ def test_a_delivered_webhook_is_reported_in_verbose(monkeypatch, capsys):
 
     assert monitor.send_webhook("Profile picture changed", "Body", "profile") == 0
 
-    assert "* Webhook delivered through Discord: Profile picture changed" in capsys.readouterr().out
+    assert "* Webhook delivered through Discord: 'Profile picture changed'" in capsys.readouterr().out
 
 
 # Verifies a delivered email names where it went and what it was, so verbose answers whether the alert arrived
@@ -740,4 +740,27 @@ def test_a_delivered_email_is_reported_in_verbose(monkeypatch, capsys):
 
     assert monitor.send_email("Profile picture changed", "Body", "", False) == 0
 
-    assert "* Email delivered to receiver@example.com: Profile picture changed" in capsys.readouterr().out
+    assert "* Email delivered to receiver@example.com: 'Profile picture changed'" in capsys.readouterr().out
+
+
+# Verifies DELIVERY_CONFIRMATIONS drops both delivery lines without turning the rest of verbose mode off
+def test_delivery_confirmations_can_be_turned_off(monkeypatch, capsys):
+    configure_webhook(monkeypatch)
+    monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(monitor, "SMTP_PORT", 587)
+    monkeypatch.setattr(monitor, "SMTP_USER", "sender")
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "not-a-real-password")
+    monkeypatch.setattr(monitor, "SENDER_EMAIL", "sender@example.com")
+    monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "receiver@example.com")
+    monkeypatch.setattr(monitor, "VERBOSE_MODE", True)
+    monkeypatch.setattr(monitor, "DEBUG_MODE", False)
+    monkeypatch.setattr(monitor, "DELIVERY_CONFIRMATIONS", False)
+    monkeypatch.setattr(monitor.WEBHOOK_SESSION, "post", Mock(return_value=FakeResponse()))
+    monkeypatch.setattr(monitor.smtplib, "SMTP", Mock(return_value=Mock()))
+
+    assert monitor.send_webhook("Profile picture changed", "Body", "profile") == 0
+    assert monitor.send_email("Profile picture changed", "Body", "", False) == 0
+
+    output = capsys.readouterr().out
+    assert "Webhook delivered" not in output
+    assert "Email delivered" not in output

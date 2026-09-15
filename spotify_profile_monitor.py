@@ -409,6 +409,10 @@ DEBUG_MODE = False
 # Can also be enabled via the --verbose flag, which turns it on regardless of this setting
 VERBOSE_MODE = False
 
+# Whether verbose output confirms each delivered email and webhook alert
+# Applies only when VERBOSE_MODE is enabled
+DELIVERY_CONFIRMATIONS = True
+
 # Width of horizontal line
 HORIZONTAL_LINE = 113
 
@@ -798,6 +802,7 @@ DISABLE_LOGGING = False
 ASCII_LOG_SEPARATORS = "Auto"
 DEBUG_MODE = False
 VERBOSE_MODE = False
+DELIVERY_CONFIRMATIONS = True
 
 # True once monitoring has printed its header, so a verbose notice after that closes its own block
 MONITORING_ACTIVE = False
@@ -2145,6 +2150,12 @@ def verbose_print(message: Any) -> None:
         print(f"* {sanitize_error_text(message)}")
 
 
+# Prints one delivery confirmation in verbose mode unless DELIVERY_CONFIRMATIONS turns them off
+def verbose_delivery_print(message: Any) -> None:
+    if DELIVERY_CONFIRMATIONS:
+        verbose_print(message)
+
+
 # Prints verbose-only notices as one block, so a standalone line is not left without the timestamp trailer
 def verbose_notice(*messages):
     if not VERBOSE_MODE or not messages:
@@ -2711,7 +2722,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
     except Exception as e:
         print_recovery_error(e, "smtp_connection")
         return 1
-    verbose_print(f"Email delivered to {RECEIVER_EMAIL}: {subject}")
+    verbose_delivery_print(f"Email delivered to {RECEIVER_EMAIL}: '{subject}'")
     return 0
 
 
@@ -3219,7 +3230,7 @@ def send_webhook(title: str, description: str, notification_type: str = "profile
             else:
                 response = post_webhook_request(json=discord_payload, headers=request_headers)
             if 200 <= response.status_code <= 299:
-                verbose_print(f"Webhook delivered through {webhook_provider_display_name(provider)}: {webhook_values['title']}")
+                verbose_delivery_print(f"Webhook delivered through {webhook_provider_display_name(provider)}: '{webhook_values['title']}'")
                 return 0
             last_error = response
             retryable = response.status_code == 429 or 500 <= response.status_code <= 599

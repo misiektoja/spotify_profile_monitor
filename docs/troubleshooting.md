@@ -24,7 +24,7 @@ The report ends with a **Next steps** block naming the command that starts monit
 ## Choosing the Right Logging Level
 
 - **Default mode** keeps startup output compact and reports profile changes, warnings and errors
-- **Verbose mode (`--verbose`)** adds the complete startup summary, infrequent operational transitions such as metadata backend changes and a line naming where each delivered alert went. It prints nothing per check, so an uneventful run stays quiet
+- **Verbose mode (`--verbose`)** adds the complete startup summary, infrequent operational transitions such as metadata backend changes and a line naming where each delivered alert went. It prints nothing per check, so an uneventful run stays quiet. Set `DELIVERY_CONFIRMATIONS = False` to keep verbose mode without those delivery lines
 - **Debug mode (`--debug`)** adds sanitized HTTP flow, scheduling details and internal diagnostics. Each line names the operation, then lists its details as comma-separated `key=value` fields, and every outbound call reports `outcome=OK` or `outcome=failed`. A `--debug` run leaves the terminal as it was instead of clearing it, so the output you are comparing against stays on screen. `--verbose` clears it like an ordinary run.
 
 Either mode also expands the startup summary with the detected install method and the names of the secrets that came from the dotenv file, the environment or the configuration file. Secret values never appear.
