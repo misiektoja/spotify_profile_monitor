@@ -880,3 +880,36 @@ def test_a_retired_setting_becomes_a_warning_row_with_an_action(monkeypatch, tmp
     assert row.status == "WARN"
     assert "TOTP_VER" in row.detail
     assert row.advice.fix == monitor.recovery_fix_with_guide("Delete the listed settings from the configuration file", monitor.CONFIG_GUIDE_URL)
+
+
+# A string such as "false" counts as on, so an on/off setting holding anything but True or False is named in one row
+def test_invalid_boolean_settings_are_reported_in_one_row(monkeypatch):
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", "false", raising=False)
+    monkeypatch.setattr(monitor, "SMTP_SSL", 1, raising=False)
+
+    rows = [item for item in monitor.doctor_check_configuration() if item.label == "One or more on/off settings are invalid"]
+
+    assert [item.status for item in rows] == ["FAIL"]
+    assert "ERROR_NOTIFICATION must be True or False, not 'false'" in rows[0].detail
+    assert "SMTP_SSL must be True or False, not 1" in rows[0].detail
+    assert rows[0].advice.code == "config.invalid"
+
+
+# The shipped defaults are all real booleans, so a run with nothing overridden never sees the on/off row
+def test_the_shipped_defaults_pass_the_boolean_check():
+    assert monitor.runtime_boolean_errors() == []
+
+
+# A malformed destination is a FAIL under the label every tool in the family uses, so a fix reads the same everywhere
+def test_a_malformed_webhook_url_fails_under_the_family_label(monkeypatch):
+    monkeypatch.setattr(monitor, "PROFILE_NOTIFICATION", False)
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", False)
+    monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", True)
+    monkeypatch.setattr(monitor, "WEBHOOK_PROFILE_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "WEBHOOK_PROVIDER", "discord")
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", "discord.com/api/webhooks/1/abc")
+
+    check = monitor.doctor_check_notifications()[-1]
+
+    assert (check.status, check.label) == ("FAIL", "WEBHOOK_URL must contain a complete HTTPS link")
+    assert check.advice.code == "webhook.invalid"

@@ -926,3 +926,15 @@ def test_a_second_backup_in_the_same_second_keeps_the_first(tmp_path):
 # Verifies a destination that is not there yet earns no backup, since there is nothing to copy
 def test_a_missing_destination_earns_no_backup(tmp_path):
     assert monitor.create_timestamped_backup(tmp_path / "absent.conf") is None
+
+
+# A status code is matched as a whole number, so an id or a path that happens to contain the digits is not that status
+def test_a_status_code_inside_a_longer_number_is_not_matched():
+    assert monitor.classify_recovery_error(RuntimeError("playlist 14290 unavailable"), "runtime").code != "spotify.rate_limited"
+    assert monitor.classify_recovery_error(RuntimeError("delivery 14290 failed"), "webhook").code != "webhook.rate_limited"
+    assert monitor.classify_recovery_error(RuntimeError("status 429 returned"), "runtime").code == "spotify.rate_limited"
+    assert monitor.mentions_status_code("404", "user 14041 not visible") is False
+    assert monitor.mentions_status_code("404", "http error 404 for playlist") is True
+    assert monitor.mentions_status_code("429", "https://example.test/429/status") is False
+    assert monitor.mentions_status_code("429", "HTTP 429 Too Many Requests") is True
+    assert monitor.mentions_status_code("429", "request 14290 failed") is False
