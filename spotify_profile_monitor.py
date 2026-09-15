@@ -2917,8 +2917,22 @@ def smtp_settings_problem() -> Optional[str]:
     return None
 
 
+# Closes an SMTP session without changing the result of an accepted or failed message
+def smtp_quit_quietly(smtp_object):
+    if smtp_object is None:
+        return
+    try:
+        smtp_object.quit()
+    except Exception as quit_error:
+        debug_print("SMTP quit", outcome="failed", error=f"{type(quit_error).__name__}: {quit_error}")
+        try:
+            smtp_object.close()
+        except Exception as close_error:
+            debug_print("SMTP close", outcome="failed", error=f"{type(close_error).__name__}: {close_error}")
+
+
 # Sends email notification
-def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1", smtp_timeout=15, image_bytes=None):
+def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1", smtp_timeout=15, image_bytes=None, report_delivery=True):
     settings_problem = smtp_settings_problem()
     if settings_problem is not None:
         print_recovery_error(context="smtp_config", detail=settings_problem)
@@ -2932,6 +2946,7 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
         print_recovery_error(context="smtp_config", detail="The SMTP settings are incorrect (body and body_html cannot be empty at the same time)")
         return 1
 
+    smtpObj = None
     try:
         if use_ssl:
             ssl_context = smtp_ssl_context()
@@ -2968,11 +2983,13 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
             email_msg.attach(img_part)
 
         smtpObj.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, email_msg.as_string())
-        smtpObj.quit()
     except Exception as e:
         print_recovery_error(e, "smtp_connection")
         return 1
-    verbose_delivery_print(f"Email delivered to {RECEIVER_EMAIL}: '{subject}'")
+    finally:
+        smtp_quit_quietly(smtpObj)
+    if report_delivery:
+        verbose_delivery_print(f"Email sent to {RECEIVER_EMAIL}")
     return 0
 
 
@@ -3496,7 +3513,7 @@ def _retain_webhook_secrets(deliver):
 
 @_retain_webhook_secrets
 # Sends one webhook through an isolated bounded retry path that never uses Spotify retries
-def send_webhook(title: str, description: str, notification_type: str = "profile", force: bool = False, sleeper: Optional[Callable[[float], None]] = None, image_url: str = "") -> int:
+def send_webhook(title: str, description: str, notification_type: str = "profile", force: bool = False, sleeper: Optional[Callable[[float], None]] = None, image_url: str = "", report_delivery: bool = True) -> int:
     if not force and not webhook_event_enabled(notification_type):
         return 1
     destination = str(WEBHOOK_URL or "").strip()
@@ -3540,7 +3557,8 @@ def send_webhook(title: str, description: str, notification_type: str = "profile
             else:
                 response = post_webhook_request(destination=destination, json=discord_payload, headers=request_headers)
             if 200 <= response.status_code <= 299:
-                verbose_delivery_print(f"Webhook delivered through {webhook_provider_display_name(provider)}: '{webhook_values['title']}'")
+                if report_delivery:
+                    verbose_delivery_print(f"Webhook sent through {webhook_provider_display_name(provider)}")
                 return 0
             last_error = response
             retryable = response.status_code == 429 or 500 <= response.status_code <= 599
@@ -3611,7 +3629,7 @@ def dispatch_error_alert(state: "ErrorAlertState", advice: "RecoveryAdvice", err
     if not email_pending and not webhook_pending:
         return
     safe_detail = sanitize_error_text(error)
-    m_subject = f"spotify_profile_monitor: {advice.summary} (uri: {user_uri_id})"
+    m_subject = f"{advice.summary} (Spotify URI: {user_uri_id})"
     m_body = f"{advice.summary}\n\nTo fix: {advice.fix}\n\nTechnical detail: {safe_detail}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
     m_body_html = f"<html><head></head><body>{html_text(advice.summary)}<br><br>To fix: {html_text(advice.fix)}<br><br>Technical detail: {html_text(safe_detail)}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
     email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, m_body_html, email_enabled=email_pending, webhook_enabled=webhook_pending)
@@ -10373,7 +10391,7 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> List[DoctorCheck]:
     results = []
     if email_ready:
         if _doctor_ask_yes_no("Send one test email now? This will deliver a real message"):
-            result = send_email("spotify_profile_monitor: doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "", SMTP_SSL, smtp_timeout=5)
+            result = send_email("Spotify Profile Monitor doctor test email", "This test email was sent after approval in --doctor. Your SMTP delivery settings work.", "", SMTP_SSL, smtp_timeout=5, report_delivery=False)
             if result == 0:
                 check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", "Doctor test email delivered", "One real test email was sent after confirmation")
             else:
@@ -10388,7 +10406,7 @@ def _doctor_offer_notification_tests(report: DoctorReport) -> List[DoctorCheck]:
     if webhook_ready:
         provider = webhook_provider_display_name()
         if _doctor_ask_yes_no(f"Send one test webhook through {provider} now? This will publish a real notification"):
-            result = send_webhook("spotify_profile_monitor: doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "profile", force=True)
+            result = send_webhook("Spotify Profile Monitor doctor test webhook", "This test notification was sent after approval in --doctor. Your webhook delivery settings work.", "profile", force=True, report_delivery=False)
             if result == 0:
                 check = make_doctor_check(DOCTOR_DELIVERY_SECTION, "PASS", f"Doctor test webhook through {provider} delivered", "One real test webhook was sent after confirmation")
             else:
@@ -13829,7 +13847,7 @@ def main():
         prepare_startup_screen()
         report_retired_settings(config_retired, cfg_path)
         print("* Sending a test webhook ...\n")
-        if send_webhook("spotify_profile_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.", "profile", force=True) == 0:
+        if send_webhook("Spotify Profile Monitor test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.", "profile", force=True, report_delivery=False) == 0:
             print("* Test webhook sent successfully !")
         else:
             sys.exit(1)
@@ -13854,7 +13872,7 @@ def main():
 
     if args.send_test_email:
         print("* Sending test email notification ...\n")
-        if send_email("spotify_profile_monitor: test email", "This test email was sent by --send-test-email. Your SMTP settings work.", "", SMTP_SSL, smtp_timeout=5) == 0:
+        if send_email("Spotify Profile Monitor test email", "This test email was sent by --send-test-email. Your SMTP settings work.", "", SMTP_SSL, smtp_timeout=5, report_delivery=False) == 0:
             print("* Email sent successfully !")
         else:
             sys.exit(1)

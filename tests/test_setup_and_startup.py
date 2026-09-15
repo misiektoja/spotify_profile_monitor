@@ -1410,8 +1410,8 @@ def test_the_test_messages_use_the_shared_wording(monkeypatch):
             monitor.main()
         assert error.value.code == 0
 
-    assert email.call_args.args[:2] == ("spotify_profile_monitor: test email", "This test email was sent by --send-test-email. Your SMTP settings work.")
-    assert delivery.call_args.args[:2] == ("spotify_profile_monitor: test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.")
+    assert email.call_args.args[:2] == ("Spotify Profile Monitor test email", "This test email was sent by --send-test-email. Your SMTP settings work.")
+    assert delivery.call_args.args[:2] == ("Spotify Profile Monitor test webhook", "This test notification was sent by --send-test-webhook. Your webhook settings work.")
 
 
 # Verifies the guide link opens the setup page the sibling monitors link, with no section fragment

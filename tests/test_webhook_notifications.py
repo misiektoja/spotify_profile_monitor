@@ -718,7 +718,7 @@ def test_webhook_delivery_refuses_a_destination_that_stopped_validating(monkeypa
     webhook_post.assert_not_called()
 
 
-# Verifies a delivered webhook names the provider and the alert in verbose, the way the sibling monitors report it
+# Verifies a webhook receipt names its provider
 def test_a_delivered_webhook_is_reported_in_verbose(monkeypatch, capsys):
     configure_webhook(monkeypatch)
     monkeypatch.setattr(monitor, "VERBOSE_MODE", True)
@@ -727,10 +727,10 @@ def test_a_delivered_webhook_is_reported_in_verbose(monkeypatch, capsys):
 
     assert monitor.send_webhook("Profile picture changed", "Body", "profile") == 0
 
-    assert "* Webhook delivered through Discord: 'Profile picture changed'" in capsys.readouterr().out
+    assert "* Webhook sent through Discord" in capsys.readouterr().out
 
 
-# Verifies a delivered email names where it went and what it was, so verbose answers whether the alert arrived
+# Verifies an email receipt names its recipient
 def test_a_delivered_email_is_reported_in_verbose(monkeypatch, capsys):
     monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.com")
     monkeypatch.setattr(monitor, "SMTP_PORT", 587)
@@ -744,7 +744,7 @@ def test_a_delivered_email_is_reported_in_verbose(monkeypatch, capsys):
 
     assert monitor.send_email("Profile picture changed", "Body", "", False) == 0
 
-    assert "* Email delivered to receiver@example.com: 'Profile picture changed'" in capsys.readouterr().out
+    assert "* Email sent to receiver@example.com" in capsys.readouterr().out
 
 
 # Verifies DELIVERY_CONFIRMATIONS drops both delivery lines without turning the rest of verbose mode off
@@ -766,5 +766,5 @@ def test_delivery_confirmations_can_be_turned_off(monkeypatch, capsys):
     assert monitor.send_email("Profile picture changed", "Body", "", False) == 0
 
     output = capsys.readouterr().out
-    assert "Webhook delivered" not in output
-    assert "Email delivered" not in output
+    assert "Webhook sent through" not in output
+    assert "Email sent to" not in output

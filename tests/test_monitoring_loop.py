@@ -122,7 +122,8 @@ def test_a_failure_that_cannot_clear_itself_is_alerted_at_once(monkeypatch, tmp_
     errors = error_alerts_for(monkeypatch, tmp_path, [profile_snapshot(), RuntimeError("401 Unauthorized")], 2)
 
     assert len(errors) == 1
-    assert errors[0]["subject"].startswith("spotify_profile_monitor: ") and errors[0]["subject"].endswith(f" (uri: {USER})")
+    assert not errors[0]["subject"].startswith("spotify_profile_monitor: ")
+    assert errors[0]["subject"].endswith(f" (Spotify URI: {USER})")
     assert "To fix:" in errors[0]["body"]
 
 
@@ -245,7 +246,7 @@ def test_a_watchdog_timeout_is_reported_and_alerted(monkeypatch, tmp_path, capsy
     output = capsys.readouterr().out
     assert output.count("* Error:") == 1
     assert len(errors) == 1
-    assert errors[0]["subject"].endswith(f" (uri: {USER})")
+    assert errors[0]["subject"].endswith(f" (Spotify URI: {USER})")
 
 
 # Verifies a run that halts and then answers again reports the recovery, which needs the timeout to have opened an outage
