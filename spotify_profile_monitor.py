@@ -2659,7 +2659,7 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
     if context == "smtp_config":
         return make_recovery_advice("smtp.invalid", safe_detail or "The SMTP configuration is incomplete or invalid", recovery_fix_with_guide("Correct SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SENDER_EMAIL and RECEIVER_EMAIL then run --send-test-email", SMTP_GUIDE_URL), False, safe_detail)
     if context == "webhook_config":
-        return make_recovery_advice("webhook.invalid", "The webhook configuration is invalid", recovery_fix_with_guide("Check the provider, URL, template, headers and ntfy access token then run --send-test-webhook", WEBHOOK_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("webhook.invalid", "The webhook configuration is invalid" + (f": {safe_detail}" if "WEBHOOK_TEMPLATE" in safe_detail else ""), recovery_fix_with_guide("Check the provider, URL, template, headers and ntfy access token then run --send-test-webhook", WEBHOOK_GUIDE_URL), False, safe_detail)
 
     if context == "connectivity":
         # Classified from the error, because the detail names the endpoint rather than the failure
@@ -3122,8 +3122,6 @@ def format_payload(template: Any, payload: dict) -> Any:
             return payload.get("color", 0x1DB954)
         try:
             return template.format(**payload)
-        except KeyError:
-            return template
         # A placeholder the payload cannot fill, such as {title[9]} or the positional {0}, is a setting
         # to correct rather than a delivery failure, so it names the template text that could not render
         except Exception as exc:
@@ -3138,7 +3136,9 @@ def render_discord_template(template, values):
             template = json.loads(template)
         except json.JSONDecodeError:
             try:
-                template = json.loads(str(format_payload(template, values)))
+                # Legacy templates doubled JSON braces for str.format, while quoted values remain templates
+                unescaped = re.sub(r'("(?:\\.|[^"\\])*")|(\{\{|\}\})', lambda match: match.group(1) if match.group(1) is not None else match.group(2)[0], template)
+                template = json.loads(unescaped)
             except json.JSONDecodeError as exc:
                 raise ValueError("WEBHOOK_TEMPLATE must be a dictionary or a JSON object string") from exc
     if not isinstance(template, dict):
@@ -4453,6 +4453,9 @@ def refresh_access_token_from_sp_dc(sp_dc: str) -> dict:
         debug_print("HTTP GET", url=TOKEN_URL, context="sp_dc transport", status=response.status_code, token_len=len(token))
 
     except (req.RequestException, TimeoutException, req.HTTPError, ValueError) as e:
+        if is_too_many_open_files(e):
+            print_recovery_advice(classify_recovery_error(e))
+            raise SystemExit(1)
         transport = False
         last_err = str(e)
         debug_print("HTTP GET", url=TOKEN_URL, context=f"sp_dc transport failed: {sanitize_error_text(e)}")
@@ -4472,6 +4475,9 @@ def refresh_access_token_from_sp_dc(sp_dc: str) -> dict:
             debug_print("HTTP GET", url=TOKEN_URL, context="sp_dc init", status=response.status_code, token_len=len(token))
 
         except (req.RequestException, TimeoutException, req.HTTPError, ValueError) as e:
+            if is_too_many_open_files(e):
+                print_recovery_advice(classify_recovery_error(e))
+                raise SystemExit(1)
             init = False
             last_err = str(e)
             debug_print("HTTP GET", url=TOKEN_URL, context=f"sp_dc init failed: {sanitize_error_text(e)}")
@@ -4557,7 +4563,7 @@ class SpotifyAuthSession(req.Session):
 
 
 # Fetches Spotify access token based on provided sp_client_id & sp_client_secret values (Client Credentials OAuth Flow)
-def spotify_get_access_token_from_oauth_app(sp_client_id, sp_client_secret):
+def spotify_get_access_token_from_oauth_app(sp_client_id, sp_client_secret, use_file_cache=True):
     global SP_CACHED_OAUTH_APP_TOKEN
 
     if not sp_client_id or not sp_client_secret:
@@ -4573,11 +4579,11 @@ def spotify_get_access_token_from_oauth_app(sp_client_id, sp_client_secret):
         print(f"Guide: {INSTALLATION_GUIDE_URL}")
         return None
 
-    if SP_CACHED_OAUTH_APP_TOKEN and check_token_validity(SP_CACHED_OAUTH_APP_TOKEN, oauth_app=True):
+    if use_file_cache and SP_CACHED_OAUTH_APP_TOKEN and check_token_validity(SP_CACHED_OAUTH_APP_TOKEN, oauth_app=True):
         debug_print("Using cached OAuth app access token")
         return SP_CACHED_OAUTH_APP_TOKEN
 
-    if SP_APP_TOKENS_FILE:
+    if SP_APP_TOKENS_FILE and use_file_cache:
         cache_handler = CacheFileHandler(cache_path=SP_APP_TOKENS_FILE)
     else:
         cache_handler = MemoryCacheHandler()
@@ -4588,10 +4594,12 @@ def spotify_get_access_token_from_oauth_app(sp_client_id, sp_client_secret):
 
     auth_manager = SpotifyClientCredentials(client_id=sp_client_id, client_secret=sp_client_secret, cache_handler=cache_handler, requests_session=session)  # type: ignore[arg-type]
 
-    SP_CACHED_OAUTH_APP_TOKEN = auth_manager.get_access_token(as_dict=False)
+    access_token = auth_manager.get_access_token(as_dict=False)
+    if use_file_cache:
+        SP_CACHED_OAUTH_APP_TOKEN = access_token
     debug_print("OAuth app access token refreshed successfully")
 
-    return SP_CACHED_OAUTH_APP_TOKEN
+    return access_token
 
 
 # -----------------------------------------------------------
@@ -9862,7 +9870,7 @@ def runtime_numeric_errors() -> List[str]:
 
 # The values this file defines for the settings checked below, so a configuration file that makes one
 # unusable can be reported and then ignored instead of stopping the commands that exist to correct it
-BUILT_IN_SHAPE_SETTINGS = {name: globals()[name] for name in ('SP_LOGFILE', 'CSV_FILE', 'JSON_DIR', 'PLAYLISTS_TO_SKIP_FILE', 'DOTENV_FILE', 'COLOR_THEME') if name in globals()}
+BUILT_IN_SHAPE_SETTINGS = {name: globals()[name] for name in ('SP_LOGFILE', 'CSV_FILE', 'JSON_DIR', 'PLAYLISTS_TO_SKIP_FILE', 'DOTENV_FILE', 'COLOR_THEME', 'TRUNCATE_CHARS', 'SP_APP_TOKENS_FILE', 'SP_USER_TOKENS_FILE', 'LOGIN_REQUEST_BODY_FILE', 'CLIENTTOKEN_REQUEST_BODY_FILE') if name in globals()}
 
 # Shape errors whose settings were replaced with the built-in values, so doctor still names them
 DISCARDED_SETTING_ERRORS = []
@@ -9878,11 +9886,15 @@ def command_reports_configuration(args=None):
 # Validates effective path settings before startup expands or opens them
 def prepare_configured_paths(args):
     overrides = {'DOTENV_FILE': 'env_file', 'CSV_FILE': 'csv_file', 'JSON_DIR': 'json_dir', 'PLAYLISTS_TO_SKIP_FILE': 'skip_playlists_file'}
+    overrides.update({'LOGIN_REQUEST_BODY_FILE': 'login_request_body_file', 'CLIENTTOKEN_REQUEST_BODY_FILE': 'clienttoken_request_body_file'})
     settings = globals().copy()
     for name, argument in overrides.items():
         value = getattr(args, argument, None)
         if value:
             settings[name] = value
+    if getattr(args, "truncate", None) is not None:
+        settings["TRUNCATE_CHARS"] = args.truncate
+        globals()["TRUNCATE_CHARS"] = args.truncate
     errors = configuration_shape_errors(settings)
     if not errors:
         # Cleared here so a run that starts with usable settings cannot inherit an earlier run's report
@@ -9909,9 +9921,12 @@ def prepare_configured_paths(args):
 def configuration_shape_errors(settings=None):
     errors = list(DISCARDED_SETTING_ERRORS) if settings is None else []
     settings = globals() if settings is None else settings
-    for name in ('SP_LOGFILE', 'CSV_FILE', 'JSON_DIR', 'PLAYLISTS_TO_SKIP_FILE', 'DOTENV_FILE'):
+    for name in ('SP_LOGFILE', 'CSV_FILE', 'JSON_DIR', 'PLAYLISTS_TO_SKIP_FILE', 'DOTENV_FILE', 'SP_APP_TOKENS_FILE', 'SP_USER_TOKENS_FILE', 'LOGIN_REQUEST_BODY_FILE', 'CLIENTTOKEN_REQUEST_BODY_FILE'):
         if name in settings and not isinstance(settings[name], (str, os.PathLike)):
             errors.append(f"{name} must be a path string")
+    width = settings.get("TRUNCATE_CHARS", 0)
+    if not isinstance(width, int) or isinstance(width, bool) or width < 0:
+        errors.append("TRUNCATE_CHARS must be an integer zero or greater")
     theme = settings.get("COLOR_THEME", {})
     if not isinstance(theme, dict):
         errors.append("COLOR_THEME must be a dictionary of style strings")
@@ -10127,12 +10142,9 @@ def doctor_check_optional_oauth(report: Optional[DoctorReport] = None) -> List[D
     if client_present != secret_present:
         advice = make_recovery_advice("config.invalid", "Legacy OAuth metadata credentials are incomplete", recovery_fix_with_guide("Set both values or remove both", OAUTH_GUIDE_URL), False, "SP_APP_CLIENT_ID and SP_APP_CLIENT_SECRET must both be set or both be removed")
         return [make_doctor_check("Metadata", "WARN", advice.summary, "The web-player playlist backend remains available", advice)]
-    global SP_APP_TOKENS_FILE
-    saved_cache = SP_APP_TOKENS_FILE
     token_issued = False
     try:
-        SP_APP_TOKENS_FILE = ""
-        token = spotify_get_access_token_from_oauth_app(SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET)
+        token = spotify_get_access_token_from_oauth_app(SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, use_file_cache=False)
         if not token:
             raise RuntimeError("Spotify did not provide an OAuth app token")
         token_issued = True
@@ -10144,6 +10156,9 @@ def doctor_check_optional_oauth(report: Optional[DoctorReport] = None) -> List[D
         _spotify_get_playlist_info_api(token, playlist_uri, False, oauth_app=True)
         return [make_doctor_check("Metadata", "PASS", "Legacy OAuth playlist metadata access succeeded", f"A live metadata request for {playlist_uri} succeeded with a memory-only token. No OAuth cache was written")]
     except Exception as exc:
+        if is_too_many_open_files(exc):
+            print_recovery_advice(classify_recovery_error(exc))
+            raise SystemExit(1)
         advice = classify_recovery_error(exc, "metadata")
         detail = advice.detail
         if detail:
@@ -10151,8 +10166,6 @@ def doctor_check_optional_oauth(report: Optional[DoctorReport] = None) -> List[D
         detail += "Normal monitoring will use the web-player backend"
         label = "Legacy OAuth token issued, but playlist metadata access is unavailable" if token_issued else "Legacy OAuth metadata access is unavailable"
         return [make_doctor_check("Metadata", "WARN", label, detail, advice)]
-    finally:
-        SP_APP_TOKENS_FILE = saved_cache
 
 
 # Reports the first unusable email setting as a doctor detail and an action that names the same settings
