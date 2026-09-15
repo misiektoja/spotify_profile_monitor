@@ -608,6 +608,29 @@ def test_browser_import_runs_before_the_file_summary(tmp_path, monkeypatch, caps
     assert any(prompt.startswith("Run doctor now?") for prompt in prompts)
 
 
+# Verifies a completed import leaves its standalone next steps out and one blank line separates it from the file summary
+def test_a_completed_browser_import_is_followed_directly_by_the_file_summary(tmp_path, monkeypatch, capsys):
+    config_path = tmp_path / "spotify_profile_monitor.conf"
+    env_path = tmp_path / ".env"
+    cookie_file = tmp_path / "cookies.sqlite"
+    cookie_file.touch()
+    prompts = install_browser_import_wizard_flow(monkeypatch, config_path, monitor._wizard_finish_browser_import)
+    monkeypatch.setattr(monitor, "select_browser_profile", lambda *args, **kwargs: {"name": "default", "dir": str(tmp_path), "cookie_file": str(cookie_file)})
+    monkeypatch.setattr(monitor, "read_firefox_sp_dc", Mock(return_value="browser-private-value"))
+    monkeypatch.setattr(monitor, "validate_sp_dc_cookie", Mock(return_value=True))
+
+    with pytest.raises(SystemExit) as error:
+        monitor.run_setup_wizard(config_file=config_path, env_file=env_path)
+
+    output = capsys.readouterr().out
+    assert error.value.code == 0
+    assert f"* Browser cookie import completed successfully\n\nSaved files\n\n  Configuration: {config_path.resolve()}\n  Secrets:       {env_path.resolve()}\n" in output
+    assert output.count("Check setup again:") == 1
+    assert output.index("Check setup again:") > output.index("\nNext steps\n")
+    assert "browser-private-value" not in output
+    assert any(prompt.startswith("Run doctor now?") for prompt in prompts)
+
+
 # Verifies an interrupt during browser import still prints the file summary once and skips the optional checks
 def test_interrupting_the_browser_import_keeps_the_saved_setup(tmp_path, monkeypatch, capsys):
     config_path = tmp_path / "spotify_profile_monitor.conf"

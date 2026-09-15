@@ -9117,7 +9117,7 @@ def resolve_import_env_path(env_file=None, cwd=None):
 
 
 # Runs extraction and validation plus confirmed atomic dotenv persistence
-def run_browser_cookie_import(browser="firefox", browser_profile=None, cookie_file=None, env_file=None, force=False, interactive=None, input_func=None, config_path=None, target=None, saved_target=None):
+def run_browser_cookie_import(browser="firefox", browser_profile=None, cookie_file=None, env_file=None, force=False, interactive=None, input_func=None, config_path=None, target=None, saved_target=None, print_next_steps=True):
     destination = resolve_import_env_path(env_file)
     print(colorize_links(f"* Browser prerequisite: open {SPOTIFY_WEB_LOGIN_URL} in {browser_label(browser)} and sign in to the Spotify account used for monitoring"))
     print(f"* Dotenv destination: {destination}")
@@ -9161,7 +9161,11 @@ def run_browser_cookie_import(browser="firefox", browser_profile=None, cookie_fi
         update_dotenv_file(destination, {"SP_DC_COOKIE": sp_dc})
     except Exception:
         raise BrowserCookieImportError(f"Could not update dotenv destination '{destination}'. Check the path and file permissions.") from None
-    print("* Browser cookie import completed successfully\n")
+    print("* Browser cookie import completed successfully")
+    # The wizard prints its own next steps after the file summary, so the standalone epilogue is skipped there
+    if not print_next_steps:
+        return str(destination)
+    print()
     method = _wizard_install_method()
     selected_config = resolved_command_config(config_path)
     doctor_target, monitor_target = _wizard_command_targets(target, _config_file_target(selected_config) if saved_target is None else saved_target)
@@ -11697,7 +11701,7 @@ def _wizard_finish_browser_import(auth: dict, env_path: Path, config_path: Path,
         return auth
     while True:
         try:
-            run_browser_cookie_import(browser=browser, env_file=str(env_path), interactive=True, input_func=_wizard_input, config_path=str(config_path), target=target, saved_target=saved_target)
+            run_browser_cookie_import(browser=browser, env_file=str(env_path), interactive=True, input_func=_wizard_input, config_path=str(config_path), target=target, saved_target=saved_target, print_next_steps=False)
             auth.update({"complete": True, "validated": True})
             return auth
         except BrowserCookieImportError as exc:

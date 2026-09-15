@@ -110,6 +110,13 @@ def test_a_target_saved_in_the_config_is_left_out_of_both_commands(tmp_path, mon
     assert "<spotify_target>" not in output
 
 
+# Verifies the caller can leave the next-steps commands out and the output then ends with the completion line
+def test_the_next_steps_can_be_left_out(tmp_path, monkeypatch, capsys):
+    output = import_and_capture(tmp_path, monkeypatch, capsys, print_next_steps=False)
+    assert output.endswith("* Browser cookie import completed successfully\n")
+    assert "Check setup again:" not in output
+
+
 # Verifies only the monitoring command carries the placeholder when no target is known at all
 def test_no_known_target_places_the_placeholder_in_the_monitoring_command_only(tmp_path, monkeypatch, capsys):
     output = import_and_capture(tmp_path, monkeypatch, capsys, saved_target="")
