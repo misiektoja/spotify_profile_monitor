@@ -180,6 +180,10 @@ spotify_profile_monitor <spotify_target> -i --export-all-playlists
 
 Each file is written into a dedicated `spotify_profile_<user_id/file_suffix>_playlists_export` directory created in the current working directory, using the sanitized playlist name. Exports can no longer land beside your other files, so your `-b` output and anything else in the working directory are untouched.
 
+File names are sanitized for every platform, not only the one running the export, so the directory stays readable after you copy it to another OS or to a FAT or exFAT volume. Separators (`/`, `\`, `|` and `:`) become a dash and keep the spacing the playlist name had, so `Techno / House` becomes `Techno - House` and `techno/electronica` becomes `techno-electronica`. The remaining characters Windows rejects (`*`, `?`, `"`, `<` and `>`) are dropped, leftover double spaces are collapsed and emoji are kept.
+
+A progress bar shows how far the export has got while each playlist's tracks are downloaded. It is drawn only in an interactive terminal, so redirected output and log files are unaffected.
+
 An existing export file is never appended to. If the file is already present from an earlier run, that playlist is skipped with a message. Pass `--force` to replace existing exports:
 
 ```sh
