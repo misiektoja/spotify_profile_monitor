@@ -306,6 +306,12 @@ The file will be automatically created if it does not exist.
 
 Spotify-supplied text (playlist names, track names, artist names, collaborator names and descriptions) that starts with `=`, `+`, `-`, `@`, a tab or a carriage return is written with a leading apostrophe, so opening the export in a spreadsheet cannot evaluate it as a formula. The same applies to the per-playlist files produced by `--export-all-playlists`. Timestamps and numeric values are unaffected.
 
+## Unavailable Followers and Followings
+
+Missing follower or following data is shown as `n/a`. It does not replace saved history or trigger removal alerts, including after a restart. The first available snapshot establishes a baseline if no history exists.
+
+An explicit zero count or a valid empty list still uses `FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER` to confirm a disappearance during monitoring. Missing responses interrupt that confirmation streak.
+
 <a id="detection-of-changed-profile-pictures"></a>
 ## Detection of Changed Profile Pictures
 

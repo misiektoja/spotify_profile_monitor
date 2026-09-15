@@ -17,12 +17,13 @@ def profile_snapshot():
 
 
 # Runs the loop until stop_after sleeps have passed and returns the error alerts it handed to the channels
-def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answers=(), check_interval=1800, liveness_seconds=None, delivery_results=(), playlist_checks=False, playlist_answers=(), collection_events=None):
+def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answers=(), check_interval=1800, liveness_seconds=None, delivery_results=(), playlist_checks=False, playlist_answers=(), collection_events=None, initial_followers=(), following_answers=()):
     calls = []
     sleeps = []
     now = [1_800_000_000.0]
     remaining = list(answers)
     remaining_followers = list(follower_answers)
+    remaining_followings = list(following_answers)
     follower_calls = []
     deliveries = list(delivery_results)
     remaining_playlists = list(playlist_answers)
@@ -58,7 +59,13 @@ def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answer
             answer = remaining_followers.pop(0)
             if isinstance(answer, BaseException):
                 raise answer
-        return {"sp_user_followers": []}
+            if isinstance(answer, dict):
+                return answer
+        return {"sp_user_followers": (list(initial_followers) if initial_followers is not None else None) if len(follower_calls) == 1 else []}
+
+    # Returns scripted following snapshots including unavailable data
+    def scripted_followings(*_arguments, **_keywords):
+        return remaining_followings.pop(0) if remaining_followings else {"sp_user_followings": []}
 
     def record_delivery(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, **_keywords):
         calls.append({"type": notification_type, "subject": subject, "body": body, "body_html": body_html, "email": email_enabled, "webhook": webhook_enabled})
@@ -92,7 +99,7 @@ def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answer
     monkeypatch.setattr(monitor, "spotify_get_access_token_from_sp_dc", lambda cookie: "access-token")
     monkeypatch.setattr(monitor, "spotify_get_user_info", scripted_user_info)
     monkeypatch.setattr(monitor, "spotify_get_user_followers", scripted_followers)
-    monkeypatch.setattr(monitor, "spotify_get_user_followings", lambda token, uri: {"sp_user_followings": []})
+    monkeypatch.setattr(monitor, "spotify_get_user_followings", scripted_followings)
     monkeypatch.setattr(monitor, "send_notification_channels", record_delivery)
     with pytest.raises(LoopStopped):
         monitor.spotify_profile_monitor_uri(USER, "", [])

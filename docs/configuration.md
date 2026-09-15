@@ -81,28 +81,13 @@ Use `cookie` or `client` for normal monitoring. Add `oauth_app` credentials only
 
 **Personal: `oauth_user`**
 
-Dedicated to tracking the authenticated user's own account via the official Spotify Web API (Authorization Code OAuth flow). I personally use this mode to monitor changes to my own account - such as new or lost followers/followings, likes on my playlists or when a collaborator adds a new song. You can also use this mode to track other users.
+Uses Authorization Code OAuth to read the authenticated user's own profile, playlists, liked tracks, recent listening and followed artists.
 
-This method is easy to set up and safe to use, but has several limitations.
+OAuth does not supply follower lists or followed-user lists. Followings in this mode are artists only. Follower counts are shown when Spotify supplies them, otherwise they appear as `n/a`.
 
-The following features are **not** supported when monitoring **your own account**:
-- viewing the list of followers
-- viewing the complete list of followings (only followed artists are available; followed users are not included)
-- searching for Spotify users by name
-- **viewing follower count (post-Feb 2026)**
+Private playlists can be listed with the required playlist scopes. Playlist contents use the current `/items` endpoint and accept both current and older response fields. An older `/tracks` endpoint is tried if the app does not expose the current route. A restriction on one playlist does not disable OAuth reads for other playlists. Restricted playlists use the web-player fallback and their OAuth access is checked again after five minutes.
 
-**Note**: If you use `oauth_user` to monitor your own account, the tool will list all your playlists, including private ones.
-
-The following features are **not** supported when monitoring **another user** in this mode:
-- viewing the list of followers/followings
-- accessing the followings count (only the followers count is tracked; **post-Feb 2026**: followers count also not available)
-- getting the list of recently played artists
-- showing other users' playlists added to user profile (unless the user is a collaborator on a playlist owned by other user)
-- searching for Spotify users by name
-
-> **Current limitation:** Spotify removed the `GET /users/{id}` endpoint on February 11, 2026. `oauth_user` can no longer monitor other users. Self-monitoring still works. For monitoring others, use the `cookie` or `client` method.
-
-> **Premium required:** Since March 9, 2026, `oauth_user` requires the authorized user to have a Spotify Premium account.
+In Development Mode, Spotify limits playlist contents to playlists the authorized user owns or collaborates on and removes other-user profile/listing endpoints. The app owner must have Premium. These are app-mode restrictions, not a reason to assume every OAuth endpoint is unavailable. See [Spotify's migration guide](https://developer.spotify.com/documentation/web-api/tutorials/february-2026-migration-guide). Use `cookie` or `client` for monitoring other users.
 
 If no method is specified, the tool defaults to the `cookie` method.
 
