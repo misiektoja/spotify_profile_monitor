@@ -1,3 +1,4 @@
+import shlex
 import builtins
 import platform
 import time
@@ -257,6 +258,15 @@ def test_action_command_uses_portable_entry_point_and_custom_paths(tmp_path, mon
     assert command.startswith("spotify_profile_monitor --doctor target.user")
     assert str(config_path.resolve()) in command
     assert str(env_path.resolve()) in command
+
+
+# Verifies a target only shaped like a placeholder is quoted, so pasting the printed command cannot run a substitution
+def test_a_bracketed_target_is_quoted_rather_than_pasted_into_the_shell(monkeypatch):
+    monkeypatch.setattr(monitor.platform, "system", lambda: "Linux")
+    crafted = "<$(echo>marker)>"
+
+    assert shlex.split(monitor._wizard_action_command("pip", "--doctor", None, None, crafted))[-1] == crafted
+    assert monitor._wizard_action_command("pip", "--doctor", None, None, "<spotify_target>").endswith("--doctor <spotify_target>")
 
 
 # Verifies concise startup output hides full rows until verbose mode
