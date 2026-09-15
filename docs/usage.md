@@ -13,6 +13,8 @@ Most examples on this page use the PyPI command `spotify_profile_monitor`. If yo
 
 For example, `spotify_profile_monitor --doctor TARGET` becomes `python3 spotify_profile_monitor.py --doctor TARGET` with the manual script.
 
+The manual-script prefix names the file rather than its path, so run it from the directory holding `spotify_profile_monitor.py`. From another directory, use the full path instead, for example `python3 /opt/spotify-profile-monitor/spotify_profile_monitor.py --doctor TARGET`. The commands the tool prints after setup and Doctor use the same short form.
+
 Throughout this page `<spotify_target>` means any accepted target form: a complete Spotify profile URL, a `spotify:user:` URI or a bare user ID.
 
 See [Installation](installation.md) for setup, optional dependencies and upgrade commands.

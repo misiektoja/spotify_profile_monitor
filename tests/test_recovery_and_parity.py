@@ -993,3 +993,19 @@ def test_the_loop_tracks_the_error_alert_through_the_state():
     assert source.count('error_alert.pending("email"') == source.count('error_alert.record("email"') >= 1
     assert source.count('error_alert.pending("webhook"') == source.count('error_alert.record("webhook"') >= 1
     assert not re.search(r"^\s*error_(email|webhook)_sent = ", source, re.MULTILINE)
+
+
+# Verifies a save that cannot reach its destination names the write failure, since the existing-file advice
+# sends the reader to --force, a flag this command refuses
+def test_a_blocked_secret_destination_is_reported_as_a_write_failure(tmp_path, monkeypatch):
+    for name, value in (("SMTP_HOST", "mail.example.test"), ("SMTP_USER", "user@example.test"), ("SENDER_EMAIL", "user@example.test"), ("RECEIVER_EMAIL", "user@example.test")):
+        monkeypatch.setattr(monitor, name, value)
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory\n", encoding="utf-8")
+
+    with pytest.raises(monitor.RecoveryError) as raised:
+        monitor.run_set_smtp_password(env_file=blocker / ".env", interactive=True, input_func=lambda prompt: "y", getpass_func=lambda prompt: "entered-password", sign_in=lambda password, timeout=5: "user@example.test")
+
+    assert raised.value.advice.code == "file.unwritable"
+    assert "--force" not in raised.value.advice.fix
+    assert blocker.read_text(encoding="utf-8") == "not a directory\n"

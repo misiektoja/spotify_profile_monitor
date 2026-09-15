@@ -8589,7 +8589,7 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     try:
         update_dotenv_file(destination, {"SMTP_PASSWORD": smtp_password})
     except Exception as exc:
-        raise RecoveryError(classify_recovery_error(exc, context="file.unwritable", detail=f"Cannot save SMTP_PASSWORD to '{destination}'"), exc) from None
+        raise RecoveryError(classify_recovery_error(exc, context="file_write", detail=f"Cannot save SMTP_PASSWORD to '{destination}'"), exc) from None
     method = _wizard_install_method()
     selected_config = config_path or find_config_file()
     print(f"* The mail server accepted the password for {signed_in_user}")
