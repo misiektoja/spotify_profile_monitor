@@ -7383,6 +7383,14 @@ def export_playlist_tracks(playlist_name, tracks, csv_file_name, format_type=1) 
     write_csv_entries(csv_file_name, rows, format_type)
 
 
+# Announces the export destination before the profile scan, which runs long enough to look like nothing is happening
+def announce_playlist_export() -> None:
+    if not EXPORT_ALL:
+        return
+
+    print(f"\n* Playlists will be exported to '{playlist_export_directory()}{os.sep}' after the profile scan")
+
+
 # Prints detailed info about user's playlists and writes their exports from the already scanned tracks
 def spotify_print_public_playlists(list_of_playlists, playlists_to_skip=None):
     p_update = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
@@ -7550,6 +7558,7 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
             print(f"\nPublic playlists:\t{playlists_count}")
 
         if playlists:
+            announce_playlist_export()
             list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True)
             spotify_print_public_playlists(list_of_playlists)
 
@@ -11918,6 +11927,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             print(f"Public playlists:\t\t{playlists_count}")
 
         if playlists:
+            announce_playlist_export()
             list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True, playlists_to_skip)
             spotify_print_public_playlists(list_of_playlists, playlists_to_skip)
 

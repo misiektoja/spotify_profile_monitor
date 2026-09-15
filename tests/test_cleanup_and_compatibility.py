@@ -285,3 +285,87 @@ def test_exportable_count_matches_the_export_rules(monkeypatch):
     assert monitor.count_exportable_playlists(playlists, ["skipped"]) == 2
     assert monitor.count_exportable_playlists([], []) == 0
     assert monitor.count_exportable_playlists(None, []) == 0
+
+
+# The export used to download every playlist a second time, so it must now build the file from the scanned tracks alone
+def test_export_reuses_the_scanned_tracks(monkeypatch):
+    def fail_on_network(*args, **kwargs):
+        raise AssertionError("the export must not download tracks again")
+
+    monkeypatch.setattr(monitor, "spotify_list_tracks_for_playlist", fail_on_network)
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor, "CLEAN_OUTPUT", False)
+    tracks = [{"artist": "Surgeon", "track": "Bad Hands", "added_at": monitor.convert_iso_str_to_datetime("2026-03-01T12:00:00Z"), "added_by": "someone"}]
+
+    with tempfile.TemporaryDirectory() as directory:
+        destination = str(Path(directory) / "playlist.csv")
+        monitor.export_playlist_tracks("Techno", tracks, destination, 2)
+        rows = Path(destination).read_text(encoding="utf-8").splitlines()
+
+    assert rows[0] == '"Date","Playlist Name","Artist","Track"'
+    assert rows[1] == '"2026-03-01 12:00:00","Techno","Surgeon","Bad Hands"'
+
+
+# A track the scan could not date has no place in a dated export, and a playlist with no tracks still needs its header
+def test_export_skips_undated_tracks_and_keeps_the_header(monkeypatch):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor, "CLEAN_OUTPUT", False)
+    tracks = [{"artist": "Surgeon", "track": "Bad Hands", "added_at": None, "added_by": "someone"}]
+
+    with tempfile.TemporaryDirectory() as directory:
+        undated = str(Path(directory) / "undated.csv")
+        monitor.export_playlist_tracks("Techno", tracks, undated, 2)
+        empty = str(Path(directory) / "empty.csv")
+        monitor.export_playlist_tracks("Techno", None, empty, 2)
+
+        assert Path(undated).read_text(encoding="utf-8").splitlines() == ['"Date","Playlist Name","Artist","Track"']
+        assert Path(empty).read_text(encoding="utf-8").splitlines() == ['"Date","Playlist Name","Artist","Track"']
+
+
+# CSV_FILE_FORMAT_EXPORT = 1 and CLEAN_OUTPUT are configurable, so the reused tracks must still produce both layouts
+def test_export_honours_the_configured_output_format(monkeypatch):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    tracks = [{"artist": "Surgeon", "track": "Bad Hands", "added_at": monitor.convert_iso_str_to_datetime("2026-03-01T12:00:00Z"), "added_by": "someone"}]
+
+    with tempfile.TemporaryDirectory() as directory:
+        monkeypatch.setattr(monitor, "CLEAN_OUTPUT", False)
+        activity = str(Path(directory) / "activity.csv")
+        monitor.export_playlist_tracks("Techno", tracks, activity, 1)
+
+        monkeypatch.setattr(monitor, "CLEAN_OUTPUT", True)
+        plain = str(Path(directory) / "plain.csv")
+        monitor.export_playlist_tracks("Techno", tracks, plain, 2)
+
+        activity_rows = Path(activity).read_text(encoding="utf-8").splitlines()
+        plain_rows = Path(plain).read_text(encoding="utf-8").splitlines()
+
+    assert activity_rows[0] == '"Date","Type","Name","Old","New"'
+    assert activity_rows[1] == '"2026-03-01 12:00:00","Added Track","Techno","someone","Surgeon - Bad Hands"'
+    assert plain_rows == ["Surgeon - Bad Hands"]
+
+
+# Spotify-supplied names reach the export unchanged, so the batch writer must keep the per-row formula escaping
+def test_batched_export_rows_stay_formula_safe(monkeypatch):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor, "CLEAN_OUTPUT", False)
+    tracks = [{"artist": "=cmd|'/c calc'!A1", "track": "+1", "added_at": monitor.convert_iso_str_to_datetime("2026-03-01T12:00:00Z"), "added_by": "someone"}]
+
+    with tempfile.TemporaryDirectory() as directory:
+        destination = str(Path(directory) / "hostile.csv")
+        monitor.export_playlist_tracks("Techno", tracks, destination, 2)
+        rows = Path(destination).read_text(encoding="utf-8").splitlines()
+
+    assert rows[1] == '"2026-03-01 12:00:00","Techno","\'=cmd|\'/c calc\'!A1","\'+1"'
+
+
+# The scan runs long before the first file appears, so the destination has to be announced up front and only when exporting
+def test_export_destination_is_announced_before_the_scan(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "FILE_SUFFIX", "someuser")
+
+    monkeypatch.setattr(monitor, "EXPORT_ALL", False)
+    monitor.announce_playlist_export()
+    assert capsys.readouterr().out == ""
+
+    monkeypatch.setattr(monitor, "EXPORT_ALL", True)
+    monitor.announce_playlist_export()
+    assert "spotify_profile_someuser_playlists_export" in capsys.readouterr().out

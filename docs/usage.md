@@ -182,7 +182,9 @@ Each file is written into a dedicated `spotify_profile_<user_id/file_suffix>_pla
 
 File names are sanitized for every platform, not only the one running the export, so the directory stays readable after you copy it to another OS or to a FAT or exFAT volume. Separators (`/`, `\`, `|` and `:`) become a dash and keep the spacing the playlist name had, so `Techno / House` becomes `Techno - House` and `techno/electronica` becomes `techno-electronica`. The remaining characters Windows rejects (`*`, `?`, `"`, `<` and `>`) are dropped, leftover double spaces are collapsed and emoji are kept.
 
-A progress bar shows how far the export has got while each playlist's tracks are downloaded. It is drawn only in an interactive terminal, so redirected output and log files are unaffected.
+The destination is printed before the profile scan starts, so you can see where files will go without waiting for the scan to finish. Exports are written afterwards, from the tracks the scan already downloaded, so `--export-all-playlists` costs no extra Spotify requests. A progress bar shows how far the export has got. It is drawn only in an interactive terminal, so redirected output and log files are unaffected.
+
+`CSV_FILE_FORMAT_EXPORT` and `CLEAN_OUTPUT` apply to these files the same way they apply to `-l`.
 
 An existing export file is never appended to. If the file is already present from an earlier run, that playlist is skipped with a message. Pass `--force` to replace existing exports:
 
