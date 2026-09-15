@@ -319,6 +319,47 @@ def test_the_outage_reporter_keeps_repeating_without_a_liveness_banner():
     assert [reporter.failed(advice, 0) for _ in range(2)] == ["repeat", "repeat"]
 
 
+# Verifies a mail setting that makes delivery impossible is reported through the recovery block rather than a bare line
+@pytest.mark.parametrize("setting,value", [("SMTP_HOST", "not a host"), ("SMTP_PORT", 0), ("SENDER_EMAIL", "not-an-address"), ("SMTP_USER", "your_smtp_user")])
+def test_an_unusable_mail_setting_is_reported_through_the_recovery_block(monkeypatch, capsys, setting, value):
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", False)
+    for name, usable in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "user"), ("SMTP_PASSWORD", "secret"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "receiver@example.com")):
+        monkeypatch.setattr(monitor, name, usable)
+    monkeypatch.setattr(monitor, setting, value)
+
+    assert monitor.send_email("subject", "body", "", False) == 1
+
+    printed = capsys.readouterr().out
+    assert "* Error: The SMTP configuration is incomplete or invalid" in printed
+    assert "To fix: Correct SMTP_HOST" in printed
+    assert f"Guide: {monitor.SMTP_GUIDE_URL}" in printed
+
+
+# Verifies a message the tool cannot compose is reported the same way as an unusable setting
+@pytest.mark.parametrize("subject,body", [("", "body"), ("subject", "")])
+def test_an_uncomposable_message_is_reported_through_the_recovery_block(monkeypatch, capsys, subject, body):
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", False)
+    for name, usable in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "user"), ("SMTP_PASSWORD", "secret"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "receiver@example.com")):
+        monkeypatch.setattr(monitor, name, usable)
+
+    assert monitor.send_email(subject, body, "", False) == 1
+    assert "* Error: The SMTP configuration is incomplete or invalid" in capsys.readouterr().out
+
+
+# Verifies a caller that adds context does not hide the error text the classification rules read
+def test_added_context_does_not_hide_the_error_from_the_rules(monkeypatch):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    rows = [
+        ("target", RuntimeError("404 not found"), "target.not_found"),
+        ("metadata", RuntimeError("rate limit exceeded"), "spotify.rate_limited"),
+        ("browser_import", RuntimeError("cookies.sqlite could not be read"), "file.unreadable"),
+    ]
+
+    for context, error, expected in rows:
+        with_context = monitor.classify_recovery_error(error, context=context, detail="The operation did not complete")
+        assert with_context.code == expected, f"{context} fell back to {with_context.code}"
+
+
 # Verifies a failure category that changes is reported in full again rather than hidden by the previous one
 def test_a_changed_failure_category_is_reported_in_full(monkeypatch, capsys):
     monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")

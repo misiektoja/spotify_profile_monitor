@@ -2255,7 +2255,8 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
     if isinstance(error, RecoveryError):
         return error.advice
     safe_detail = sanitize_error_text(detail or error)
-    message = str(detail or error or "").casefold()
+    # Both are matched, since a caller that adds context would otherwise hide the error text the rules read
+    message = " ".join(part for part in (str(detail or ""), str(error or "")) if part).casefold()
     status = recovery_http_status(error)
 
     if context == "browser_import":
@@ -2529,8 +2530,8 @@ def calculate_timespan(timestamp1, timestamp2, show_weeks=True, show_hours=True,
         return '0 seconds'
 
 
-# Sends email notification
-def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1", smtp_timeout=15, image_bytes=None):
+# Returns the first mail server setting that makes a delivery impossible, or None when they are all usable
+def smtp_settings_problem() -> Optional[str]:
     fqdn_re = re.compile(r'(?=^.{4,253}$)(^((?!-)[a-zA-Z0-9-]{1,63}(?<!-)\.)+[a-zA-Z]{2,63}\.?$)')
     email_re = re.compile(r'[^@]+@[^@]+\.[^@]+')
 
@@ -2538,31 +2539,37 @@ def send_email(subject, body, body_html, use_ssl, image_file="", image_name="ima
         ipaddress.ip_address(str(SMTP_HOST))
     except ValueError:
         if not fqdn_re.search(str(SMTP_HOST)):
-            print("Error sending email - SMTP settings are incorrect (invalid IP address/FQDN in SMTP_HOST)")
-            return 1
+            return "The SMTP settings are incorrect (invalid IP address/FQDN in SMTP_HOST)"
 
     try:
         port = int(SMTP_PORT)
         if not (1 <= port <= 65535):
             raise ValueError
     except ValueError:
-        print("Error sending email - SMTP settings are incorrect (invalid port number in SMTP_PORT)")
-        return 1
+        return "The SMTP settings are incorrect (invalid port number in SMTP_PORT)"
 
     if not email_re.search(str(SENDER_EMAIL)) or not email_re.search(str(RECEIVER_EMAIL)):
-        print("Error sending email - SMTP settings are incorrect (invalid email in SENDER_EMAIL or RECEIVER_EMAIL)")
-        return 1
+        return "The SMTP settings are incorrect (invalid email in SENDER_EMAIL or RECEIVER_EMAIL)"
 
     if not SMTP_USER or not isinstance(SMTP_USER, str) or SMTP_USER == "your_smtp_user" or not SMTP_PASSWORD or not isinstance(SMTP_PASSWORD, str) or SMTP_PASSWORD == "your_smtp_password":
-        print("Error sending email - SMTP settings are incorrect (check SMTP_USER & SMTP_PASSWORD configuration options)")
+        return "The SMTP settings are incorrect (check SMTP_USER & SMTP_PASSWORD configuration options)"
+
+    return None
+
+
+# Sends email notification
+def send_email(subject, body, body_html, use_ssl, image_file="", image_name="image1", smtp_timeout=15, image_bytes=None):
+    settings_problem = smtp_settings_problem()
+    if settings_problem is not None:
+        print_recovery_error(context="smtp_config", detail=settings_problem)
         return 1
 
     if not subject or not isinstance(subject, str):
-        print("Error sending email - SMTP settings are incorrect (subject is not a string or is empty)")
+        print_recovery_error(context="smtp_config", detail="The SMTP settings are incorrect (subject is not a string or is empty)")
         return 1
 
     if not body and not body_html:
-        print("Error sending email - SMTP settings are incorrect (body and body_html cannot be empty at the same time)")
+        print_recovery_error(context="smtp_config", detail="The SMTP settings are incorrect (body and body_html cannot be empty at the same time)")
         return 1
 
     try:
