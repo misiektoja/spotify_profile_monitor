@@ -3668,22 +3668,31 @@ def init_csv_file(csv_file_name, format_type=1):
         raise RuntimeError(f"Could not initialize CSV file '{csv_file_name}': {e}")
 
 
-# Writes CSV entry
-def write_csv_entry(csv_file_name, timestamp, object_type, object_name, old, new, format_type=1):
+# Builds one CSV row in the requested export format
+def build_csv_row(timestamp, object_type, object_name, old, new, format_type=1) -> Dict[str, Any]:
+    if format_type == 1:
+        return {'Date': timestamp, 'Type': object_type, 'Name': object_name, 'Old': old, 'New': new}
+
+    return {'Date': timestamp, 'Playlist Name': object_name, 'Artist': old, 'Track': new}
+
+
+# Appends several CSV rows in one open, which a playlist export needs because it writes every track at once
+def write_csv_entries(csv_file_name, rows, format_type=1) -> None:
     try:
-        if format_type == 1:
-            csv_fields = csvfieldnames
-            csv_row = {'Date': timestamp, 'Type': object_type, 'Name': object_name, 'Old': old, 'New': new}
-        else:
-            csv_fields = csvfieldnames_export
-            csv_row = {'Date': timestamp, 'Playlist Name': object_name, 'Artist': old, 'Track': new}
+        csv_fields = csvfieldnames if format_type == 1 else csvfieldnames_export
 
         with open(csv_file_name, 'a', newline='', buffering=1, encoding="utf-8") as csv_file:
             csvwriter = csv.DictWriter(csv_file, fieldnames=csv_fields, quoting=csv.QUOTE_NONNUMERIC)
-            csvwriter.writerow({key: escape_csv_formula(value) for key, value in csv_row.items()})
+            for csv_row in rows:
+                csvwriter.writerow({key: escape_csv_formula(value) for key, value in csv_row.items()})
 
     except Exception as e:
         raise RuntimeError(f"Failed to write to CSV file '{csv_file_name}': {e}")
+
+
+# Writes CSV entry
+def write_csv_entry(csv_file_name, timestamp, object_type, object_name, old, new, format_type=1):
+    write_csv_entries(csv_file_name, (build_csv_row(timestamp, object_type, object_name, old, new, format_type),), format_type)
 
 
 # Converts a datetime to local timezone and removes timezone info (naive)
@@ -6997,10 +7006,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     p_owner_id = spotify_extract_id_or_name(p_owner_uri)
 
                     # We do not get a list of tracks for playlists that are ignored
-                    if (playlists_to_skip and (p_uri_id in playlists_to_skip or p_owner_id in playlists_to_skip or p_owner_name in playlists_to_skip)) or (IGNORE_SPOTIFY_PLAYLISTS and p_owner_id == "spotify"):
-                        effective_get_tracks = False
-                    else:
-                        effective_get_tracks = get_tracks
+                    effective_get_tracks = False if is_playlist_skipped(p_uri_id, p_owner_name, p_owner_id, playlists_to_skip) else get_tracks
                     debug_print("Playlist loop", uri=p_uri, owner=p_owner_id or p_owner_name, effective_get_tracks=effective_get_tracks)
 
                     restricted_playlist = False
@@ -7352,8 +7358,33 @@ def count_exportable_playlists(list_of_playlists, playlists_to_skip) -> int:
     return total
 
 
-# Prints detailed info about user's playlists
-def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_to_skip=None):
+# Writes one playlist export from the tracks the profile scan already downloaded, so exporting costs no extra requests
+def export_playlist_tracks(playlist_name, tracks, csv_file_name, format_type=1) -> None:
+    entries = [track for track in tracks or [] if track.get("added_at")]
+
+    # CLEAN_OUTPUT keeps the simplified one-track-per-line form that spotify_monitor imports directly
+    if CLEAN_OUTPUT:
+        with open(csv_file_name, "w", encoding="utf-8") as output_file:
+            output_file.writelines(f"{track.get('artist', '')} - {track.get('track', '')}\n" for track in entries)
+        return
+
+    init_csv_file(csv_file_name, format_type)
+
+    rows = []
+    for track in entries:
+        added_at = convert_to_local_naive(track.get("added_at"))
+        artist = track.get("artist", "")
+        title = track.get("track", "")
+        if format_type == 1:
+            rows.append(build_csv_row(added_at, "Added Track", playlist_name, track.get("added_by", ""), f"{artist} - {title}", format_type))
+        else:
+            rows.append(build_csv_row(added_at, "", playlist_name, artist, title, format_type))
+
+    write_csv_entries(csv_file_name, rows, format_type)
+
+
+# Prints detailed info about user's playlists and writes their exports from the already scanned tracks
+def spotify_print_public_playlists(list_of_playlists, playlists_to_skip=None):
     p_update = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
     p_update_recent = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
     p_name = ""
@@ -7425,13 +7456,20 @@ def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_
                         print(f"-- [{export_index}/{export_total}] Exporting playlist to '{export_path}'")
                         if export_path.exists():
                             export_path.unlink()
-                        # The bar covers the track download, which is the only slow step here, and is cleared so the result takes its line
+                        # The bar is cleared before the result is printed, so the permanent line takes back the terminal row
                         _display_export_progress(export_index, export_total, p_name)
+                        export_error = None
                         try:
-                            spotify_list_tracks_for_playlist(sp_accessToken, p_url, str(export_path), CSV_FILE_FORMAT_EXPORT)
+                            export_playlist_tracks(p_name, playlist.get("list_of_tracks"), str(export_path), CSV_FILE_FORMAT_EXPORT)
+                        except Exception as e:
+                            export_error = e
                         finally:
                             _clear_export_progress()
-                        print(f"-- Export completed")
+                        # One unwritable file must not abandon the playlists that follow it
+                        if export_error is None:
+                            print(f"-- Export completed")
+                        else:
+                            print_operation_error(f"The export to '{export_path}' failed", export_error)
                 print()
 
             if p_update is not None and p_update > p_update_recent:
@@ -7513,7 +7551,7 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
 
         if playlists:
             list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True)
-            spotify_print_public_playlists(sp_accessToken, list_of_playlists)
+            spotify_print_public_playlists(list_of_playlists)
 
 
 # Returns recently played artists for a user with the specified URI (-a flag)
@@ -11881,7 +11919,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
         if playlists:
             list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True, playlists_to_skip)
-            spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_to_skip)
+            spotify_print_public_playlists(list_of_playlists, playlists_to_skip)
 
     print_cur_ts("\nTimestamp:\t\t\t")
 
