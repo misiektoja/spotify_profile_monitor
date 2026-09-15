@@ -11095,6 +11095,16 @@ def _wizard_load_effective_setup(config_path: Path, env_path: Path) -> bool:
     return True
 
 
+# Prints the setup file summary, naming the dotenv only when a step wrote it
+def _wizard_print_saved_files(write_status: dict, dotenv_status: Optional[dict]) -> None:
+    print(colorize('header', "\nSaved files\n"))
+    print(f"  Configuration: {write_status['path']}")
+    if write_status["backup_path"]:
+        print(f"  Backup:        {write_status['backup_path']}")
+    if dotenv_status:
+        print(f"  {'Secrets:':<15}{dotenv_status['path']}")
+
+
 # Completes browser import with retry, private entry or incomplete recovery choices
 def _wizard_finish_browser_import(auth: dict, env_path: Path, config_path: Path, target: str, saved_target: str) -> dict:
     browser = auth.get("browser")
@@ -11188,33 +11198,39 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
         raise SystemExit(1) from None
     config_content = generate_config_with_current_values(state.config_values)
     try:
-        preserve_inline_config_secrets(config_path, state.env_path)
+        dotenv_status = preserve_inline_config_secrets(config_path, state.env_path)
         write_status = write_config_file(state.config_path, config_content, redact_secrets=True)
     except Exception as exc:
         print(f"Setup could not write configuration file '{state.config_path}': {sanitize_error_text(exc)}")
         print("No dotenv changes were attempted.")
         raise SystemExit(1) from None
-    print(colorize('header', "\nSaved files\n"))
-    print(f"  Configuration: {write_status['path']}")
-    if write_status["backup_path"]:
-        print(f"  Backup:        {write_status['backup_path']}")
     # A dotenv with nothing in it is noise beside the config, so an empty one is never created
     if state.secret_updates:
         try:
-            update_status = update_dotenv_file(state.env_path, state.secret_updates)
-            print(f"  {'Secrets:':<15}{update_status['path']}")
+            dotenv_status = update_dotenv_file(state.env_path, state.secret_updates)
         except Exception:
             print(f"Configuration was saved but dotenv destination '{state.env_path}' could not be updated.")
             raise SystemExit(1) from None
     doctor_failed = False
     doctor_ran = False
-    try:
-        if state.auth.get("browser"):
-            print()
+    checks_skipped = False
+    # The import writes the cookie itself, so it runs before the file summary and the summary can list its dotenv
+    if state.auth.get("browser"):
+        print(colorize('header', "\nBrowser cookie import\n"))
+        try:
             state.auth = _wizard_finish_browser_import(state.auth, state.env_path, state.config_path, state.target, state.target if state.persist_target else "")
-        if state.target:
+        except (EOFError, KeyboardInterrupt):
+            # The config is already written, so an interrupt here leaves authentication to the printed commands
+            checks_skipped = True
+        if state.auth["complete"]:
+            dotenv_status = {"path": str(state.env_path)}
+    _wizard_print_saved_files(write_status, dotenv_status)
+    if checks_skipped:
+        print("\n" + colorize("warning", "Setup is saved. Use the commands below when ready."))
+    try:
+        if state.target and not checks_skipped:
             print()
-        if state.target and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
+        if state.target and not checks_skipped and _wizard_ask_yes_no("Run doctor now? It writes no files and offers real delivery tests only with separate approval.", default=True):
             doctor_ran = True
             if _wizard_load_effective_setup(state.config_path, state.env_path):
                 # The shared resolver rather than the configured value, so doctor names the state a restart would find

@@ -557,6 +557,78 @@ def test_browser_import_receives_the_persisted_target_decision(tmp_path, monkeyp
     assert calls[0][4] == expected_saved
 
 
+# Installs a wizard flow that selects browser import and replaces the import runner with the given behavior
+def install_browser_import_wizard_flow(monkeypatch, config_path, import_runner):
+    monkeypatch.setattr(monitor.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(monitor, "_wizard_choose_config_destination", lambda path: path)
+
+    def collect_target(state, initial_target=None):
+        state.target = "target.user"
+        state.persist_target = True
+        state.config_values["TARGET_USER_URI_ID"] = state.target
+
+    def collect_auth(state, method):
+        state.config_values["TOKEN_SOURCE"] = "cookie"
+        state.auth = {"complete": False, "validated": False, "browser": "firefox", "source": "browser import (Firefox)"}
+
+    prompts = []
+    monkeypatch.setattr(monitor, "_wizard_collect_target_section", collect_target)
+    monkeypatch.setattr(monitor, "_wizard_collect_auth_section", collect_auth)
+    monkeypatch.setattr(monitor, "_wizard_collect_polling_section", lambda state: None)
+    monkeypatch.setattr(monitor, "_wizard_collect_email_section", lambda state: setattr(state, "enabled_notifications", []))
+    monkeypatch.setattr(monitor, "_wizard_collect_webhook_section", lambda state: setattr(state, "enabled_webhooks", []))
+    monkeypatch.setattr(monitor, "_wizard_collect_output_section", lambda state: None)
+    monkeypatch.setattr(monitor, "_wizard_review_setup", lambda state, method: True)
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, *args, **kwargs: prompts.append(question) or False)
+    monkeypatch.setattr(monitor, "_wizard_finish_browser_import", import_runner)
+    return prompts
+
+
+# Verifies the import runs under its own heading and the file summary that follows lists the dotenv it wrote
+def test_browser_import_runs_before_the_file_summary(tmp_path, monkeypatch, capsys):
+    config_path = tmp_path / "spotify_profile_monitor.conf"
+    env_path = tmp_path / ".env"
+
+    def import_cookie(auth, env, *args):
+        print("* Browser prerequisite: test guidance")
+        monitor.update_dotenv_file(env, {"SP_DC_COOKIE": "browser-private-value"})
+        return {"complete": True, "validated": True, "browser": "firefox", "source": "browser import (Firefox)"}
+
+    prompts = install_browser_import_wizard_flow(monkeypatch, config_path, import_cookie)
+
+    with pytest.raises(SystemExit) as error:
+        monitor.run_setup_wizard(config_file=config_path, env_file=env_path)
+
+    output = capsys.readouterr().out
+    assert error.value.code == 0
+    assert "\nBrowser cookie import\n\n* Browser prerequisite: test guidance" in output
+    assert output.index("* Browser prerequisite: test guidance") < output.index("\nSaved files\n")
+    assert f"\nSaved files\n\n  Configuration: {config_path.resolve()}\n  Secrets:       {env_path.resolve()}\n" in output
+    assert "browser-private-value" not in output
+    assert any(prompt.startswith("Run doctor now?") for prompt in prompts)
+
+
+# Verifies an interrupt during browser import still prints the file summary once and skips the optional checks
+def test_interrupting_the_browser_import_keeps_the_saved_setup(tmp_path, monkeypatch, capsys):
+    config_path = tmp_path / "spotify_profile_monitor.conf"
+    env_path = tmp_path / ".env"
+    prompts = install_browser_import_wizard_flow(monkeypatch, config_path, Mock(side_effect=KeyboardInterrupt))
+
+    with pytest.raises(SystemExit) as error:
+        monitor.run_setup_wizard(config_file=config_path, env_file=env_path)
+
+    output = capsys.readouterr().out
+    assert error.value.code == 0
+    assert output.count("Setup is saved. Use the commands below when ready.") == 1
+    assert output.index("\nBrowser cookie import\n") < output.index("\nSaved files\n")
+    assert f"\nSaved files\n\n  Configuration: {config_path.resolve()}\n\n" in output
+    assert "  Secrets:" not in output
+    assert not env_path.exists()
+    assert not any(prompt.startswith("Run doctor now?") for prompt in prompts)
+    assert "Authentication still needs to be completed." in output
+    assert config_path.is_file()
+
+
 # Verifies the output section records the log choice and the CSV destination it was given
 def test_the_output_section_records_the_log_and_csv_choices(monkeypatch, tmp_path):
     baseline = dict(vars(monitor))
