@@ -2279,6 +2279,10 @@ def is_too_many_open_files(error):
             return True
     return False
 
+# Returns the next step for a failure no rule recognized, since a run already printing the technical cause cannot be told to re-run for it
+def unknown_failure_fix(): return "Run --doctor, then open an issue with this output if the failure continues" if DEBUG_MODE else "Run --doctor. If the issue continues retry with --debug"
+
+
 
 # Classifies a failure into stable user-facing recovery guidance
 def classify_recovery_error(error: Any = None, context: str = "runtime", detail: Any = "", target_user_id: Optional[str] = None) -> RecoveryAdvice:
@@ -2416,7 +2420,7 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         return classify_recovery_error(error, "file_write", safe_detail)
     if isinstance(error, FileNotFoundError):
         return classify_recovery_error(error, "file_read", safe_detail)
-    return make_recovery_advice("unknown", "An unexpected error occurred", recovery_fix_with_guide("Run --doctor. If the issue continues retry with --debug", DOCTOR_GUIDE_URL), True, safe_detail)
+    return make_recovery_advice("unknown", "An unexpected error occurred", recovery_fix_with_guide(unknown_failure_fix(), DOCTOR_GUIDE_URL), True, safe_detail)
 
 
 # Renders one built advice as the shared Error, To fix and optional Technical detail block
@@ -2424,7 +2428,8 @@ def render_recovery_advice(advice: RecoveryAdvice, debug: Optional[bool] = None,
     lines = [f"* {label}: {advice.summary}" + (f" ({retry_note})" if retry_note else "")]
     if with_fix:
         lines.append(f"To fix: {advice.fix}")
-        if (DEBUG_MODE if debug is None else debug) and advice.detail:
+        # A detail that only repeats the summary spends a line saying nothing
+        if (DEBUG_MODE if debug is None else debug) and advice.detail and advice.detail != advice.summary:
             lines.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
     return "\n".join(lines)
 
