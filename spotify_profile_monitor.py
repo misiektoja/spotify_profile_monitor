@@ -874,6 +874,7 @@ TLS_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#tls-verification"
 INTERVALS_GUIDE_URL = DOCUMENTATION_URL + "/usage/#check-intervals"
 DOCTOR_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#doctor-preflight"
 DIAGNOSTICS_GUIDE_URL = DOCUMENTATION_URL + "/debugging/#cli-output-modes"
+USAGE_GUIDE_URL = DOCUMENTATION_URL + "/usage/"
 TOKEN_SOURCE_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-access-token-source"
 
 # Labels of the two Doctor checks that gate the optional delivery tests, matched by prefix so each can name its channel
@@ -2376,6 +2377,8 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         return make_recovery_advice("auth.oauth_invalid", "The Spotify OAuth credentials are invalid or require authorization", recovery_fix_with_guide(fix, guide), False, safe_detail)
     if isinstance(error, ModuleNotFoundError):
         return classify_recovery_error(error, "dependency", safe_detail)
+    if isinstance(error, (PermissionError, IsADirectoryError)):
+        return classify_recovery_error(error, "file_write", safe_detail)
     if isinstance(error, FileNotFoundError):
         return classify_recovery_error(error, "file_read", safe_detail)
     return make_recovery_advice("unknown", "An unexpected error occurred", recovery_fix_with_guide("Run --doctor. If the issue continues retry with --debug", DOCTOR_GUIDE_URL), True, safe_detail)
@@ -2414,11 +2417,24 @@ def print_monitor_recovery(error: Any, context: str, tracker: Optional[RecoveryH
     return advice
 
 
-# Prints a concise operation failure with sanitized technical detail only in debug mode
-def print_operation_error(summary: str, error: Any = None) -> None:
-    print(f"* Error: {summary}")
-    if DEBUG_MODE and error is not None:
-        print(f"Technical detail: {sanitize_error_text(error)}")
+# Reports one operation that failed, naming the step in front of the classified failure it carries
+def print_operation_error(summary: str, error: Any = None, context: str = "runtime") -> None:
+    advice = classify_recovery_error(error, context)
+    composed = make_recovery_advice(advice.code, f"{summary}: {advice.summary}" if error is not None else summary, advice.fix, advice.retryable, advice.detail)
+    print(render_recovery_error(RecoveryError(composed)))
+
+
+# Reports one command-line value or flag combination the tool cannot use, with the action that corrects it
+def print_argument_error(summary: str, fix: str, guide_url: str = USAGE_GUIDE_URL) -> None:
+    print(render_recovery_error(RecoveryError(make_recovery_advice("config.invalid", summary, recovery_fix_with_guide(fix, guide_url), False))))
+
+
+# Returns the command that installs one package through the active Python environment
+def pip_install_command(requirement: str) -> str: return _wizard_render_command([sys.executable or ("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", requirement])
+
+
+# Returns the advice an optional library that is missing carries, naming what the run loses and how to install it
+def missing_dependency_advice(package: str, effect: str, install_command: str, alternative: str = "") -> RecoveryAdvice: return make_recovery_advice("dependency.missing", f"{effect} because the optional '{package}' library is missing", recovery_fix_with_guide(f"Install it with: {install_command}" + (f". {alternative}" if alternative else ""), INSTALLATION_GUIDE_URL), False)
 
 
 # Converts absolute value of seconds to human readable format
@@ -3510,7 +3526,7 @@ def reload_secrets_signal_handler(sig, frame):
                 print(f"* No .env file found, skipping env-var reload{suffix}")
         except ImportError:
             env_path = None
-            print(f"* python-dotenv not installed, skipping env-var reload{suffix}")
+            print(render_recovery_error(RecoveryError(missing_dependency_advice("python-dotenv", f"Secrets were not reloaded from the dotenv file{suffix}", pip_install_command("python-dotenv")))))
 
     if env_path:
         for secret_key in SECRET_KEYS:
@@ -3539,7 +3555,7 @@ def reload_secrets_signal_handler(sig, frame):
                     print(" - Spotify user ID:\t", USER_URI_ID)
                     print(" - Refresh Token:\t<<hidden>>\n")
             else:
-                print(f"* Error: Protobuf file ({LOGIN_REQUEST_BODY_FILE}) does not exist")
+                print_operation_error(f"The login Protobuf file '{LOGIN_REQUEST_BODY_FILE}' does not exist", context="file_read")
 
         # Process the client token request body file
         if CLIENTTOKEN_REQUEST_BODY_FILE:
@@ -3558,7 +3574,7 @@ def reload_secrets_signal_handler(sig, frame):
                     print(" - OS minor:\t\t", OS_MINOR)
                     print(" - Client model:\t", CLIENT_MODEL, "\n")
             else:
-                print(f"* Error: Protobuf file ({CLIENTTOKEN_REQUEST_BODY_FILE}) does not exist")
+                print_operation_error(f"The client token Protobuf file '{CLIENTTOKEN_REQUEST_BODY_FILE}' does not exist", context="file_read")
 
     auth_values_after = (SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, REFRESH_TOKEN, DEVICE_ID, SYSTEM_ID, USER_URI_ID)
     if auth_values_after != auth_values_before:
@@ -5220,7 +5236,7 @@ def _spotify_get_playlist_info_api(access_token, playlist_uri, get_tracks, oauth
         playlist_id = parts[2]
     else:
         playlist_id = "invalid_playlist"
-        print(f"Invalid playlist format")
+        print_operation_error(f"'{playlist_uri}' is not a Spotify playlist URI", context="target_invalid")
 
     if get_tracks:
         url1 = f"{SPOTIFY_API_BASE_URL}/playlists/{quote(playlist_id, safe='')}?fields=name,description,owner,followers,external_urls,tracks.total,collaborative,images"
@@ -5581,7 +5597,8 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
             except req.HTTPError as e:
                 if e.response is not None and e.response.status_code in {403, 404}:
                     # oauth_app (Client Credentials) does not have permission to access user profile endpoints
-                    print(f"\n* Warning: Cannot fetch profile for user '{user_uri_id}' with {TOKEN_SOURCE} token source")
+                    print()
+                    print_recovery_error(e, "target", detail=f"The profile of user '{user_uri_id}' could not be read with the {TOKEN_SOURCE} token source")
                     print("* GET /users/{{id}} and GET /users/{{id}}/playlists are not accessible with Client Credentials (oauth_app) token")
                     print("* To monitor other users, use 'cookie' or 'client' token source (with oauth_app hybrid)")
                     print("* If you're using oauth_user to monitor your own account, ensure the Spotify user ID matches your account\n")
@@ -6267,7 +6284,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
 
                     p_uri = playlist.get("uri", "")
                     if not p_uri:
-                        print(f"\n* Playlist with missing URI returned by API, skipping for now")
+                        print("\n* Note: a playlist Spotify returned carries no URI and was skipped")
                         print_cur_ts("Timestamp:\t\t\t")
                         error_while_processing = True
                         if show_progress:
@@ -6276,7 +6293,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
 
                     p_uri_id = spotify_extract_id_or_name(p_uri)
                     if not p_uri_id:
-                        print(f"\n* Playlist with invalid URI ({p_uri}) returned by API, skipping for now")
+                        print(f"\n* Note: a playlist Spotify returned carries an unreadable URI ({p_uri}) and was skipped")
                         print_cur_ts("Timestamp:\t\t\t")
                         error_while_processing = True
                         if show_progress:
@@ -7004,7 +7021,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                     is_restricted = cached_status == "restricted"
 
                     if not cached or cached_status not in {"ok", "restricted"}:
-                        print(f"- Skipping playlist {spotify_format_playlist_reference(uri)} due to cached error or missing data")
+                        print(f"- Skipping playlist {spotify_format_playlist_reference(uri)}, its last lookup returned nothing usable")
                         list_of_added_f_list += f"- Skipping playlist {spotify_format_playlist_reference(uri)} due to error\n"
                         list_of_added_f_list_html += f"- Skipping playlist {escape(spotify_format_playlist_reference(uri))} due to error<br>"
                         continue
@@ -7145,7 +7162,7 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
                             continue
 
                         else:
-                            print(f"- Error while getting info for playlist {spotify_format_playlist_reference(uri)}, skipping for now")
+                            print_operation_error(f"Playlist {spotify_format_playlist_reference(uri)} could not be read and was skipped", error_str or None, context="metadata")
                             if error_str:
                                 debug_print("Playlist retrieval", detail=sanitize_error_text(error_str))
                             list_of_removed_f_list += f"- Error while getting info for playlist {spotify_format_playlist_reference(uri)}\n"
@@ -10330,8 +10347,8 @@ def _wizard_load_effective_setup(config_path: Path, env_path: Path) -> bool:
                     globals()[key] = parsed[key]
                     # A secret exported before startup still wins at the next start, so the export keeps the credit
                     SECRET_SOURCES[key] = "environment" if key in EXPORTED_SECRET_KEYS else "dotenv file"
-        except Exception:
-            print(f"* Error: Dotenv file '{env_path}' could not be loaded")
+        except Exception as exc:
+            print_operation_error(f"Dotenv file '{env_path}' could not be loaded", exc, context="file_read")
             return False
     if not USER_AGENT:
         USER_AGENT = get_random_spotify_user_agent() if TOKEN_SOURCE == "client" else get_random_user_agent()
@@ -10389,7 +10406,7 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
     try:
         config_path, env_path = _wizard_destinations(config_file, env_file)
     except ValueError as exc:
-        print(f"Setup cannot start: {exc}")
+        print_operation_error(str(exc), context="file_write")
         raise SystemExit(1) from None
     method = _wizard_install_method()
     print(colorize('header', "Setup Wizard\n"))
@@ -10787,7 +10804,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     print_operation_error("A CSV event could not be written", e)
 
             else:
-                print(f"* Error saving profile picture !")
+                print_operation_error("The profile picture could not be saved", context="file_write")
 
             print_cur_ts("Timestamp:\t\t\t")
 
@@ -10824,7 +10841,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     except Exception:
                         pass
             else:
-                print(f"* Error while checking if the profile picture has changed !")
+                print_operation_error("The profile picture could not be compared with the saved copy", context="file_read")
             print_cur_ts("Timestamp:\t\t\t")
 
     followers_old = followers
@@ -11107,7 +11124,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                         send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=image_url, email_image_file=profile_pic_file, email_image_name="profile_pic")
 
                 else:
-                    print(f"* Error saving profile picture !\n")
+                    print_operation_error("The profile picture could not be saved", context="file_write")
+                    print()
 
                 print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                 print_cur_ts("Timestamp:\t\t\t")
@@ -11153,7 +11171,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                         except Exception:
                             pass
                 else:
-                    print(f"* Error while checking if the profile pic has changed !\n")
+                    print_operation_error("The profile picture could not be compared with the saved copy", context="file_read")
+                    print()
                     print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
                     print_cur_ts("Timestamp:\t\t\t")
 
@@ -12338,10 +12357,10 @@ def main():
 
     if args.setup:
         if args.config_file is not None and args.config_file.casefold() == "none":
-            print("Setup cannot start: --setup requires a config destination. Replace '--config-file none' with a writable path.")
+            print_argument_error("--setup needs a config destination, so '--config-file none' cannot be used", "Replace '--config-file none' with a writable path, or drop the flag", SETUP_GUIDE_URL)
             sys.exit(1)
         if args.env_file is not None and args.env_file.casefold() == "none":
-            print("Setup cannot start: --setup requires a dotenv destination. Replace '--env-file none' with a writable path.")
+            print_argument_error("--setup needs a dotenv destination, so '--env-file none' cannot be used", "Replace '--env-file none' with a writable path, or drop the flag", SETUP_GUIDE_URL)
             sys.exit(1)
         prepare_startup_screen(require_input=True)
         print_startup_banner()
@@ -12627,7 +12646,7 @@ def main():
         sys.exit(doctor_exit)
 
     if (EMAIL_IMAGES or NTFY_IMAGES) and not NOTIFICATION_IMAGES_AVAILABLE:
-        print(f"* Warning: Pillow is not installed, so email and ntfy artwork attachments are disabled for this run\n*          Install it with: {notification_images_install_command()}")
+        print(render_recovery_error(RecoveryError(missing_dependency_advice("Pillow", "Email and ntfy alerts are sent without artwork", notification_images_install_command()))))
         EMAIL_IMAGES = False
         NTFY_IMAGES = False
 
@@ -12643,7 +12662,7 @@ def main():
 
     if args.export_for_spotify_monitor:
         if not args.list_tracks_for_playlist and not args.list_liked_tracks:
-            print(f"* Error: The 'export for spotify monitor' feature is only supported with -l and -x command line options !")
+            print_argument_error("--export-for-spotify-monitor needs a track listing to export", "Add -l / --list-tracks-for-playlist or -x / --list-liked-tracks to the command")
             sys.exit(2)
         else:
             CLEAN_OUTPUT = True
@@ -12704,7 +12723,7 @@ def main():
                             print(" - Refresh Token:\t", mask_secret(REFRESH_TOKEN), "(re-run with --verbose to show)\n")
                         sys.exit(0)
             else:
-                print(f"* Error: Protobuf file ({LOGIN_REQUEST_BODY_FILE}) does not exist")
+                print_operation_error(f"The login Protobuf file '{LOGIN_REQUEST_BODY_FILE}' does not exist", context="file_read")
                 sys.exit(1)
 
         vals = {
@@ -12728,7 +12747,7 @@ def main():
             if not v or placeholders.get(k) == v
         ]
         if bad:
-            print("* Error:", "; ".join(bad))
+            print_recovery_error(context="secret", detail="The Spotify desktop client settings are incomplete: " + "; ".join(bad))
             sys.exit(1)
 
         clienttoken_request_body_file_param = False
@@ -12759,7 +12778,7 @@ def main():
                         print(" - Client model:\t", CLIENT_MODEL)
                         sys.exit(0)
             else:
-                print(f"* Error: Protobuf file ({CLIENTTOKEN_REQUEST_BODY_FILE}) does not exist")
+                print_operation_error(f"The client token Protobuf file '{CLIENTTOKEN_REQUEST_BODY_FILE}' does not exist", context="file_read")
                 sys.exit(1)
 
         app_version_default = "1.2.62.580.g7e3d9a4f"
@@ -12767,7 +12786,7 @@ def main():
             try:
                 APP_VERSION = ua_to_app_version(USER_AGENT)
             except Exception as e:
-                print("* Warning: USER_AGENT is invalid for APP_VERSION. Using the built-in default.")
+                print("* Note: USER_AGENT carries no app version, so the built-in default is used")
                 debug_print("USER_AGENT validation", outcome="failed", error=sanitize_error_text(e))
                 APP_VERSION = app_version_default
         else:
@@ -12780,7 +12799,7 @@ def main():
             not SP_APP_CLIENT_SECRET,
             SP_APP_CLIENT_SECRET == "your_spotify_app_client_secret",
         ]):
-            print("* Error: SP_APP_CLIENT_ID or SP_APP_CLIENT_SECRET (-r / --oauth-app-creds) value is empty or incorrect")
+            print_recovery_error(context="secret", detail="SP_APP_CLIENT_ID or SP_APP_CLIENT_SECRET is empty or still set to its placeholder")
             sys.exit(1)
 
     elif TOKEN_SOURCE == "oauth_user":
@@ -12788,7 +12807,7 @@ def main():
             try:
                 SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET = args.oauth_user_creds.split(":")
             except ValueError:
-                print("* Error: -n / --oauth-user-creds has invalid format - use SP_USER_CLIENT_ID:SP_USER_CLIENT_SECRET")
+                print_argument_error("-n / --oauth-user-creds is not a pair of credentials", "Pass it as SP_USER_CLIENT_ID:SP_USER_CLIENT_SECRET", OAUTH_USER_GUIDE_URL)
                 sys.exit(1)
 
         if any([
@@ -12796,14 +12815,14 @@ def main():
             SP_USER_CLIENT_ID == "your_spotify_user_client_id",
             SP_USER_CLIENT_SECRET == "your_spotify_user_client_secret",
         ]):
-            print("* Error: SP_USER_CLIENT_ID or SP_USER_CLIENT_SECRET (-n / --oauth-user-creds) value is empty or incorrect")
+            print_recovery_error(context="secret", detail="SP_USER_CLIENT_ID or SP_USER_CLIENT_SECRET is empty or still set to its placeholder")
             sys.exit(1)
     else:
         if args.spotify_dc_cookie:
             SP_DC_COOKIE = args.spotify_dc_cookie
 
         if not SP_DC_COOKIE or SP_DC_COOKIE == "your_sp_dc_cookie_value":
-            print("* Error: SP_DC_COOKIE (-u / --spotify_dc_cookie) value is empty or incorrect")
+            print_recovery_error(context="secret", detail="SP_DC_COOKIE is empty or still set to its placeholder")
             sys.exit(1)
 
     if IMGCAT_PATH:
@@ -12834,14 +12853,14 @@ def main():
 
     if args.export_all_playlists:
         if not args.user_profile_details:
-            print("Error: --export-all-playlists requires -i / --show-user-profile flag !")
+            print_argument_error("--export-all-playlists needs a profile to export from", "Add -i / --show-user-profile to the command")
             sys.exit(1)
         try:
             # Imported only to check availability and report a friendly install command when it is missing
             import pathvalidate  # noqa: F401
         except ModuleNotFoundError:
             install_command = _wizard_render_command([sys.executable or ("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", "pathvalidate"])
-            raise SystemExit(f"Error: Couldn't find the pathvalidate library required for --export-all-playlists !\n\nTo install it through the active Python environment, run:\n    {install_command}\n\nOnce installed, re-run this tool")
+            raise SystemExit(render_recovery_error(RecoveryError(missing_dependency_advice("pathvalidate", "--export-all-playlists cannot write files named after playlists", install_command))))
         EXPORT_ALL = True
         EXPORT_ALL_FORCE = bool(args.force)
 
@@ -12868,7 +12887,7 @@ def main():
 
     if args.list_liked_tracks:
         if TOKEN_SOURCE not in {"oauth_user"}:
-            print(f"* Error: List of liked tracks is not supported with the '{TOKEN_SOURCE}' method ! Use the 'oauth_user' token source instead !")
+            print_argument_error(f"Listing liked tracks is not supported with the '{TOKEN_SOURCE}' token source", "Set TOKEN_SOURCE to oauth_user then run the command again", TOKEN_SOURCE_GUIDE_URL)
             sys.exit(2)
         try:
             if TOKEN_SOURCE == "client":
@@ -12890,10 +12909,10 @@ def main():
 
     if args.search_username:
         if TOKEN_SOURCE not in ("cookie", "client"):
-            print(f"* Error: Search feature is not supported with the '{TOKEN_SOURCE}' method ! Use a different token source !")
+            print_argument_error(f"Searching for a user is not supported with the '{TOKEN_SOURCE}' token source", "Set TOKEN_SOURCE to cookie or client then run the command again", TOKEN_SOURCE_GUIDE_URL)
             sys.exit(2)
         if not SP_SHA256 or SP_SHA256 == "your_spotify_client_sha256":
-            print("* Error: Wrong SP_SHA256 value !")
+            print_recovery_error(context="secret", detail="SP_SHA256 is empty or still set to its placeholder")
             sys.exit(1)
         try:
             if TOKEN_SOURCE == "client":
@@ -12930,7 +12949,7 @@ def main():
             err = str(e).lower()
             if 'not found' in err or '404' in err:
                 if is_user_removed(sp_accessToken, args.user_id):
-                    print(f"* Error: User '{args.user_id}' does not exist!")
+                    print_recovery_error(context="target_not_found", detail=f"Spotify has no account for user '{args.user_id}'")
                 else:
                     print_recovery_error(e, "target_not_found", target_user_id=args.user_id)
             else:
@@ -12940,7 +12959,7 @@ def main():
 
     if args.recently_played_artists:
         if TOKEN_SOURCE not in ("cookie", "client", "oauth_user"):
-            print(f"* Error: List of recently played artists is not supported with the '{TOKEN_SOURCE}' method ! Use a different token source !")
+            print_argument_error(f"Listing recently played artists is not supported with the '{TOKEN_SOURCE}' token source", "Set TOKEN_SOURCE to cookie, client or oauth_user then run the command again", TOKEN_SOURCE_GUIDE_URL)
             sys.exit(2)
         sp_accessToken = ""
         try:
@@ -12955,14 +12974,14 @@ def main():
             if TOKEN_SOURCE != "oauth_user" or (TOKEN_SOURCE == "oauth_user" and is_token_owner(sp_accessToken, args.user_id)):
                 spotify_get_recently_played_artists(sp_accessToken, args.user_id)
             else:
-                print(f"* Error: List of recently played artists is only available for the token owner with the '{TOKEN_SOURCE}' method !")
+                print_argument_error(f"Listing recently played artists is only available for the token owner with the '{TOKEN_SOURCE}' token source", "Pass the token owner's user ID, or set TOKEN_SOURCE to cookie or client to read another profile", TOKEN_SOURCE_GUIDE_URL)
                 sys.exit(3)
 
         except Exception as e:
             err = str(e).lower()
             if 'not found' in err or '404' in err:
                 if is_user_removed(sp_accessToken, args.user_id):
-                    print(f"* Error: User '{args.user_id}' does not exist!")
+                    print_recovery_error(context="target_not_found", detail=f"Spotify has no account for user '{args.user_id}'")
                 else:
                     print_recovery_error(e, "target_not_found", target_user_id=args.user_id)
             else:
@@ -12986,7 +13005,7 @@ def main():
             err = str(e).lower()
             if 'not found' in err or '404' in err:
                 if is_user_removed(sp_accessToken, args.user_id):
-                    print(f"* Error: User '{args.user_id}' does not exist!")
+                    print_recovery_error(context="target_not_found", detail=f"Spotify has no account for user '{args.user_id}'")
                 else:
                     print_recovery_error(e, "target_not_found", target_user_id=args.user_id)
             else:

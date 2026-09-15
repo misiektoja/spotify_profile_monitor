@@ -321,6 +321,51 @@ def test_the_outage_reporter_keeps_repeating_without_a_liveness_banner():
     assert [reporter.failed(advice, 0) for _ in range(2)] == ["repeat", "repeat"]
 
 
+# Verifies an operation failure names the step that failed in front of the classified cause and still carries a fix
+def test_an_operation_failure_names_the_step_and_the_cause(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", False)
+
+    monitor.print_operation_error("A CSV event could not be written", PermissionError(13, "Permission denied"))
+
+    printed = capsys.readouterr().out
+    assert "* Error: A CSV event could not be written: An output destination is not writable" in printed
+    assert "To fix: Choose a writable path" in printed
+    assert f"Guide: {monitor.DIAGNOSTICS_GUIDE_URL}" in printed
+
+
+# Verifies a step that failed without an exception still picks its fix from the context it names
+def test_an_operation_failure_without_an_exception_keeps_its_own_summary(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", False)
+
+    monitor.print_operation_error("The login Protobuf file 'login.bin' does not exist", context="file_read")
+
+    printed = capsys.readouterr().out
+    assert "* Error: The login Protobuf file 'login.bin' does not exist" in printed
+    assert "To fix: Verify the path, file format and read permissions then retry" in printed
+
+
+# Verifies a command-line value the tool cannot use is refused with the action that corrects it
+def test_a_refused_argument_names_the_action_that_corrects_it(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "COLOR_ENABLED", False)
+
+    monitor.print_argument_error("--export-all-playlists needs a profile to export from", "Add -i / --show-user-profile to the command")
+
+    printed = capsys.readouterr().out
+    assert "* Error: --export-all-playlists needs a profile to export from" in printed
+    assert "To fix: Add -i / --show-user-profile to the command" in printed
+    assert f"Guide: {monitor.USAGE_GUIDE_URL}" in printed
+
+
+# Verifies an optional library that is missing names what the run loses and the command that installs it
+def test_a_missing_optional_library_names_the_loss_and_the_install(monkeypatch):
+    advice = monitor.missing_dependency_advice("Pillow", "Email and ntfy alerts are sent without artwork", "pip install Pillow")
+
+    assert advice.code == "dependency.missing"
+    assert advice.summary == "Email and ntfy alerts are sent without artwork because the optional 'Pillow' library is missing"
+    assert "Install it with: pip install Pillow" in advice.fix
+    assert f"Guide: {monitor.INSTALLATION_GUIDE_URL}" in advice.fix
+
+
 # Verifies a mail setting that makes delivery impossible is reported through the recovery block rather than a bare line
 @pytest.mark.parametrize("setting,value", [("SMTP_HOST", "not a host"), ("SMTP_PORT", 0), ("SENDER_EMAIL", "not-an-address"), ("SMTP_USER", "your_smtp_user")])
 def test_an_unusable_mail_setting_is_reported_through_the_recovery_block(monkeypatch, capsys, setting, value):
@@ -608,3 +653,67 @@ def test_the_guide_guard_still_inspects_the_source():
 
     assert len(inspected) > 40
     assert all(any(marker in summary for _, summary in bare) for marker in GUIDELESS_ADVICE), "an allowlisted summary stopped matching a builder"
+
+
+CLASSIFIER_EXEMPTIONS = {
+    "or higher required": "runs at import on an interpreter too old to load the rest of the file",
+    "Couldn't find the pytz library": "raised at import, before the classifier and the settings it reads exist",
+    "Cannot clear the screen contents": "a cosmetic notice with nothing for the operator to recover from",
+    "Masking additional errors": "a note printed under the classified failure above it, saying repeats are hidden",
+    "Installation could not start": "a wizard result printed above the question that offers another option",
+    "could not be installed": "a wizard result printed above the question that offers another option",
+    "need the optional Pillow package": "a wizard hint above the question that offers to switch the feature off",
+    "could not be parsed read-only": "a wizard result followed by the question that offers another file",
+    "dotenv destination": "a wizard result that reports what was saved and what was not",
+    "Setup needs a writable dotenv file": "an answer hint inside the question that re-asks, where the next prompt is the recovery",
+    "could not write configuration file": "a wizard result that reports what was saved and what was not",
+    "Setup was saved": "a wizard result followed by the step that finishes the setup",
+}
+
+
+# Words that mark a printed line as a report of something going wrong
+TROUBLE_WORDS = re.compile(r"error|cannot|can't|failed|failure|invalid|not valid|missing|not installed|no such|refused|unsupported|needs to be|could not|couldn't|unable to", re.IGNORECASE)
+
+
+# Returns the literal text one print argument shows, leaving out the parts an f-string fills at runtime
+def printed_text(node):
+    if isinstance(node, ast.Constant):
+        return node.value if isinstance(node.value, str) else ""
+    if isinstance(node, ast.JoinedStr):
+        return "".join(printed_text(part) for part in node.values)
+    if isinstance(node, ast.BinOp):
+        return printed_text(node.left) + printed_text(node.right)
+    return ""
+
+
+# Returns every printed line that reads as a problem, paired with the line it sits on
+def reported_problems(source):
+    found = []
+    for node in ast.walk(ast.parse(source)):
+        if not (isinstance(node, ast.Call) and getattr(node.func, "id", "") in {"print", "SystemExit"}):
+            continue
+        text = " ".join(printed_text(argument) for argument in node.args)
+        if TROUBLE_WORDS.search(text):
+            found.append((node.lineno, " ".join(text.split())))
+    return found
+
+
+# A problem reported without a category leaves the reader with a message and no next step
+def test_every_reported_problem_goes_through_the_classifier():
+    unexplained = [f"line {line}: {text[:120]}" for line, text in reported_problems(inspect.getsource(monitor)) if not any(marker in text for marker in CLASSIFIER_EXEMPTIONS)]
+
+    assert unexplained == []
+
+
+# An exemption list that stopped matching anything would quietly cover the whole file
+def test_the_classifier_guard_still_inspects_the_source():
+    source = inspect.getsource(monitor)
+    inspected = [node for node in ast.walk(ast.parse(source)) if isinstance(node, ast.Call) and getattr(node.func, "id", "") in {"print", "SystemExit"}]
+
+    problems = reported_problems(source)
+
+    assert len(inspected) > 100
+    assert all(any(marker in text for _, text in problems) for marker in CLASSIFIER_EXEMPTIONS), "an exemption stopped matching a printed line"
+
+
+# The only advice that names no page, and the reason no page covers it
