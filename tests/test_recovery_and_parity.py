@@ -752,6 +752,7 @@ def test_the_guide_guard_still_inspects_the_source():
 
 
 CLASSIFIER_EXEMPTIONS = {
+    "the questions start from the built-in defaults": "a wizard result printed under the classified config failure above it",
     "or higher required": "runs at import on an interpreter too old to load the rest of the file",
     "Couldn't find the pytz library": "raised at import, before the classifier and the settings it reads exist",
     "Cannot clear the screen contents": "a cosmetic notice with nothing for the operator to recover from",
@@ -1009,3 +1010,19 @@ def test_a_blocked_secret_destination_is_reported_as_a_write_failure(tmp_path, m
     assert raised.value.advice.code == "file.unwritable"
     assert "--force" not in raised.value.advice.fix
     assert blocker.read_text(encoding="utf-8") == "not a directory\n"
+
+
+# A setting assigned inside a function without a global declaration becomes a local, so the module value the
+# rest of the tool reads never changes. --config-file none was recorded that way and every printed recovery
+# command dropped the flag, which is invisible to ruff, to pyright and to any test that patches the module value
+def test_every_setting_a_function_assigns_is_declared_global():
+    tree = ast.parse(inspect.getsource(monitor))
+    module_settings = {target.id for node in tree.body if isinstance(node, ast.Assign) for target in node.targets if isinstance(target, ast.Name) and target.id.isupper()}
+    shadowed = []
+    for node in ast.walk(tree):
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        declared = {name for inner in ast.walk(node) if isinstance(inner, ast.Global) for name in inner.names}
+        shadowed.extend(f"{node.name} line {inner.lineno}: {target.id}" for inner in ast.walk(node) if isinstance(inner, ast.Assign) for target in inner.targets if isinstance(target, ast.Name) and target.id in module_settings and target.id not in declared)
+
+    assert sorted(set(shadowed)) == []

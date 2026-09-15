@@ -10128,6 +10128,18 @@ def _wizard_destinations(config_file=None, env_file=None):
     return _wizard_validate_destination(config_path, "Configuration destination"), _wizard_validate_destination(env_path, "Dotenv destination")
 
 
+# Seeds the proposed answers from the configuration the wizard is about to rebuild, which is what the rebuild question offers
+def _wizard_seed_saved_settings(values: dict, config_path: Path) -> None:
+    if not config_path.is_file():
+        return
+    saved: dict = {}
+    if not load_config_file(config_path, namespace=saved):
+        print("  Those settings could not be read, so the questions start from the built-in defaults.\n")
+        return
+    # Secrets are resolved from the dotenv file and the config keeps their placeholders, so only the settings this wizard writes are proposed
+    values.update({key: value for key, value in saved.items() if key not in SENSITIVE_CONFIG_KEYS})
+
+
 # Confirms replacement or selects another config destination before collecting secrets
 def _wizard_choose_config_destination(config_path: Path) -> Path:
     selected = config_path
@@ -10822,10 +10834,11 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
     try:
         config_path = _wizard_choose_config_destination(config_path)
         baseline_values = dict(globals())
+        _wizard_seed_saved_settings(baseline_values, config_path)
         config_values = dict(baseline_values)
         config_values["DOTENV_FILE"] = str(env_path)
         initial_auth = {"complete": False, "validated": False, "browser": None, "source": "not configured"}
-        state = WizardSetupState(config_path, env_path, baseline_values, config_values, {}, "", True, initial_auth, [], [])
+        state = WizardSetupState(config_path, env_path, baseline_values, config_values, {}, str(baseline_values.get("TARGET_USER_URI_ID") or ""), True, initial_auth, [], [])
         _wizard_collect_target_section(state, initial_target)
         print()
         _wizard_collect_polling_section(state)
@@ -12289,7 +12302,7 @@ def apply_diagnostic_cli_overrides(args: argparse.Namespace) -> None:
 # Parses configuration and command-line options then runs the selected operation
 def main():
     global CLI_CONFIG_PATH, DOTENV_FILE, LOCAL_TIMEZONE, LIVENESS_REMINDER_SECONDS, SP_DC_COOKIE, SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET, SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, LOGIN_REQUEST_BODY_FILE, CLIENTTOKEN_REQUEST_BODY_FILE, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, DEVICE_ID, SYSTEM_ID, USER_URI_ID, CSV_FILE, JSON_DIR, PLAYLISTS_TO_SKIP_FILE, FILE_SUFFIX, DISABLE_LOGGING, DEBUG_MODE, VERBOSE_MODE, SP_LOGFILE, PROFILE_NOTIFICATION, EMAIL_IMAGES, SPOTIFY_CHECK_INTERVAL, SPOTIFY_ERROR_INTERVAL, FOLLOWERS_FOLLOWINGS_NOTIFICATION, ERROR_NOTIFICATION, DETECT_CHANGED_PROFILE_PIC, DETECT_CHANGES_IN_PLAYLISTS, GET_ALL_PLAYLISTS, imgcat_exe, SMTP_PASSWORD, SP_SHA256, stdout_bck, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL, TOKEN_SOURCE, CLEAN_OUTPUT, SP_APP_TOKENS_FILE, SP_USER_TOKENS_FILE, TARGET_USER_URI_ID, TRUNCATE_CHARS, NTFY_IMAGES, COLORED_OUTPUT, COLOR_THEME
-    global EXPORT_ALL, EXPORT_ALL_FORCE, PLAYLIST_INFO_CACHE_TTL, WEBHOOK_ENABLED, EXPORTED_SECRET_KEYS
+    global EXPORT_ALL, EXPORT_ALL_FORCE, PLAYLIST_INFO_CACHE_TTL, WEBHOOK_ENABLED, EXPORTED_SECRET_KEYS, CONFIG_DISCOVERY_DISABLED
 
     stdout_bck = sys.stdout
 

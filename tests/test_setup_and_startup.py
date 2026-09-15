@@ -370,6 +370,32 @@ def test_setup_polling_prompt_includes_duration_hint(tmp_path, monkeypatch):
     assert prompts == [("Spotify polling interval (seconds or use s/m/h/d)", 1800)]
 
 
+# Verifies a rerun over an existing configuration proposes its saved settings, which is what the rebuild question offers
+def test_a_rerun_proposes_the_saved_settings(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.conf"
+    config_path.write_text('TARGET_USER_URI_ID = "saved.review.user"\nSPOTIFY_CHECK_INTERVAL = 1234\n', encoding="utf-8")
+    env_path = tmp_path / ".env"
+    offered = {}
+    monkeypatch.setattr(monitor.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(monitor, "_wizard_destinations", lambda config, env: (config_path, env_path))
+    monkeypatch.setattr(monitor, "_wizard_install_method", lambda: "pip")
+    monkeypatch.setattr(monitor, "_wizard_choose_config_destination", lambda path: path)
+    monkeypatch.setattr(monitor, "_wizard_target", lambda initial=None: offered.setdefault("target", initial) or "target.user")
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: True)
+    monkeypatch.setattr(monitor, "_wizard_ask_duration", lambda question, default: offered.setdefault("interval", default))
+    monkeypatch.setattr(monitor, "_wizard_collect_auth_section", lambda state, method: None)
+    monkeypatch.setattr(monitor, "_wizard_collect_email_section", lambda state: None)
+    monkeypatch.setattr(monitor, "_wizard_collect_webhook_section", lambda state: None)
+    monkeypatch.setattr(monitor, "_wizard_collect_output_section", lambda state: None)
+    monkeypatch.setattr(monitor, "_wizard_review_setup", lambda state, method: False)
+
+    with pytest.raises(SystemExit) as error:
+        monitor.run_setup_wizard(config_file=config_path, env_file=env_path)
+
+    assert error.value.code == 1
+    assert offered == {"target": "saved.review.user", "interval": 1234}
+
+
 # Verifies noninteractive setup refuses to mutate destination files
 def test_setup_requires_interactive_terminal(tmp_path, monkeypatch):
     config_path = tmp_path / "config.conf"

@@ -269,6 +269,15 @@ def test_a_run_with_no_secret_anywhere_says_so():
     assert "No private settings were resolved from config, dotenv, environment or the command line" in result.stdout
 
 
+# Verifies a real run with discovery switched off carries the sentinel into the recovery command it prints,
+# since the command reads the config and pasting it without the flag would turn discovery back on
+def test_discovery_switched_off_reaches_the_printed_recovery_command():
+    setup = "runtime['SP_DC_COOKIE'] = 'your_sp_dc_cookie_value'; runtime['TOKEN_SOURCE'] = 'cookie'; runtime['_wizard_install_method'] = lambda: 'manual'; runtime['check_internet'] = lambda *args, **kwargs: False;"
+    result = run_cli(["--doctor", "--config-file", "none", "--env-file", "none"], setup)
+
+    assert "--import-browser-cookie --browser firefox --config-file none" in result.stdout
+
+
 # Confirms an unedited placeholder is never reported as a loaded secret, whichever layer recorded it
 def test_placeholder_secrets_are_not_reported_as_loaded(monkeypatch):
     monkeypatch.setattr(monitor, "SECRET_SOURCES", {"WEBHOOK_URL": "dotenv file", "SMTP_PASSWORD": "configuration file or command line"})
