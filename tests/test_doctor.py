@@ -484,6 +484,23 @@ def test_environment_secret_wins_over_duplicate_dotenv_key(monkeypatch, tmp_path
     assert monitor.SECRET_SOURCES["NTFY_ACCESS_TOKEN"] == "environment"
 
 
+# An empty export is a shell-profile leftover rather than a value, so it neither blocks nor blanks the dotenv value
+def test_an_empty_export_does_not_shadow_the_dotenv_value(monkeypatch, tmp_path):
+    env_file = tmp_path / ".env"
+    env_file.write_text("NTFY_ACCESS_TOKEN=tk_from_file\n", encoding="utf-8")
+    monkeypatch.setattr(monitor.sys, "argv", ["spotify_profile_monitor", "--doctor", "--env-file", str(env_file)])
+    monkeypatch.setattr(monitor, "run_doctor", lambda *args, **kwargs: 0)
+    monkeypatch.setattr(monitor, "NTFY_ACCESS_TOKEN", "", raising=False)
+    monkeypatch.setattr(monitor, "SECRET_SOURCES", {}, raising=False)
+    monkeypatch.setenv("NTFY_ACCESS_TOKEN", "")
+
+    with pytest.raises(SystemExit):
+        monitor.main()
+
+    assert monitor.NTFY_ACCESS_TOKEN == "tk_from_file"
+    assert monitor.SECRET_SOURCES["NTFY_ACCESS_TOKEN"] == "dotenv file"
+
+
 # Each secret is attributed to the source it actually came from, so the report can name the dotenv path
 def test_secret_sources_split_by_origin(monkeypatch, tmp_path):
     env_file = tmp_path / ".env"
