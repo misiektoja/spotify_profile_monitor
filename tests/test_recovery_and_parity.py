@@ -621,7 +621,7 @@ def test_doctor_prints_recovery_detail_without_debug(monkeypatch):
 
 
 # Verifies exclusive setup actions reject arguments they would otherwise ignore
-@pytest.mark.parametrize("arguments", (("--setup", "--send-test-email"), ("--set-sp-dc", "target.user"), ("--set-webhook-url", "--doctor"), ("--import-browser-cookie", "--send-test-webhook"), ("--generate-config", "--doctor")))
+@pytest.mark.parametrize("arguments", (("--setup", "--send-test-email"), ("--set-sp-dc", "target.user"), ("--set-webhook-url", "--doctor"), ("--import-browser-cookie", "--send-test-webhook"), ("--set-smtp-password", "--doctor")))
 def test_exclusive_actions_reject_ignored_arguments(arguments, monkeypatch):
     monkeypatch.setattr(monitor.sys, "argv", ["spotify_profile_monitor", *arguments])
 

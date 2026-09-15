@@ -149,18 +149,28 @@ def refused_names(result):
 
 # A refused combination has to name an option this tool accepts, not the internal name of its destination
 @pytest.mark.parametrize("typed", ["--debug", "-i", "--show-user-profile", "--no-webhook", "--verbose"])
-def test_a_refused_argument_is_named_the_way_it_was_typed(tmp_path, typed):
-    assert refused_names(run_cli("--generate-config", str(tmp_path / "out.conf"), typed)) == [typed]
+def test_a_refused_argument_is_named_the_way_it_was_typed(typed):
+    assert refused_names(run_cli("--set-sp-dc", typed)) == [typed]
 
 
 # The positional target keeps the name the help screen gives it rather than the name of its destination
-def test_a_refused_positional_is_named_by_its_metavar(tmp_path):
-    assert refused_names(run_cli("--generate-config", str(tmp_path / "out.conf"), "someuser")) == ["SPOTIFY_TARGET"]
+def test_a_refused_positional_is_named_by_its_metavar():
+    assert refused_names(run_cli("--set-sp-dc", "someuser")) == ["SPOTIFY_TARGET"]
+
+
+# Printing the template is not an exclusive action, so a display flag beside it is accepted like in the sibling tools
+@pytest.mark.parametrize("typed", ["--no-color", "--debug", "--verbose"])
+def test_generate_config_accepts_a_display_flag(typed):
+    result = run_cli("--generate-config", typed)
+    assert result.returncode == 0, result.stderr
+    assert "cannot be combined" not in result.stderr
+    assert "SP_DC_COOKIE" in result.stdout
+    assert result.stdout == run_cli("--generate-config").stdout
 
 
 # Every name a refusal can print has to be an option the parser accepts, so no message points at nothing
-def test_every_reported_name_is_an_option_the_parser_accepts(help_screen, tmp_path):
-    reported = refused_names(run_cli("--generate-config", str(tmp_path / "out.conf"), "--debug", "--verbose", "-i"))
+def test_every_reported_name_is_an_option_the_parser_accepts(help_screen):
+    reported = refused_names(run_cli("--set-sp-dc", "--debug", "--verbose", "-i"))
 
     assert reported
     for name in reported:

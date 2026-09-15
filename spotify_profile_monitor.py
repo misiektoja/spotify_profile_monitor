@@ -12262,7 +12262,9 @@ def main():
     # still colour the banner
     apply_early_output_config()
 
-    # Initialise colour handling based on CLI args (early check) and terminal capabilities
+    # Initialise colour handling based on CLI args (early check) and terminal capabilities. The flag applies to
+    # this run's output only, so the configured value is kept for a generated template
+    configured_colored_output = COLORED_OUTPUT
     if "--no-color" in sys.argv:
         globals()["COLORED_OUTPUT"] = False
 
@@ -12687,11 +12689,10 @@ def main():
 
     args = parser.parse_args()
 
+    # The template is printed before any other argument is acted on, so display flags such as --no-color or --debug
+    # are accepted and ignored here like in the sibling tools
     if args.generate_config is not None:
-        conflicts = cli_action_conflicts(args, {"generate_config", "force"}, parser)
-        if conflicts:
-            parser.error("--generate-config cannot be combined with " + ", ".join(conflicts))
-        config_content = generate_config_with_current_values()
+        config_content = generate_config_with_current_values({**globals(), "COLORED_OUTPUT": configured_colored_output})
         if args.generate_config is True:
             output_buffer = getattr(sys.stdout, "buffer", None)
             if output_buffer is not None:
