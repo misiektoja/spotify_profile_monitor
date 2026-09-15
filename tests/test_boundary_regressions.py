@@ -188,3 +188,21 @@ def test_other_values_can_reference_a_literal_secret(tmp_path, monkeypatch):
     monitor.update_dotenv_file(path, {"SMTP_PASSWORD": secret})
     content = path.read_text(encoding="utf-8") + "BOUNDARY_COPY=\"${SMTP_PASSWORD}\"\n"
     assert monitor.resolve_dotenv_values(content, override=True)["BOUNDARY_COPY"] == secret
+
+
+# Doctor is also reachable by an argparse abbreviation, so the gate reads the parsed namespace rather than
+# the words that were typed. Matching the literal flag sent an abbreviated run to the stop it exists to avoid
+def test_an_abbreviated_doctor_flag_still_reports_an_invalid_path(tmp_path, monkeypatch, capsys):
+    run_with_invalid_path(tmp_path, monkeypatch, "CSV_FILE", "--doct")
+    output = capsys.readouterr().out
+    assert "CSV_FILE must be a path string" in output
+    assert "Error: Invalid settings" not in output
+    assert output.count("[PASS]") > 1
+
+
+# Pins the namespace contract the gate depends on, including a namespace carrying none of those flags
+def test_configuration_commands_are_read_from_the_parsed_namespace():
+    assert monitor.command_reports_configuration(argparse.Namespace(doctor=True))
+    assert monitor.command_reports_configuration(argparse.Namespace(setup=True))
+    assert not monitor.command_reports_configuration(argparse.Namespace(doctor=False, setup=False))
+    assert not monitor.command_reports_configuration(argparse.Namespace())
