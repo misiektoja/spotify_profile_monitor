@@ -1126,7 +1126,7 @@ import subprocess
 try:
     import pytz
 except ModuleNotFoundError:
-    pytz_install_command = subprocess.list2cmdline([sys.executable, "-m", "pip", "install", "pytz"])
+    pytz_install_command = subprocess.list2cmdline(["python" if sys.platform == "win32" else "python3", "-m", "pip", "install", "pytz"])
     raise SystemExit(f"Error: Couldn't find the pytz library !\n\nTo install it through the active Python environment, run:\n    {pytz_install_command}\n\nOnce installed, re-run this tool")
 try:
     from tzlocal import get_localzone
@@ -2725,7 +2725,7 @@ def print_argument_error(summary: str, fix: str, guide_url: str = USAGE_GUIDE_UR
 
 # Returns the command that installs one package through the active Python environment
 def pip_install_command(requirement: str) -> str:
-    return _wizard_render_command([sys.executable or ("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", requirement])
+    return _wizard_render_command([("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", requirement])
 
 
 # Returns the advice an optional library that is missing carries, naming what the run loses and how to install it
@@ -4430,7 +4430,7 @@ def spotify_get_access_token_from_oauth_app(sp_client_id, sp_client_secret):
         from spotipy.oauth2 import SpotifyClientCredentials
         from spotipy.cache_handler import CacheFileHandler, MemoryCacheHandler
     except ImportError:
-        install_command = _wizard_render_command([sys.executable or ("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", "spotipy"])
+        install_command = _wizard_render_command([("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", "spotipy"])
         print(f"* Warning: the 'spotipy' package is required for 'oauth_app' token source")
         print(f"To fix: Install it through the active Python environment then retry: {install_command}")
         print(f"Guide: {INSTALLATION_GUIDE_URL}")
@@ -4472,7 +4472,7 @@ def spotify_get_access_token_from_oauth_user(sp_client_id, sp_client_secret, red
         from spotipy.oauth2 import SpotifyOAuth, SpotifyPKCE
         from spotipy.cache_handler import CacheFileHandler, MemoryCacheHandler
     except ImportError:
-        install_command = _wizard_render_command([sys.executable or ("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", "spotipy"])
+        install_command = _wizard_render_command([("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", "spotipy"])
         print(f"* Warning: the 'spotipy' package is required for 'oauth_user' token source")
         print(f"To fix: Install it through the active Python environment then retry: {install_command}")
         print(f"Guide: {INSTALLATION_GUIDE_URL}")
@@ -8591,7 +8591,7 @@ def _pycookiecheat_spotify_cookies(browser, cookie_file):
     try:
         from pycookiecheat import BrowserType, get_cookies
     except (ImportError, ModuleNotFoundError):
-        executable = sys.executable or ("python" if platform.system() == "Windows" else "python3")
+        executable = ("python" if platform.system() == "Windows" else "python3")
         install_command = _wizard_render_command([executable, "-m", "pip", "install", "spotify_profile_monitor[browser]"])
         raise BrowserCookieImportError(f"Chromium browser import requires the optional pycookiecheat dependency. Firefox needs no extra dependency. Install it through the active Python environment with:\n\n    {install_command}") from None
     browser_type = {"chrome": BrowserType.CHROME, "brave": BrowserType.BRAVE, "chromium": BrowserType.CHROMIUM}[browser]
@@ -9021,7 +9021,7 @@ def notification_images_requirement() -> str:
 def notification_images_install_command(method: Optional[str] = None) -> str:
     selected_method = _wizard_install_method() if method is None else method
     requirement = "spotify_profile_monitor[notification-images]" if selected_method == "pip" else notification_images_requirement()
-    executable = sys.executable or ("python" if platform.system() == "Windows" else "python3")
+    executable = ("python" if platform.system() == "Windows" else "python3")
     return _wizard_render_command([executable, "-m", "pip", "install", requirement])
 
 
@@ -9038,7 +9038,8 @@ def _wizard_install_notification_images_dependency(method: str) -> bool:
     requirement = "spotify_profile_monitor[notification-images]" if method == "pip" else notification_images_requirement()
     executable = sys.executable or ("python" if platform.system() == "Windows" else "python3")
     command = [executable, "-m", "pip", "install", requirement]
-    print(f"Installing artwork support with:\n    {_wizard_render_command(command)}\n")
+    display_command = ["python" if platform.system() == "Windows" else "python3", *command[1:]]
+    print(f"Installing artwork support with:\n    {_wizard_render_command(display_command)}\n")
     try:
         result = subprocess.run(command, check=False)
     except OSError as exc:
@@ -9067,7 +9068,7 @@ def _wizard_collect_notification_images(question: str) -> bool:
 
 
 # Returns command arguments using friendly names or exact runtime paths
-def _wizard_local_command_args(method: str, exact: bool = True) -> List[str]:
+def _wizard_local_command_args(method: str, exact: bool = False) -> List[str]:
     if exact:
         executable = sys.executable or ("python" if platform.system() == "Windows" else "python3")
         if method == "pip":
@@ -9097,8 +9098,8 @@ def _wizard_quote_argument(value: Any) -> str:
 
 
 # Returns the command prefix for the detected installation method
-def _wizard_cmd_prefix(method: str, exact: bool = True) -> str:
-    return _wizard_render_command(_wizard_local_command_args(method, exact=exact))
+def _wizard_cmd_prefix(method: str) -> str:
+    return _wizard_render_command(_wizard_local_command_args(method, exact=False))
 
 
 # Validates one local setup destination without creating or modifying it
@@ -9181,9 +9182,9 @@ def _wizard_action_command(method: str, action: str, config_path, env_path, targ
     return _wizard_render_command(parts)
 
 
-# Returns an exact Firefox import command with optional setup context
-def _wizard_firefox_import_cmd(method: str, env_path=None, exact: bool = True, config_path=None, target: Optional[str] = None) -> str:
-    parts = list(_wizard_local_command_args(method, exact=exact))
+# Returns a compact Firefox import command with optional setup context
+def _wizard_firefox_import_cmd(method: str, env_path=None, config_path=None, target: Optional[str] = None) -> str:
+    parts = list(_wizard_local_command_args(method, exact=False))
     parts.extend(("--import-browser-cookie", "--browser", "firefox"))
     if target:
         parts.append(str(target))
@@ -9194,9 +9195,9 @@ def _wizard_firefox_import_cmd(method: str, env_path=None, exact: bool = True, c
     return _wizard_render_command(parts)
 
 
-# Returns an exact hidden sp_dc entry command with optional setup context
-def _wizard_set_sp_dc_cmd(method: str, env_path=None, exact: bool = True, config_path=None) -> str:
-    parts = list(_wizard_local_command_args(method, exact=exact))
+# Returns a compact hidden sp_dc entry command with optional setup context
+def _wizard_set_sp_dc_cmd(method: str, env_path=None, config_path=None) -> str:
+    parts = list(_wizard_local_command_args(method, exact=False))
     parts.append("--set-sp-dc")
     if config_path is not None:
         parts.extend(("--config-file", str(Path(config_path).expanduser().resolve())))
@@ -9571,7 +9572,7 @@ def doctor_check_environment(version_info=None, spec_finder: Optional[Callable[[
         if present:
             checks.append(make_doctor_check("Environment", "PASS", f"Required dependency {package_name} is installed"))
             continue
-        install_command = _wizard_render_command([sys.executable or ("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", package_name])
+        install_command = _wizard_render_command([("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", package_name])
         advice = make_recovery_advice("dependency.missing", f"Required dependency {package_name} is missing", recovery_fix_with_guide(f"Install it with: {install_command}", INSTALLATION_GUIDE_URL), False, f"Missing Python package: {package_name}")
         checks.append(make_doctor_check("Environment", "FAIL", advice.summary, advice.detail, advice))
     optional = (("pycookiecheat", "pycookiecheat"), ("PIL", "Pillow"))
@@ -10385,7 +10386,8 @@ def _wizard_install_chromium_dependency(method: str) -> bool:
     requirement = "spotify_profile_monitor[browser]" if method == "pip" else "pycookiecheat>=0.8"
     executable = sys.executable or ("python" if platform.system() == "Windows" else "python3")
     command = [executable, "-m", "pip", "install", requirement]
-    print(f"Installing Chromium browser support with:\n    {_wizard_render_command(command)}\n")
+    display_command = ["python" if platform.system() == "Windows" else "python3", *command[1:]]
+    print(f"Installing Chromium browser support with:\n    {_wizard_render_command(display_command)}\n")
     try:
         result = subprocess.run(command, check=False)
     except OSError as exc:
@@ -13674,7 +13676,7 @@ def main():
             # Imported only to check availability and report a friendly install command when it is missing
             import pathvalidate  # noqa: F401
         except ModuleNotFoundError:
-            install_command = _wizard_render_command([sys.executable or ("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", "pathvalidate"])
+            install_command = _wizard_render_command([("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", "pathvalidate"])
             raise SystemExit(render_recovery_error(RecoveryError(missing_dependency_advice("pathvalidate", "--export-all-playlists cannot write files named after playlists", install_command))))
         EXPORT_ALL = True
         EXPORT_ALL_FORCE = bool(args.force)

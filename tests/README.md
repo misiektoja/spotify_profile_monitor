@@ -30,6 +30,7 @@ would see.
 
 | File | Area under test |
 | --- | --- |
+| `test_compact_commands.py` | Literal short command prefixes, real help output and dependency hints |
 | `test_release_safety.py` | Credential preservation, private error rendering, runtime timing validation and saved-state compatibility |
 | `test_recovery_safety.py` | Real dotenv reloads, setup backups, oversized counts and provider-error privacy |
 | `test_startup_numeric_message.py` | Real offline startup names the invalid interval without debug mode |

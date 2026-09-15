@@ -1,5 +1,7 @@
 # Setup & First Run
 
+Printed commands use short names. Activate the tool's virtual environment before running them. For a downloaded script, run them from the script directory. Recovery commands retain selected configuration and dotenv paths.
+
 Before replacing a configuration, setup copies retained inline credentials to the selected private dotenv file when that file has no value for the same key. An existing dotenv value, including an explicit empty value, keeps precedence. If preservation fails, the original configuration stays in place. Setup backups omit inline credentials.
 
 This page covers the first run: the setup wizard, importing a Spotify login from your browser and starting monitoring. Examples use the PyPI command `spotify_profile_monitor`. Manual script users should replace that command with `python3 spotify_profile_monitor.py` on macOS or Linux, or `python spotify_profile_monitor.py` on Windows.
