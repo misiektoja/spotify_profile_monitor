@@ -124,7 +124,7 @@ def test_no_argument_onboarding_prepares_screen_before_welcome(monkeypatch):
     monkeypatch.setattr(monitor, "TARGET_USER_URI_ID", "")
     monkeypatch.setattr(monitor, "find_config_file", lambda path=None: None)
     monkeypatch.setattr(monitor, "prepare_startup_screen", lambda **kwargs: events.append(("screen", kwargs)))
-    monkeypatch.setattr(monitor, "_wizard_welcome", lambda: events.append(("welcome", {})))
+    monkeypatch.setattr(monitor, "print_welcome_screen", lambda: events.append(("welcome", {})))
 
     with pytest.raises(SystemExit) as error:
         monitor.main()
@@ -144,7 +144,7 @@ def test_invalid_config_exits_before_no_argument_onboarding(tmp_path, monkeypatc
     monkeypatch.setattr(monitor, "TARGET_USER_URI_ID", "")
     monkeypatch.setattr(monitor, "find_config_file", lambda path=None: config_path)
     monkeypatch.setattr(monitor, "prepare_startup_screen", prepare_mock)
-    monkeypatch.setattr(monitor, "_wizard_welcome", welcome_mock)
+    monkeypatch.setattr(monitor, "print_welcome_screen", welcome_mock)
 
     with pytest.raises(SystemExit) as error:
         monitor.main()
@@ -857,7 +857,7 @@ def test_interrupting_the_welcome_offer_reports_a_cancellation(monkeypatch, caps
     monkeypatch.setattr(monitor, "run_setup_wizard", lambda *args, **kwargs: pytest.fail("the wizard ran after being interrupted"))
 
     with pytest.raises(SystemExit) as exit_error:
-        monitor._wizard_welcome()
+        monitor.print_welcome_screen()
 
     assert exit_error.value.code == 1
     assert "Setup cancelled." in capsys.readouterr().out
