@@ -38,7 +38,7 @@ def error_alerts_for(monkeypatch, tmp_path, answers, stop_after):
         return answer
 
     def record_delivery(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, **_keywords):
-        calls.append({"type": notification_type, "subject": subject, "body": body, "email": email_enabled, "webhook": webhook_enabled})
+        calls.append({"type": notification_type, "subject": subject, "body": body, "body_html": body_html, "email": email_enabled, "webhook": webhook_enabled})
         return True, True
 
     monkeypatch.chdir(tmp_path)
@@ -87,3 +87,13 @@ def test_a_failure_that_cannot_clear_itself_is_alerted_at_once(monkeypatch, tmp_
     assert len(errors) == 1
     assert errors[0]["subject"].startswith("spotify_profile_monitor: ") and errors[0]["subject"].endswith(f" (uri: {USER})")
     assert "To fix:" in errors[0]["body"]
+
+
+# The guide link sits under the fix in the HTML body too, since HTML renders the newline the fix carries as a space
+def test_the_guide_link_keeps_its_own_line_in_the_html_body(monkeypatch, tmp_path):
+    errors = error_alerts_for(monkeypatch, tmp_path, [profile_snapshot(), RuntimeError("401 Unauthorized")], 2)
+
+    parts = errors[0]["body_html"].split("<br>")
+    fix_index = next(index for index, part in enumerate(parts) if part.startswith("To fix: "))
+    assert parts[fix_index + 1].startswith("Guide: https://")
+    assert "\n" not in parts[fix_index]

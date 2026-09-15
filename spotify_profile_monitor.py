@@ -2239,6 +2239,11 @@ def recovery_fix_with_guide(fix: str, guide_url: str) -> str:
     return f"{fix}\nGuide: {guide_url}"
 
 
+# Escapes text for an HTML email body and keeps its line breaks, which HTML would otherwise collapse into spaces
+def html_text(text: str) -> str:
+    return escape(text).replace("\n", "<br>")
+
+
 # Returns the advice a cancelled secret entry reports, worded the same way by every one-shot secret command
 def secret_entry_cancelled_advice(subject, flag, guide_url):
     return make_recovery_advice("secret.entry", f"{subject[:1].upper()}{subject[1:]} setup was cancelled and the dotenv file was not changed", recovery_fix_with_guide(f"Run {flag} again when you have the value ready", guide_url), False)
@@ -11008,7 +11013,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 safe_detail = sanitize_error_text(e)
                 m_subject = f"spotify_profile_monitor: {advice.summary} (uri: {user_uri_id})"
                 m_body = f"{advice.summary}\n\nTo fix: {advice.fix}\n\nTechnical detail: {safe_detail}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                m_body_html = f"<html><head></head><body>{escape(advice.summary)}<br><br>To fix: {escape(advice.fix)}<br><br>Technical detail: {escape(safe_detail)}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
+                m_body_html = f"<html><head></head><body>{html_text(advice.summary)}<br><br>To fix: {html_text(advice.fix)}<br><br>Technical detail: {html_text(safe_detail)}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
                 email_sent, webhook_sent = send_pending_error_notification(m_subject, m_body, m_body_html, email_sent, webhook_sent)
 
             if outage_outcome in ("full", "repeat"):
