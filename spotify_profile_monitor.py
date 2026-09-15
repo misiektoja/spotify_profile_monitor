@@ -9421,8 +9421,8 @@ def doctor_check_configuration(config_path=None, env_path=None, startup_checks: 
     if not any(check.section == "Configuration" and "dotenv" in check.label.lower() for check in checks):
         checks.append(make_doctor_check("Configuration", "PASS", "Dotenv file loaded", f"Path: {env_path}") if env_path else make_doctor_check("Configuration", "PASS", "No dotenv file selected", "Using environment variables and other configured sources"))
     checks.extend(doctor_secret_checks(env_path))
-    intervals = f"{display_time(SPOTIFY_CHECK_INTERVAL)} between checks"
-    if SPOTIFY_CHECK_INTERVAL < DOCTOR_MIN_SAFE_CHECK_INTERVAL:
+    if isinstance(SPOTIFY_CHECK_INTERVAL, (int, float)) and not isinstance(SPOTIFY_CHECK_INTERVAL, bool) and 0 < SPOTIFY_CHECK_INTERVAL < DOCTOR_MIN_SAFE_CHECK_INTERVAL:
+        intervals = f"{display_time(SPOTIFY_CHECK_INTERVAL)} between checks"
         advice = make_recovery_advice("spotify.rate_limited", "Check intervals are short enough to be rate limited", recovery_fix_with_guide(f"Raise SPOTIFY_CHECK_INTERVAL to at least {DOCTOR_MIN_SAFE_CHECK_INTERVAL} seconds", INTERVALS_GUIDE_URL), True)
         checks.append(make_doctor_check("Configuration", "WARN", "Check intervals are short", intervals, advice))
     if TOKEN_SOURCE not in ("cookie", "client", "oauth_app", "oauth_user"):
