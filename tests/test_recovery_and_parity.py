@@ -59,10 +59,10 @@ def test_guide_urls_match_documentation_anchors():
 
     for name in guide_names:
         guide_url = getattr(monitor, name)
-        if not guide_url.startswith(monitor.DOCUMENTATION_URL + "/"):
+        if not guide_url.startswith(monitor.DOCS_BASE_URL + "/"):
             assert guide_url.startswith(EXTERNAL_GUIDE_PREFIXES), f"{name} points outside both this site and the allowed external guides: {guide_url}"
             continue
-        relative_path, _separator, fragment = guide_url.removeprefix(monitor.DOCUMENTATION_URL).lstrip("/").partition("#")
+        relative_path, _separator, fragment = guide_url.removeprefix(monitor.DOCS_BASE_URL).lstrip("/").partition("#")
         document_path = "docs/index.md" if not relative_path else f"docs/{relative_path.rstrip('/')}.md"
         document = Path(__file__).parents[1] / document_path
         assert document.is_file(), f"{name} references missing page {document_path}"
@@ -76,7 +76,7 @@ def test_documentation_site_contract():
     mkdocs = (root / "mkdocs.yml").read_text(encoding="utf-8")
     workflow = (root / ".github/workflows/docs.yml").read_text(encoding="utf-8")
 
-    assert f"site_url: {monitor.DOCUMENTATION_URL}/" in mkdocs
+    assert f"site_url: {monitor.DOCS_BASE_URL}/" in mkdocs
     for page in ("index.md", "installation.md", "setup-and-first-run.md", "configuration.md", "usage.md", "troubleshooting.md", "debugging.md", "testing.md", "about.md"):
         assert f": {page}" in mkdocs, page
         assert (root / "docs" / page).is_file(), page
@@ -124,7 +124,7 @@ def test_debugging_docs_track_the_current_utilities():
 def test_readme_points_at_the_documentation_site():
     readme = (Path(__file__).parents[1] / "README.md").read_text(encoding="utf-8")
 
-    assert f"{monitor.DOCUMENTATION_URL}/" in readme
+    assert f"{monitor.DOCS_BASE_URL}/" in readme
     assert "#table-of-contents" not in readme
 
 

@@ -880,23 +880,23 @@ CHROMIUM_USER_DATA_DIRS = {
 }
 
 PROJECT_URL = "https://github.com/misiektoja/spotify_profile_monitor"
-DOCUMENTATION_URL = "https://misiektoja.github.io/spotify_profile_monitor"
-QUICK_START_GUIDE_URL = DOCUMENTATION_URL + "/setup-and-first-run/"
-INSTALLATION_GUIDE_URL = DOCUMENTATION_URL + "/installation/#requirements"
-CONFIG_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#configuration-file"
-COOKIE_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-sp_dc-cookie"
-MANUAL_COOKIE_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#manual-cookie-extraction"
-CLIENT_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-desktop-client"
-TARGET_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#how-to-find-a-friends-spotify-profile-url"
-SMTP_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#smtp-settings"
-WEBHOOK_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#webhook-settings"
-SECRETS_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#storing-secrets"
-TLS_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#tls-verification"
-INTERVALS_GUIDE_URL = DOCUMENTATION_URL + "/usage/#check-intervals"
-DOCTOR_GUIDE_URL = DOCUMENTATION_URL + "/troubleshooting/#doctor-preflight"
-DIAGNOSTICS_GUIDE_URL = DOCUMENTATION_URL + "/debugging/#cli-output-modes"
-USAGE_GUIDE_URL = DOCUMENTATION_URL + "/usage/"
-TOKEN_SOURCE_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-access-token-source"
+DOCS_BASE_URL = "https://misiektoja.github.io/spotify_profile_monitor"
+QUICK_START_GUIDE_URL = DOCS_BASE_URL + "/setup-and-first-run/"
+INSTALLATION_GUIDE_URL = DOCS_BASE_URL + "/installation/#requirements"
+CONFIG_GUIDE_URL = DOCS_BASE_URL + "/configuration/#configuration-file"
+COOKIE_GUIDE_URL = DOCS_BASE_URL + "/configuration/#spotify-sp_dc-cookie"
+MANUAL_COOKIE_GUIDE_URL = DOCS_BASE_URL + "/configuration/#manual-cookie-extraction"
+CLIENT_GUIDE_URL = DOCS_BASE_URL + "/configuration/#spotify-desktop-client"
+TARGET_GUIDE_URL = DOCS_BASE_URL + "/configuration/#how-to-find-a-friends-spotify-profile-url"
+SMTP_GUIDE_URL = DOCS_BASE_URL + "/configuration/#smtp-settings"
+WEBHOOK_GUIDE_URL = DOCS_BASE_URL + "/configuration/#webhook-settings"
+SECRETS_GUIDE_URL = DOCS_BASE_URL + "/configuration/#storing-secrets"
+TLS_GUIDE_URL = DOCS_BASE_URL + "/configuration/#tls-verification"
+INTERVALS_GUIDE_URL = DOCS_BASE_URL + "/usage/#check-intervals"
+DOCTOR_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#doctor-preflight"
+DIAGNOSTICS_GUIDE_URL = DOCS_BASE_URL + "/debugging/#cli-output-modes"
+USAGE_GUIDE_URL = DOCS_BASE_URL + "/usage/"
+TOKEN_SOURCE_GUIDE_URL = DOCS_BASE_URL + "/configuration/#spotify-access-token-source"
 
 # Labels of the two Doctor checks that gate the optional delivery tests, matched by prefix so each can name its channel
 SMTP_READY_CHECK_LABEL = "SMTP connection and login succeeded"
@@ -904,10 +904,10 @@ WEBHOOK_READY_CHECK_LABEL = "Webhook URL, headers and alert choices look valid"
 
 # The label every sibling monitor uses when email alerts are on but the settings they would use cannot deliver
 EMAIL_UNUSABLE_CHECK_LABEL = "Email alerts are enabled but unusable"
-OAUTH_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-oauth-app"
-OAUTH_USER_GUIDE_URL = DOCUMENTATION_URL + "/configuration/#spotify-oauth-user"
-BROWSER_COOKIE_GUIDE_URL = DOCUMENTATION_URL + "/setup-and-first-run/#browser-cookie-import"
-SETUP_GUIDE_URL = DOCUMENTATION_URL + "/setup-and-first-run/#setup-wizard"
+OAUTH_GUIDE_URL = DOCS_BASE_URL + "/configuration/#spotify-oauth-app"
+OAUTH_USER_GUIDE_URL = DOCS_BASE_URL + "/configuration/#spotify-oauth-user"
+BROWSER_COOKIE_GUIDE_URL = DOCS_BASE_URL + "/setup-and-first-run/#browser-cookie-import"
+SETUP_GUIDE_URL = DOCS_BASE_URL + "/setup-and-first-run/#setup-wizard"
 SPOTIFY_WEB_BASE_URL = "https://open.spotify.com"
 SPOTIFY_WEB_LOGIN_URL = SPOTIFY_WEB_BASE_URL + "/"
 SPOTIFY_API_BASE_URL = "https://api.spotify.com/v1"
@@ -1022,42 +1022,6 @@ ERROR_ALERT_AFTER_SECONDS = 300  # 5 minutes
 # How long a channel that could not deliver an error alert waits before the next attempt, doubled on every further failure up to the cap
 ERROR_ALERT_RETRY_SECONDS = 300  # 5 minutes
 ERROR_ALERT_RETRY_MAX_SECONDS = 3600  # 1 hour
-
-
-# Tracks the error alert per channel: what was delivered, and how long a channel that failed waits before the next attempt
-class ErrorAlertState:
-    # Starts with nothing delivered and no channel on hold
-    def __init__(self) -> None:
-        self.since: Optional[int] = None
-        self.email_sent = False
-        self.webhook_sent = False
-        self.email_failures = 0
-        self.webhook_failures = 0
-        self.email_retry_at = 0
-        self.webhook_retry_at = 0
-
-    # Forgets the delivered alert and any hold, so the next failure earns each channel a new one
-    def reset(self) -> None:
-        self.__init__()
-
-    # Tells whether a channel still owes the alert and its wait after a failed attempt, if any, has passed
-    def pending(self, channel: str, enabled, now: int) -> bool:
-        return bool(enabled) and not getattr(self, f"{channel}_sent") and now >= getattr(self, f"{channel}_retry_at")
-
-    # Records one attempt, holding a channel that failed for a growing wait so a broken server is not dialled on every check
-    def record(self, channel: str, attempted: bool, delivered: bool, now: int) -> None:
-        if not attempted:
-            return
-        if delivered:
-            setattr(self, f"{channel}_sent", True)
-            setattr(self, f"{channel}_failures", 0)
-            setattr(self, f"{channel}_retry_at", 0)
-            return
-        failures = getattr(self, f"{channel}_failures") + 1
-        delay = min(ERROR_ALERT_RETRY_SECONDS * 2 ** (failures - 1), ERROR_ALERT_RETRY_MAX_SECONDS)
-        setattr(self, f"{channel}_failures", failures)
-        setattr(self, f"{channel}_retry_at", now + delay)
-        print(f"* The {channel} alert is on hold for {display_time(delay)} after {failures} {'attempt' if failures == 1 else 'attempts'}, then tried again")
 
 
 stdout_bck = None
@@ -1214,6 +1178,42 @@ try:
     from colorama import init as colorama_init  # type: ignore[import]
 except ImportError:
     colorama_init = None
+
+
+# Tracks the error alert per channel: what was delivered, and how long a channel that failed waits before the next attempt
+class ErrorAlertState:
+    # Starts with nothing delivered and no channel on hold
+    def __init__(self) -> None:
+        self.since: Optional[int] = None
+        self.email_sent = False
+        self.webhook_sent = False
+        self.email_failures = 0
+        self.webhook_failures = 0
+        self.email_retry_at = 0
+        self.webhook_retry_at = 0
+
+    # Forgets the delivered alert and any hold, so the next failure earns each channel a new one
+    def reset(self) -> None:
+        self.__init__()
+
+    # Tells whether a channel still owes the alert and its wait after a failed attempt, if any, has passed
+    def pending(self, channel: str, enabled, now: int) -> bool:
+        return bool(enabled) and not getattr(self, f"{channel}_sent") and now >= getattr(self, f"{channel}_retry_at")
+
+    # Records one attempt, holding a channel that failed for a growing wait so a broken server is not dialled on every check
+    def record(self, channel: str, attempted: bool, delivered: bool, now: int) -> None:
+        if not attempted:
+            return
+        if delivered:
+            setattr(self, f"{channel}_sent", True)
+            setattr(self, f"{channel}_failures", 0)
+            setattr(self, f"{channel}_retry_at", 0)
+            return
+        failures = getattr(self, f"{channel}_failures") + 1
+        delay = min(ERROR_ALERT_RETRY_SECONDS * 2 ** (failures - 1), ERROR_ALERT_RETRY_MAX_SECONDS)
+        setattr(self, f"{channel}_failures", failures)
+        setattr(self, f"{channel}_retry_at", now + delay)
+        print(f"* The {channel} alert is on hold for {display_time(delay)} after {failures} {'attempt' if failures == 1 else 'attempts'}, then tried again")
 
 
 # Reimports optional Pillow support after an installation and reports whether artwork is available
