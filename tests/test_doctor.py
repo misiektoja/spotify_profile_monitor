@@ -20,6 +20,8 @@ def render_doctor_report(report):
 # Builds the minimal action a WARN or FAIL row is required to carry
 def actionable_advice():
     return monitor.make_recovery_advice("config.invalid", "a label", "do the thing", False)
+
+
 class TTYBuffer(StringIO):
     def isatty(self):
         return True
@@ -27,7 +29,10 @@ class TTYBuffer(StringIO):
 
 # Verifies Doctor classifies supported Python and missing dependencies
 def test_doctor_environment_checks_python_and_dependencies():
-    finder = lambda name: object() if name != "pyotp" else None
+
+    # Reports the optional dependency as unavailable
+    def finder(name):
+        return object() if name != "pyotp" else None
 
     checks = monitor.doctor_check_environment((3, 12, 1), finder)
 

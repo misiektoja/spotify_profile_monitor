@@ -57,7 +57,6 @@ def test_recovery_prefix_uses_short_names(monkeypatch, tmp_path):
     assert monitor._wizard_local_command_args("pip") == ["spotify_profile_monitor"]
 
 
-
 @pytest.mark.parametrize("setting", ["SPOTIFY_CHECK_INTERVAL", "LIVENESS_CHECK_INTERVAL"])
 # The real CLI reaches Doctor's validation before attempting numeric startup arithmetic
 def test_doctor_entry_point_reports_quoted_numbers(monkeypatch, tmp_path, setting):
@@ -65,6 +64,7 @@ def test_doctor_entry_point_reports_quoted_numbers(monkeypatch, tmp_path, settin
     config = tmp_path / "settings.conf"
     config.write_text(f'{setting} = "3600"\n', encoding="utf-8")
     labels = []
+
     # Captures the report configuration rows reached through normal startup
     def doctor(*args, **kwargs):
         labels.extend(check.label for check in monitor.doctor_check_configuration())
@@ -89,6 +89,7 @@ def test_post_save_and_startup_resolve_empty_credentials_identically(monkeypatch
     assert monitor._wizard_load_effective_setup(config, env)
     after_save = (monitor.SP_DC_COOKIE, monitor.SMTP_PASSWORD)
     resolved = []
+
     # Records values after the real startup resolver reaches Doctor
     def doctor(*args, **kwargs):
         resolved.append((monitor.SP_DC_COOKIE, monitor.SMTP_PASSWORD))
@@ -110,6 +111,7 @@ def test_quoted_password_replacement_can_be_declined(monkeypatch, tmp_path):
     monkeypatch.setattr(monitor, "SENDER_EMAIL", "sender@example.test")
     monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "receiver@example.test")
     prompted = []
+
     # Declines the actual replacement prompt before any new password is collected
     def decline(prompt):
         prompted.append(prompt)
@@ -131,8 +133,10 @@ def test_setup_keeps_saved_dotenv_destination(monkeypatch, tmp_path, override):
     explicit.write_text('SMTP_PASSWORD="synthetic-explicit"\n', encoding="utf-8")
     config.write_text(f"DOTENV_FILE={str(saved)!r}\nDISABLE_LOGGING=True\n", encoding="utf-8")
     recorded = []
+
     class Captured(BaseException):
         pass
+
     # Stops at the first section after destination and baseline resolution
     def collect(state, *args, **kwargs):
         recorded.append((state.env_path, state.config_values["DISABLE_LOGGING"]))

@@ -15,7 +15,6 @@ import pytest
 import spotify_profile_monitor as monitor
 
 
-
 # Composes the two renderers the way run_doctor does, so a test can assert on the whole transcript
 def render_doctor_report(report):
     return monitor.render_doctor_sections(report) + "\n" + monitor.render_doctor_summary(report.checks)
