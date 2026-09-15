@@ -279,20 +279,21 @@ def test_a_labelled_failure_keeps_the_shared_shape(capsys):
     assert first_line.endswith(" (retrying in 5 minutes)")
 
 
-# Verifies a lasting failure is reported once and then only once the liveness interval has passed
+# Verifies a lasting failure is reported once and then only once the reminder interval has passed
 def test_the_outage_reporter_reports_once_then_on_the_cadence(monkeypatch):
     clock = [1000000.0]
     monkeypatch.setattr(monitor.time, "time", lambda: clock[0])
+    monkeypatch.setattr(monitor, "OUTAGE_REMINDER_SECONDS", 180)
     reporter = monitor.OutageReporter()
     advice = monitor.classify_recovery_error(RuntimeError("503 Server Error"), "cookie_auth")
 
-    assert reporter.failed(advice, 180) == "full"
+    assert reporter.failed(advice) == "full"
     outcomes = []
     for _ in range(3):
         clock[0] += 60
-        outcomes.append(reporter.failed(advice, 180))
+        outcomes.append(reporter.failed(advice))
 
-    assert outcomes == ["", "", "degraded"]
+    assert outcomes == ["", "", "reminder"]
     assert reporter.recovered() is not None
     assert reporter.recovered() is None
 
@@ -306,10 +307,10 @@ def test_an_outage_that_changes_category_keeps_its_start(monkeypatch):
     second = monitor.classify_recovery_error(OSError(24, "Too many open files"))
     assert first.code != second.code
 
-    assert reporter.failed(first, 900) == "full"
+    assert reporter.failed(first) == "full"
     for index in range(60):
         clock[0] += 15
-        reporter.failed(second if index % 2 else first, 900)
+        reporter.failed(second if index % 2 else first)
 
     assert reporter.since == 1000000
     assert reporter.recovered() == 900
@@ -322,22 +323,59 @@ def test_the_outage_reminder_follows_the_clock_not_the_check_count(monkeypatch):
     reporter = monitor.OutageReporter()
     advice = monitor.classify_recovery_error(RuntimeError("503 Server Error"), "cookie_auth")
 
-    assert reporter.failed(advice, 900) == "full"
+    monkeypatch.setattr(monitor, "OUTAGE_REMINDER_SECONDS", 900)
+    assert reporter.failed(advice) == "full"
     outcomes = []
     for _ in range(60):
         clock[0] += 15
-        outcomes.append(reporter.failed(advice, 900))
+        outcomes.append(reporter.failed(advice))
 
-    assert outcomes.count("degraded") == 1
+    assert outcomes.count("reminder") == 1
 
 
-# Verifies the summary keeps its every-check cadence when the liveness banner is switched off
-def test_the_outage_reporter_keeps_repeating_without_a_liveness_banner():
+# Verifies the reminder keeps its own clock when the liveness banner is switched off, so a lasting failure is
+# neither silenced nor repeated every check
+def test_the_outage_reporter_reminds_on_its_own_clock_without_a_liveness_banner(monkeypatch):
+    clock = [1000000.0]
+    monkeypatch.setattr(monitor.time, "time", lambda: clock[0])
+    monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", 0)
+    monkeypatch.setattr(monitor, "OUTAGE_REMINDER_SECONDS", 60)
     reporter = monitor.OutageReporter()
     advice = monitor.classify_recovery_error(RuntimeError("503 Server Error"), "cookie_auth")
 
-    assert reporter.failed(advice, 0) == "full"
-    assert [reporter.failed(advice, 0) for _ in range(2)] == ["repeat", "repeat"]
+    assert reporter.failed(advice) == "full"
+    clock[0] += 59
+    assert reporter.failed(advice) == ""
+    clock[0] += 1
+    assert reporter.failed(advice) == "reminder"
+    assert reporter.failed(advice) == ""
+
+
+# Verifies the reporter treats every network code as one outage and any other retryable change as a one-line note
+def test_the_outage_reporter_merges_network_codes_and_notes_other_changes(monkeypatch, capsys):
+    clock = [1000000.0]
+    monkeypatch.setattr(monitor.time, "time", lambda: clock[0])
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    reporter = monitor.OutageReporter()
+    timeout = monitor.classify_recovery_error(RuntimeError("The read operation timed out"), "cookie_auth")
+    unreachable = monitor.classify_recovery_error(monitor.req.exceptions.ConnectionError("connection refused"), "cookie_auth")
+    unavailable = monitor.classify_recovery_error(RuntimeError("503 Server Error"), "cookie_auth")
+    assert (monitor.outage_family(timeout.code), monitor.outage_family(unreachable.code)) == ("network", "network")
+
+    assert reporter.failed(timeout) == "full"
+    assert reporter.failed(unreachable) == ""
+    assert reporter.failed(timeout) == ""
+    assert reporter.failed(unavailable) == "changed"
+    assert reporter.failed(unavailable) == ""
+    assert reporter.since == 1000000
+
+    monitor.print_outage_change("watched-user", unavailable)
+    monitor.print_outage_liveness("watched-user", unavailable, reporter.since, reporter.failures)
+
+    output = capsys.readouterr().out
+    assert f"* Monitoring failure changed for watched-user. {unavailable.summary}\n" in output
+    assert f"* Monitoring degraded for watched-user. {unavailable.summary} since " in output
+    assert ", 5 failed checks\n" in output
 
 
 # Verifies a destination that already exists is refused as itself, since --force rather than permissions is the answer
@@ -472,9 +510,9 @@ def test_a_changed_failure_category_is_reported_in_full(monkeypatch, capsys):
     unavailable = monitor.classify_recovery_error(RuntimeError("503 Server Error"), "cookie_auth")
     rejected = monitor.classify_recovery_error(RuntimeError("401 Unauthorized sp_dc"), "cookie_auth")
 
-    assert reporter.failed(unavailable, 5) == "full"
-    assert reporter.failed(unavailable, 5) == ""
-    assert reporter.failed(rejected, 5) == "full"
+    assert reporter.failed(unavailable) == "full"
+    assert reporter.failed(unavailable) == ""
+    assert reporter.failed(rejected) == "full", "a failure nothing can retry away is a new report rather than a note"
 
     monitor.print_outage_liveness("watched-user", rejected, int(time.time()) - 60)
     monitor.print_outage_recovery("watched-user", 60)
@@ -726,6 +764,7 @@ CLASSIFIER_EXEMPTIONS = {
     "Setup needs a writable dotenv file": "an answer hint inside the question that re-asks, where the next prompt is the recovery",
     "could not write configuration file": "a wizard result that reports what was saved and what was not",
     "Setup was saved": "a wizard result followed by the step that finishes the setup",
+    "Monitoring failure changed for": "a one-line note on a classified outage that already had its full report",
 }
 
 

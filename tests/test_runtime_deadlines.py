@@ -229,7 +229,8 @@ def test_the_loop_routes_its_failures_through_the_outage_reporter():
     assert source.count("print_outage_liveness(") == 2
     assert source.count("print_outage_recovery(") == 2
     assert "print_recovery_error(e, context, retry_note=" in source and "tracker=monitor_recovery_tracker)" in source
-    assert re.search(r"outage\.failed\(advice, LIVENESS_REMINDER_SECONDS\)", source)
+    assert re.search(r"outage\.failed\(advice\)", source)
+    assert "follower_outage.failed(follower_advice)" in source
     assert "print_liveness_banner(" in source, "the healthy banner and its timestamp belong in one call"
     assert "verbose_print(f\"Monitoring healthy" not in source, "the healthy banner is no longer verbose-only"
     assert "int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS" in source, "the healthy banner is timed rather than counted"

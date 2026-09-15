@@ -1189,41 +1189,59 @@ class RecoveryError(Exception):
 
 
 # Decides how a lasting failure is reported: in full when it is new, then on the liveness cadence while it lasts
+# How long a reported failure may go on before the run reminds about it, whatever the liveness banner is set to
+OUTAGE_REMINDER_SECONDS = 3600  # 1 hour
+
+
+# Returns the family a failure code belongs to, so the DNS and timeout failures of one internet outage count as one
+def outage_family(code: Optional[str]) -> str:
+    return "network" if str(code or "").startswith("network.") else str(code or "")
+
+
 class OutageReporter:
-    # Starts with no failure recorded, so the first failure of any category is reported in full
-    def __init__(self) -> None:
+    # Starts with no failure recorded and reports a new retryable failure once confirm_checks checks in a row failed
+    def __init__(self, confirm_checks: int = 1) -> None:
+        self.confirm_checks = max(1, confirm_checks)
         self.code: Optional[str] = None
         self.since: int = 0
         self.reported_at: int = 0
+        self.failures: int = 0
+        self.reported: bool = False
 
-    # Records one failed check and returns "full" for a new failure, "degraded" once the liveness interval has passed,
-    # "repeat" while the liveness banner is switched off or "" while the same failure is merely continuing
-    def failed(self, advice: RecoveryAdvice, liveness_interval: int) -> str:
+    # Records one failed check and returns "full" when the failure is to be reported in full, "changed" when a
+    # reported outage moved to another failure family, "reminder" once OUTAGE_REMINDER_SECONDS passed since the
+    # last report or "" while nothing new is to be said
+    def failed(self, advice: RecoveryAdvice) -> str:
         now = int(time.time())
-        if advice.code != self.code:
-            # A category change mid-outage is still the same outage, so its start and the alert delay it feeds are kept
-            if not self.code:
-                self.since = now
-            self.code = advice.code
+        if not self.code:
+            self.since = now
+        self.failures += 1
+        changed = self.code is not None and outage_family(advice.code) != outage_family(self.code)
+        self.code = advice.code
+        if not self.reported:
+            # A failure the tool cannot retry away is reported at once, one it can waits for the next check to confirm it
+            if advice.retryable and self.failures < self.confirm_checks:
+                return ""
+            self.reported = True
             self.reported_at = now
             return "full"
-        # With the liveness banner off there is nothing to carry the reminder, so the summary keeps its old cadence
-        if not liveness_interval:
-            return "repeat"
-        # Timed rather than counted, because a failing run usually retries on a different interval than a healthy one
-        if now - self.reported_at >= liveness_interval:
+        if changed:
             self.reported_at = now
-            return "degraded"
+            return "changed" if advice.retryable else "full"
+        # Timed rather than counted, because a failing run usually retries on a different interval than a healthy one
+        if now - self.reported_at >= OUTAGE_REMINDER_SECONDS:
+            self.reported_at = now
+            return "reminder"
         return ""
 
-    # Clears the failure after a successful check and returns how long it lasted, or None when none was active
+    # Clears the failure after a successful check and returns how long it lasted, or None when nothing was reported
     def recovered(self) -> Optional[int]:
-        if not self.code:
-            return None
-        lasted = int(time.time()) - self.since
-        self.code = None
-        self.since = 0
-        self.reported_at = 0
+        lasted = int(time.time()) - self.since if self.code and self.reported else None
+        self.code: Optional[str] = None
+        self.since: int = 0
+        self.reported_at: int = 0
+        self.failures: int = 0
+        self.reported: bool = False
         return lasted
 
 
@@ -1233,10 +1251,16 @@ def print_liveness_banner(message: str) -> None:
     print_cur_ts("Liveness check, timestamp:\t")
 
 
-# Reports a lasting failure on the liveness cadence, so a broken run still says it is alive without repeating itself
-def print_outage_liveness(target: str, advice: RecoveryAdvice, since: int) -> None:
-    print(f"* Monitoring degraded for {target}. {advice.summary} since {get_date_from_ts(since)}")
+# Reminds about a lasting failure once an hour, so a broken run still says it is alive without repeating itself
+def print_outage_liveness(target: str, advice: RecoveryAdvice, since: int, failures: int = 0) -> None:
+    count = f", {failures} failed {'check' if failures == 1 else 'checks'}" if failures else ""
+    print(f"* Monitoring degraded for {target}. {advice.summary} since {get_date_from_ts(since)}{count}")
     print_cur_ts("Liveness check, timestamp:\t")
+
+
+# Notes that a reported outage now fails differently, in one line rather than a second full report
+def print_outage_change(target: str, advice: RecoveryAdvice) -> None:
+    print(f"* Monitoring failure changed for {target}. {advice.summary}")
 
 
 # Reports that a failure cleared, since a throttled failure no longer stops printing when it is over
@@ -11003,11 +11027,13 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             advice = classify_recovery_error(e, context)
 
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
-            outage_outcome = outage.failed(advice, LIVENESS_REMINDER_SECONDS)
-            if outage_outcome in ("full", "repeat"):
+            outage_outcome = outage.failed(advice)
+            if outage_outcome == "full":
                 print_recovery_error(e, context, retry_note=f"retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}", tracker=monitor_recovery_tracker)
-            elif outage_outcome == "degraded":
-                print_outage_liveness(user_uri_id, advice, outage.since)
+            elif outage_outcome == "changed":
+                print_outage_change(user_uri_id, advice)
+            elif outage_outcome == "reminder":
+                print_outage_liveness(user_uri_id, advice, outage.since, outage.failures)
 
             # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
             alert_due = not advice.retryable or int(time.time()) - outage.since >= ERROR_ALERT_AFTER_SECONDS
@@ -11018,7 +11044,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 m_body_html = f"<html><head></head><body>{html_text(advice.summary)}<br><br>To fix: {html_text(advice.fix)}<br><br>Technical detail: {html_text(safe_detail)}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
                 email_sent, webhook_sent = send_pending_error_notification(m_subject, m_body, m_body_html, email_sent, webhook_sent)
 
-            if outage_outcome in ("full", "repeat"):
+            if outage_outcome in ("full", "changed"):
                 print_cur_ts("Timestamp:\t\t\t")
             time.sleep(SPOTIFY_ERROR_INTERVAL)
             continue
@@ -11059,12 +11085,15 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             follower_advice = classify_recovery_error(e, f"{TOKEN_SOURCE}_auth")
 
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
-            follower_outcome = follower_outage.failed(follower_advice, LIVENESS_REMINDER_SECONDS)
-            if follower_outcome in ("full", "repeat"):
+            follower_outcome = follower_outage.failed(follower_advice)
+            if follower_outcome == "full":
                 print_recovery_error(e, f"{TOKEN_SOURCE}_auth", retry_note=f"retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}", label="Error while getting followers and followings", tracker=follower_recovery_tracker)
                 print_cur_ts("Timestamp:\t\t\t")
-            elif follower_outcome == "degraded":
-                print_outage_liveness(user_uri_id, follower_advice, follower_outage.since)
+            elif follower_outcome == "changed":
+                print_outage_change(user_uri_id, follower_advice)
+                print_cur_ts("Timestamp:\t\t\t")
+            elif follower_outcome == "reminder":
+                print_outage_liveness(user_uri_id, follower_advice, follower_outage.since, follower_outage.failures)
             time.sleep(SPOTIFY_ERROR_INTERVAL)
             continue
 

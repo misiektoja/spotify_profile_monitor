@@ -97,3 +97,45 @@ def test_the_guide_link_keeps_its_own_line_in_the_html_body(monkeypatch, tmp_pat
     fix_index = next(index for index, part in enumerate(parts) if part.startswith("To fix: "))
     assert parts[fix_index + 1].startswith("Guide: https://")
     assert "\n" not in parts[fix_index]
+
+
+# Verifies an internet outage that classifies as a timeout on one check and as unreachable on the next is one
+# outage, so it is reported once on screen and alerted once
+def test_an_internet_outage_that_flaps_is_one_outage(monkeypatch, tmp_path, capsys):
+    flapping = [RuntimeError("The read operation timed out"), monitor.req.exceptions.ConnectionError("connection refused")] * 6
+    errors = error_alerts_for(monkeypatch, tmp_path, [profile_snapshot(), *flapping], 12)
+
+    output = capsys.readouterr().out
+    assert output.count("* Error:") == 1
+    assert output.count("To fix: ") == 1
+    assert "Monitoring failure changed" not in output
+    assert len(errors) == 1
+
+
+# Verifies a reported outage that starts failing differently is still one outage, so the change is one line
+# rather than a second report
+def test_a_second_failure_category_is_noted_in_one_line(monkeypatch, tmp_path, capsys):
+    outage = [RuntimeError("503 Server Error")] * 3 + [RuntimeError("The read operation timed out")] * 2
+    error_alerts_for(monkeypatch, tmp_path, [profile_snapshot(), *outage], 6)
+
+    lines = capsys.readouterr().out.splitlines()
+    reports = [line for line in lines if line.startswith("* Error:")]
+    changes = [number for number, line in enumerate(lines) if line.startswith(f"* Monitoring failure changed for {USER}. ")]
+    assert len(reports) == 1 and "temporarily unavailable" in reports[0]
+    assert len(changes) == 1 and lines[changes[0]].endswith("The Spotify request timed out")
+    assert lines[changes[0] + 1].startswith("Timestamp:")
+    assert "\n".join(lines).count("To fix: ") == 1
+
+
+# Verifies a lasting outage is reported once and then carried by the hourly reminder with a count of its checks
+def test_a_lasting_outage_is_carried_by_the_hourly_reminder(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(monitor, "OUTAGE_REMINDER_SECONDS", 900)
+    error_alerts_for(monkeypatch, tmp_path, [profile_snapshot(), *[RuntimeError("The read operation timed out")] * 10], 11)
+
+    output = capsys.readouterr().out
+    assert output.count("* Error:") == 1
+    assert output.count("To fix: ") == 1
+    # Five minute error checks put every third one at the reminder interval
+    assert output.count(f"* Monitoring degraded for {USER}. The Spotify request timed out since ") == 3
+    assert ", 4 failed checks\n" in output and ", 10 failed checks\n" in output
+    assert output.count("Liveness check, timestamp:") == 3
