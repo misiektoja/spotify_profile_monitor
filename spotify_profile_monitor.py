@@ -1958,6 +1958,11 @@ def apply_color_to_text(text):
     return "".join(parts)
 
 
+# Colours every link in a line, for the screens printed before the output stream colouriser is installed
+def colorize_links(text):
+    return _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), text)
+
+
 # Returns the underlying terminal behind any number of sanitizing stream wrappers
 def unwrap_terminal_stream(stream):
     while isinstance(stream, TerminalStream):
@@ -8369,7 +8374,7 @@ def resolve_import_env_path(env_file=None, cwd=None):
 # Runs extraction and validation plus confirmed atomic dotenv persistence
 def run_browser_cookie_import(browser="firefox", browser_profile=None, cookie_file=None, env_file=None, force=False, interactive=None, input_func=None, config_path=None, target=None, saved_target=None):
     destination = resolve_import_env_path(env_file)
-    print(f"* Browser prerequisite: open {SPOTIFY_WEB_LOGIN_URL} in {browser_label(browser)} and sign in to the Spotify account used for monitoring")
+    print(colorize_links(f"* Browser prerequisite: open {SPOTIFY_WEB_LOGIN_URL} in {browser_label(browser)} and sign in to the Spotify account used for monitoring"))
     print(f"* Dotenv destination: {destination}")
     selected_system = platform.system()
     if browser in CHROMIUM_IMPORT_BROWSERS and selected_system == "Windows":
@@ -10175,7 +10180,7 @@ def _wizard_target(initial_target: Optional[str] = None) -> str:
         try:
             return normalize_spotify_user_id(raw_target)
         except ValueError:
-            print(f"  Use {SPOTIFY_WEB_BASE_URL}/user/USER_ID, spotify:user:USER_ID or a Spotify user ID.")
+            print(colorize_links(f"  Use {SPOTIFY_WEB_BASE_URL}/user/USER_ID, spotify:user:USER_ID or a Spotify user ID."))
             if not _wizard_offer_retry("Spotify profile"):
                 return ""
             default = ""
@@ -10207,7 +10212,7 @@ def _wizard_collect_cookie_auth(method: str, env_path: Path, secret_updates: dic
                         continue
                 browser_index = _wizard_ask_choice("Which Chromium browser should be imported?", [(browser_label(item), _wizard_browser_description(item)) for item in chromium_browsers])
                 browser = chromium_browsers[browser_index]
-            print(f"\n  Before import, open {SPOTIFY_WEB_LOGIN_URL} in {browser_label(browser)} and sign in to the Spotify account used for monitoring.")
+            print(colorize_links(f"\n  Before import, open {SPOTIFY_WEB_LOGIN_URL} in {browser_label(browser)} and sign in to the Spotify account used for monitoring."))
             return {"complete": False, "validated": False, "browser": browser, "source": f"browser import ({browser_label(browser)})"}
         if action == "existing":
             if not existing_cookie:
@@ -10217,7 +10222,7 @@ def _wizard_collect_cookie_auth(method: str, env_path: Path, secret_updates: dic
                 return {"complete": True, "validated": False, "browser": None, "source": "existing SP_DC_COOKIE"}
             continue
         if action == "manual":
-            print(f"\nFind the sp_dc cookie first: {MANUAL_COOKIE_GUIDE_URL}\n")
+            print(colorize_links(f"\nFind the sp_dc cookie first: {MANUAL_COOKIE_GUIDE_URL}\n"))
             cookie = _wizard_ask_secret("Existing sp_dc value")
             if not cookie:
                 if _wizard_offer_retry("sp_dc cookie", "Monitoring cannot start until one is set"):
@@ -10761,7 +10766,7 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
     if not sys.stdin.isatty():
         print("The setup wizard needs an interactive terminal (TTY).")
         print("Run --setup from an interactive shell or use --generate-config and edit the files manually.")
-        print(f"Guide: {SETUP_GUIDE_URL}")
+        print(colorize_links(f"Guide: {SETUP_GUIDE_URL}"))
         raise SystemExit(1)
     try:
         config_path, env_path = _wizard_destinations(config_file, env_file)
