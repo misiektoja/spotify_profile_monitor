@@ -3444,26 +3444,57 @@ def send_webhook(title: str, description: str, notification_type: str = "profile
     return 1
 
 
+# What one alert dispatch tried per channel and what each channel actually delivered
+@dataclass(frozen=True)
+class NotificationOutcome:
+    email_attempted: bool
+    webhook_attempted: bool
+    email_delivered: bool
+    webhook_delivered: bool
+
+
 # Sends one alert through the enabled email and webhook channels
-def send_notification_channels(notification_type: str, subject: str, body: str, body_html: str = "", email_enabled: bool = False, webhook_enabled: Optional[bool] = None, image_url: str = "", email_image_file: str = "", email_image_name: str = "image1", email_image_url: str = "") -> Tuple[bool, bool]:
+def send_notification_channels(notification_type: str, subject: str, body: str, body_html: str = "", email_enabled: bool = False, webhook_enabled: Optional[bool] = None, image_url: str = "", email_image_file: str = "", email_image_name: str = "image1", email_image_url: str = "") -> NotificationOutcome:
     email_attempted = bool(email_enabled)
     webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    # Both transports report zero for a delivery the far end accepted, so anything else is a failure a caller can retry
+    email_result = 1
+    webhook_result = 1
     if email_attempted:
         print(f"Sending email notification to {RECEIVER_EMAIL}")
         if email_image_file:
-            send_email(subject, body, body_html, SMTP_SSL, email_image_file, email_image_name)
+            email_result = send_email(subject, body, body_html, SMTP_SSL, email_image_file, email_image_name)
         elif EMAIL_IMAGES and email_image_url:
             email_artwork = build_email_artwork(email_image_url)
             if email_artwork:
-                send_email(subject, body, add_email_artwork_html(body_html), SMTP_SSL, image_name=EMAIL_ARTWORK_CONTENT_ID, image_bytes=email_artwork)
+                email_result = send_email(subject, body, add_email_artwork_html(body_html), SMTP_SSL, image_name=EMAIL_ARTWORK_CONTENT_ID, image_bytes=email_artwork)
             else:
-                send_email(subject, body, body_html, SMTP_SSL)
+                email_result = send_email(subject, body, body_html, SMTP_SSL)
         else:
-            send_email(subject, body, body_html, SMTP_SSL)
+            email_result = send_email(subject, body, body_html, SMTP_SSL)
     if webhook_attempted:
         print(f"Sending webhook notification via {webhook_provider_display_name()}")
-        send_webhook(subject, body, notification_type, force=True, image_url=image_url)
-    return email_attempted, webhook_attempted
+        webhook_result = send_webhook(subject, body, notification_type, force=True, image_url=image_url)
+    return NotificationOutcome(email_attempted, webhook_attempted, email_attempted and email_result == 0, webhook_attempted and webhook_result == 0)
+
+
+# Alerts each enabled channel about a failing check once its outage is old enough, and holds a channel that could not deliver
+def dispatch_error_alert(state: "ErrorAlertState", advice: "RecoveryAdvice", error: BaseException, user_uri_id: str, outage_since: int) -> None:
+    now = int(time.time())
+    # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
+    if advice.retryable and now - outage_since < ERROR_ALERT_AFTER_SECONDS:
+        return
+    email_pending = state.pending("email", ERROR_NOTIFICATION, now)
+    webhook_pending = state.pending("webhook", webhook_event_enabled("error"), now)
+    if not email_pending and not webhook_pending:
+        return
+    safe_detail = sanitize_error_text(error)
+    m_subject = f"spotify_profile_monitor: {advice.summary} (uri: {user_uri_id})"
+    m_body = f"{advice.summary}\n\nTo fix: {advice.fix}\n\nTechnical detail: {safe_detail}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
+    m_body_html = f"<html><head></head><body>{html_text(advice.summary)}<br><br>To fix: {html_text(advice.fix)}<br><br>Technical detail: {html_text(safe_detail)}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
+    outcome = send_notification_channels("error", m_subject, m_body, m_body_html, email_enabled=email_pending, webhook_enabled=webhook_pending)
+    state.record("email", email_pending, outcome.email_delivered, now)
+    state.record("webhook", webhook_pending, outcome.webhook_delivered, now)
 
 
 # Prefixes one CSV value so spreadsheet software cannot evaluate Spotify-supplied text as a formula
@@ -7851,6 +7882,22 @@ def validate_config_content(content: str, filename: str = "<generated-config>") 
     parse_config_content(content, filename)
 
 
+# Returns the inline comment to write beside a rendered value, restating a changed duration instead of keeping the template's
+def _config_value_comment(comment: str, template_expression: str, value: Any) -> str:
+    if not comment:
+        return ""
+    try:
+        unchanged = ast.literal_eval(template_expression) == value
+    except (ValueError, SyntaxError, TypeError, MemoryError, RecursionError):
+        return comment
+    # Every numeric template comment restates its default as a duration, so a changed one is restated the same way.
+    # A comment on any other kind of setting is guidance about the setting itself and still applies
+    if unchanged or isinstance(value, bool) or not isinstance(value, (int, float)):
+        return comment
+    restated = display_time(value)
+    return f"# {restated}" if restated else ""
+
+
 # Renders CONFIG_BLOCK with current non-secret values and original secret placeholders
 def generate_config_with_current_values(values=None) -> str:
     current_values = globals() if values is None else values
@@ -7881,8 +7928,9 @@ def generate_config_with_current_values(values=None) -> str:
             continue
         rendered_value = _format_config_value(current_values[variable], prefer_double_quotes=expression_stripped.startswith('"'))
         rendered_line = f"{variable} = {rendered_value}"
-        if comment:
-            rendered_line = f"{rendered_line}  {comment}"
+        rendered_comment = _config_value_comment(comment, expression_stripped, current_values[variable])
+        if rendered_comment:
+            rendered_line = f"{rendered_line}  {rendered_comment}"
         output_lines.append(rendered_line)
     rendered = "\n".join(output_lines) + "\n"
     validate_config_content(rendered)
@@ -9876,14 +9924,16 @@ def build_doctor_report(target_value=None, config_path=None, env_path=None, star
     if progress is not None:
         progress("authentication")
     report.checks.extend(doctor_check_authentication(report))
-    if progress is not None:
-        progress("metadata")
-    report.checks.extend(doctor_check_optional_oauth(report))
     # The Spotify reachability row reuses the authentication response, so it is added once that is known
     report.checks.extend(doctor_check_connectivity(report, endpoint_check))
     if progress is not None:
         progress("the monitored profile")
+    # Ahead of the metadata check, which needs one of this profile's public playlists to make a real request.
+    # Rendering follows DOCTOR_SECTIONS, so the printed order does not depend on this
     report.checks.extend(doctor_check_target(report, target_value))
+    if progress is not None:
+        progress("metadata")
+    report.checks.extend(doctor_check_optional_oauth(report))
     if progress is not None:
         progress("notifications")
     report.checks.extend(doctor_check_notifications())
@@ -11317,7 +11367,6 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             else:
                 sp_accessToken = spotify_get_access_token_from_sp_dc(SP_DC_COOKIE)
             sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS, 0)
-            error_alert.reset()
             monitor_recovery_tracker.reset()
             outage_lasted = outage.recovered()
             if outage_lasted is not None:
@@ -11326,8 +11375,21 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             _restore_timeout_alarm(alarm_state)
         except TimeoutException as e:
             _restore_timeout_alarm(alarm_state)
-            print_recovery_error(e, "runtime", retry_note=f"retrying in {display_time(ALARM_RETRY)}", tracker=monitor_recovery_tracker)
-            print_cur_ts("Timestamp:\t\t\t")
+            advice = classify_recovery_error(e, "runtime")
+
+            # A halted request is one more failing check, so it shares the outage clock and the alert the other failures use
+            outage_outcome = outage.failed(advice)
+            if outage_outcome == "full":
+                print_recovery_error(e, "runtime", retry_note=f"retrying in {display_time(ALARM_RETRY)}", tracker=monitor_recovery_tracker)
+            elif outage_outcome == "changed":
+                print_outage_change(user_uri_id, advice)
+            elif outage_outcome == "reminder":
+                print_outage_liveness(user_uri_id, advice, outage.since, outage.failures)
+
+            dispatch_error_alert(error_alert, advice, e, user_uri_id, outage.since)
+
+            if outage_outcome in ("full", "changed"):
+                print_cur_ts("Timestamp:\t\t\t")
             time.sleep(ALARM_RETRY)
             continue
         except Exception as e:
@@ -11354,19 +11416,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             elif outage_outcome == "reminder":
                 print_outage_liveness(user_uri_id, advice, outage.since, outage.failures)
 
-            # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
-            alert_due = not advice.retryable or int(time.time()) - outage.since >= ERROR_ALERT_AFTER_SECONDS
-            now = int(time.time())
-            error_email_pending = alert_due and error_alert.pending("email", ERROR_NOTIFICATION, now)
-            error_webhook_pending = alert_due and error_alert.pending("webhook", webhook_event_enabled("error"), now)
-            if error_email_pending or error_webhook_pending:
-                safe_detail = sanitize_error_text(e)
-                m_subject = f"spotify_profile_monitor: {advice.summary} (uri: {user_uri_id})"
-                m_body = f"{advice.summary}\n\nTo fix: {advice.fix}\n\nTechnical detail: {safe_detail}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-                m_body_html = f"<html><head></head><body>{html_text(advice.summary)}<br><br>To fix: {html_text(advice.fix)}<br><br>Technical detail: {html_text(safe_detail)}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
-                email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, m_body_html, email_enabled=error_email_pending, webhook_enabled=error_webhook_pending)
-                error_alert.record("email", error_email_pending, email_delivered, now)
-                error_alert.record("webhook", error_webhook_pending, webhook_delivered, now)
+            dispatch_error_alert(error_alert, advice, e, user_uri_id, outage.since)
 
             if outage_outcome in ("full", "changed"):
                 print_cur_ts("Timestamp:\t\t\t")
@@ -11400,6 +11450,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         try:
             sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
             sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
+            # Every request this check needs has now answered, so the alert is cleared here rather than after the profile alone
+            error_alert.reset()
             follower_recovery_tracker.reset()
             follower_lasted = follower_outage.recovered()
             if follower_lasted is not None:
@@ -11418,6 +11470,9 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 print_cur_ts("Timestamp:\t\t\t")
             elif follower_outcome == "reminder":
                 print_outage_liveness(user_uri_id, follower_advice, follower_outage.since, follower_outage.failures)
+
+            dispatch_error_alert(error_alert, follower_advice, e, user_uri_id, follower_outage.since)
+
             time.sleep(SPOTIFY_ERROR_INTERVAL)
             continue
 

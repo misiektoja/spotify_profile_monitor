@@ -199,6 +199,36 @@ def test_doctor_warns_when_legacy_token_cannot_read_playlist_metadata(monkeypatc
     assert "Normal monitoring will use the web-player backend" in check.detail
 
 
+# Verifies the whole report resolves the target before the metadata check, since that check needs one of the
+# target's public playlists to make its real request and a pre-filled report cannot show the dependency
+def test_doctor_report_checks_metadata_against_the_resolved_target(monkeypatch):
+    monkeypatch.setattr(monitor, "SP_APP_CLIENT_ID", "legacy-client")
+    monkeypatch.setattr(monitor, "SP_APP_CLIENT_SECRET", "legacy-secret")
+    monkeypatch.setattr(monitor, "spotify_get_access_token_from_oauth_app", Mock(return_value="legacy-token"))
+    monkeypatch.setattr(monitor, "doctor_check_environment", lambda *args: [])
+    monkeypatch.setattr(monitor, "doctor_check_configuration", lambda *args: [])
+    monkeypatch.setattr(monitor, "doctor_connectivity_endpoint_check", lambda: None)
+    monkeypatch.setattr(monitor, "doctor_check_connectivity", lambda *args: [])
+    monkeypatch.setattr(monitor, "doctor_check_notifications", lambda: [])
+    monkeypatch.setattr(monitor, "resolve_target_user_id", lambda value, saved: "watched-user")
+    monkeypatch.setattr(monitor, "spotify_get_user_info", Mock(return_value={"sp_user_public_playlists_uris": [{"uri": "spotify:playlist:playlist123"}]}))
+    metadata_request = Mock(return_value={"sp_playlist_name": "Playlist"})
+    monkeypatch.setattr(monitor, "_spotify_get_playlist_info_api", metadata_request)
+
+    def signed_in(report):
+        report.access_token = "access-token"
+        return []
+
+    monkeypatch.setattr(monitor, "doctor_check_authentication", signed_in)
+
+    report = monitor.build_doctor_report("watched-user")
+
+    metadata = next(check for check in report.checks if check.section == "Metadata")
+    assert metadata.status == "PASS"
+    assert metadata.label == "Legacy OAuth playlist metadata access succeeded"
+    metadata_request.assert_called_once_with("legacy-token", "spotify:playlist:playlist123", False, oauth_app=True)
+
+
 # Verifies Doctor does not claim playlist compatibility when the target has nothing available to probe
 def test_doctor_marks_unchecked_legacy_playlist_access(monkeypatch):
     monkeypatch.setattr(monitor, "SP_APP_CLIENT_ID", "legacy-client")

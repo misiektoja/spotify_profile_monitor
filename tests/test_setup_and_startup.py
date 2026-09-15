@@ -230,6 +230,20 @@ def test_generated_config_preserves_secrets_and_updates_regular_values():
     assert "must-not-appear" not in content
 
 
+# Verifies a changed duration is restated beside it, so a rerun does not leave the built-in default's wording
+# describing a value the user replaced
+def test_generated_config_restates_a_changed_duration_comment():
+    values = dict(vars(monitor))
+    values.update({"SPOTIFY_CHECK_INTERVAL": 7200, "TOKEN_RETRY_TIMEOUT": 0.25})
+
+    content = monitor.generate_config_with_current_values(values)
+
+    assert "SPOTIFY_CHECK_INTERVAL = 7200  # 2 hours" in content
+    assert "SPOTIFY_ERROR_INTERVAL = 300  # 5 mins" in content
+    # No duration can describe a quarter of a second, so the stale comment goes rather than being reworded
+    assert "TOKEN_RETRY_TIMEOUT = 0.25\n" in content
+
+
 # Verifies safe config writes validate first and back up replacements
 def test_write_config_validates_and_backs_up(tmp_path):
     destination = tmp_path / "profile.conf"

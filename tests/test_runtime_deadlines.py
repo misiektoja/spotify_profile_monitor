@@ -218,7 +218,7 @@ def test_main_loop_arms_the_watchdog_with_alarm_timeout():
     source = inspect.getsource(monitor.spotify_profile_monitor_uri)
 
     assert "_start_timeout_alarm(ALARM_TIMEOUT)" in source
-    assert re.search(r"except TimeoutException[\s\S]{0,400}?time\.sleep\(ALARM_RETRY\)", source), "a watchdog timeout must retry on the alarm delay"
+    assert re.search(r"except TimeoutException[\s\S]{0,1200}?time\.sleep\(ALARM_RETRY\)", source), "a watchdog timeout must retry on the alarm delay"
 
 
 # Confirms a SIGHUP reload picks up rotated secrets from the dotenv file

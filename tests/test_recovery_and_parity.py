@@ -592,7 +592,7 @@ def test_doctor_build_reports_progress(monkeypatch):
 
     monitor.build_doctor_report(progress=phases.append)
 
-    assert phases == ["environment", "configuration", "connectivity", "authentication", "metadata", "the monitored profile", "notifications"]
+    assert phases == ["environment", "configuration", "connectivity", "authentication", "the monitored profile", "metadata", "notifications"]
 
 
 # Verifies Doctor preserves a startup failure for an explicitly missing dotenv file
@@ -986,14 +986,26 @@ def test_a_delivery_or_a_reset_clears_the_hold(capsys):
     assert "on hold" in capsys.readouterr().out
 
 
-# Verifies every alert site in the loop asks the state before sending and records the outcome, so no channel is tracked by a loose flag
+# Verifies one alert state serves every failing path in the loop and no channel is tracked by a loose flag beside it
 def test_the_loop_tracks_the_error_alert_through_the_state():
     source = inspect.getsource(monitor)
     assert source.count("error_alert = ErrorAlertState()") == 1
     assert source.count("error_alert.reset()") >= 1
-    assert source.count('error_alert.pending("email"') == source.count('error_alert.record("email"') >= 1
-    assert source.count('error_alert.pending("webhook"') == source.count('error_alert.record("webhook"') >= 1
+    assert source.count("dispatch_error_alert(error_alert,") >= 3
     assert not re.search(r"^\s*error_(email|webhook)_sent = ", source, re.MULTILINE)
+
+
+# Verifies the dispatcher reports what each transport actually delivered, since a failed send that reads as delivered
+# would mark the channel done and cancel its retry
+def test_the_dispatcher_separates_an_attempt_from_a_delivery(monkeypatch):
+    monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "receiver@example.com")
+    monkeypatch.setattr(monitor, "send_email", lambda *arguments, **keywords: 1)
+    monkeypatch.setattr(monitor, "send_webhook", lambda *arguments, **keywords: 0)
+
+    outcome = monitor.send_notification_channels("error", "Subject", "Body", email_enabled=True, webhook_enabled=True)
+
+    assert (outcome.email_attempted, outcome.webhook_attempted) == (True, True)
+    assert (outcome.email_delivered, outcome.webhook_delivered) == (False, True)
 
 
 # Verifies a save that cannot reach its destination names the write failure, since the existing-file advice

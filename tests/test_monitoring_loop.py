@@ -17,13 +17,14 @@ def profile_snapshot():
 
 
 # Runs the loop until stop_after sleeps have passed and returns the error alerts it handed to the channels
-def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answers=(), check_interval=1800, liveness_seconds=None):
+def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answers=(), check_interval=1800, liveness_seconds=None, delivery_results=()):
     calls = []
     sleeps = []
     now = [1_800_000_000.0]
     remaining = list(answers)
     remaining_followers = list(follower_answers)
     follower_calls = []
+    deliveries = list(delivery_results)
 
     def stopping_sleep(seconds):
         sleeps.append(seconds)
@@ -51,7 +52,8 @@ def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answer
 
     def record_delivery(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, **_keywords):
         calls.append({"type": notification_type, "subject": subject, "body": body, "body_html": body_html, "email": email_enabled, "webhook": webhook_enabled})
-        return True, True
+        delivered = deliveries.pop(0) if deliveries else True
+        return monitor.NotificationOutcome(bool(email_enabled), bool(webhook_enabled), bool(email_enabled) and delivered, bool(webhook_enabled) and delivered)
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(monitor.time, "sleep", stopping_sleep)
@@ -191,3 +193,48 @@ def test_the_healthy_banner_reaches_a_plain_run_on_its_own_clock(monkeypatch, tm
     banners = [number for number, line in enumerate(lines) if line == f"* Monitoring healthy for {USER}. No profile or playlist change since the last check"]
     assert len(banners) == expected
     assert all(lines[number + 1].startswith("Liveness check, timestamp:") for number in banners)
+
+
+# Verifies a channel that could not deliver keeps owing the alert, so the next failing check past its hold tries
+# again instead of the loop recording a failed send as done
+def test_a_channel_that_could_not_deliver_is_tried_again(monkeypatch, tmp_path, capsys):
+    outage = [profile_snapshot(), *[RuntimeError("401 Unauthorized")] * 5]
+    errors = error_alerts_for(monkeypatch, tmp_path, outage, 5, check_interval=1800, delivery_results=[False])
+
+    assert len(errors) == 2
+    assert "The email alert is on hold for 5 minutes after 1 attempt, then tried again" in capsys.readouterr().out
+
+
+# Verifies a channel that delivered is not asked again while the same outage lasts
+def test_a_delivered_alert_is_not_repeated_during_one_outage(monkeypatch, tmp_path):
+    outage = [profile_snapshot(), *[RuntimeError("401 Unauthorized")] * 5]
+    errors = error_alerts_for(monkeypatch, tmp_path, outage, 5)
+
+    assert len(errors) == 1
+
+
+# Verifies a halted request is a failing check like any other, so it joins the outage clock and earns the alert
+# rather than retrying silently forever. It retries every ALARM_RETRY seconds, so the alert delay takes 31 of them
+def test_a_watchdog_timeout_is_reported_and_alerted(monkeypatch, tmp_path, capsys):
+    halted = [profile_snapshot(), *[monitor.TimeoutException("Spotify timeout") for _ in range(40)]]
+    errors = error_alerts_for(monkeypatch, tmp_path, halted, 32)
+
+    output = capsys.readouterr().out
+    assert output.count("* Error:") == 1
+    assert len(errors) == 1
+    assert errors[0]["subject"].endswith(f" (uri: {USER})")
+
+
+# Verifies a run that halts and then answers again reports the recovery, which needs the timeout to have opened an outage
+def test_a_watchdog_timeout_that_clears_announces_the_recovery(monkeypatch, tmp_path, capsys):
+    answers = [profile_snapshot(), monitor.TimeoutException("Spotify timeout"), monitor.TimeoutException("Spotify timeout"), profile_snapshot()]
+    error_alerts_for(monkeypatch, tmp_path, answers, 5)
+
+    assert capsys.readouterr().out.count(f"* Monitoring recovered for {USER} after ") == 1
+
+
+# Verifies a follower poll that keeps failing alerts too, since the profile poll answering does not make the check complete
+def test_a_lasting_follower_failure_is_alerted(monkeypatch, tmp_path):
+    errors = error_alerts_for(monkeypatch, tmp_path, [profile_snapshot()], 4, follower_answers=[RuntimeError("401 Unauthorized")] * 5)
+
+    assert len(errors) == 1
