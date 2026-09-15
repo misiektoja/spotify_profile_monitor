@@ -1,6 +1,7 @@
 from io import StringIO
 from unittest.mock import Mock
 
+import inspect
 import pytest
 
 import requests
@@ -16,8 +17,8 @@ def render_doctor_report(report):
 
 
 # Builds the minimal action a WARN or FAIL row is required to carry
-def actionable_fix():
-    return "do the thing"
+def actionable_advice():
+    return monitor.make_recovery_advice("config.invalid", "a label", "do the thing", False)
 class TTYBuffer(StringIO):
     def isatty(self):
         return True
@@ -62,7 +63,7 @@ def test_missing_colorama_is_reported_on_windows(monkeypatch):
     missing = next(check for check in checks if "colorama" in check.label)
     assert missing.status == "WARN"
     assert "Coloured output may not render in the classic Windows Command Prompt" in missing.detail
-    assert "Windows Terminal, which needs nothing extra" in missing.fix
+    assert "Windows Terminal, which needs nothing extra" in missing.advice.fix
 
 
 # Pillow moved to an optional extra, so a missing copy must never be reported as a broken installation
@@ -73,7 +74,7 @@ def test_doctor_treats_missing_artwork_support_as_optional():
     check = next(item for item in checks if "Pillow" in item.label)
     assert check.status == "WARN"
     # The rendered command follows the entry point, so assert the part that holds either way
-    assert "-m pip install" in check.fix and "Every other feature is unaffected" in check.detail
+    assert "-m pip install" in check.advice.fix and "Every other feature is unaffected" in check.detail
 
 
 # A user who turned artwork on needs to be told the alerts are silently text-only until Pillow is installed
@@ -131,7 +132,7 @@ def test_doctor_reports_missing_cookie(monkeypatch):
 
     assert checks[0].status == "FAIL"
     assert "SP_DC_COOKIE" in checks[0].detail
-    assert "--import-browser-cookie" in checks[0].fix
+    assert "--import-browser-cookie" in checks[0].advice.fix
 
 
 # Verifies successful authentication is reused for one live target check
@@ -163,7 +164,7 @@ def test_skipped_connectivity_and_target_rows_name_the_same_cause(monkeypatch):
     assert target_skip.label == "The monitored profile was not checked"
     assert connectivity_skip.detail == "Authentication did not succeed, so no request was attempted"
     assert target_skip.detail == "Authentication did not succeed, so no lookup was attempted"
-    assert connectivity_skip.fix == target_skip.fix == ""
+    assert connectivity_skip.advice is None and target_skip.advice is None
 
 
 # Verifies Doctor tests legacy OAuth against the target playlist endpoint instead of token issuance alone
@@ -247,7 +248,7 @@ def test_doctor_target_preserves_non_target_failure(monkeypatch):
     assert check.status == "FAIL"
     assert check.label == "An unexpected error occurred"
     assert check.advice is not None and check.advice.code == "unknown"
-    assert "confirm it still exists" not in check.fix
+    assert "confirm it still exists" not in check.advice.fix
 
 
 # Verifies Doctor still gives profile-specific recovery for a real Spotify HTTP 404
@@ -262,7 +263,7 @@ def test_doctor_target_classifies_http_404_as_not_found(monkeypatch):
     assert check.status == "FAIL"
     assert check.label == "The Spotify target could not be loaded"
     assert check.advice is not None and check.advice.code == "target.not_found"
-    assert "https://open.spotify.com/user/missing.user" in check.fix
+    assert "https://open.spotify.com/user/missing.user" in check.advice.fix
 
 
 # Verifies an authentication-mode restriction is not described as a missing Spotify profile
@@ -276,7 +277,7 @@ def test_doctor_target_classifies_authentication_mode_restriction(monkeypatch):
     assert check.status == "FAIL"
     assert check.label == "The selected authentication mode cannot load this profile"
     assert check.advice is not None and check.advice.code == "auth.rejected"
-    assert "cookie or client" in check.fix
+    assert "cookie or client" in check.advice.fix
 
 
 # Verifies Doctor reports the automatic timezone the shared resolver settled on rather than the literal Auto value
@@ -330,7 +331,7 @@ def test_doctor_checks_json_directory_without_writing(tmp_path, monkeypatch):
 # Verifies Doctor renders sections and recovery lines without secrets
 def test_doctor_report_rendering_redacts_secrets(monkeypatch):
     monkeypatch.setattr(monitor, "SP_DC_COOKIE", "COOKIE-SECRET-SENTINEL")
-    report = monitor.DoctorReport(checks=[monitor.make_doctor_check("Authentication", "FAIL", "Spotify authentication failed", "cookie=COOKIE-SECRET-SENTINEL", "Import again")])
+    report = monitor.DoctorReport(checks=[monitor.make_doctor_check("Authentication", "FAIL", "Spotify authentication failed", "cookie=COOKIE-SECRET-SENTINEL", monitor.make_recovery_advice("auth.cookie_invalid", "Spotify authentication failed", "Import again", False))])
 
     rendered = render_doctor_report(report)
 
@@ -503,7 +504,7 @@ def test_secret_sources_split_by_origin(monkeypatch, tmp_path):
 def test_a_row_never_prints_its_summary_twice():
     repeated = "No valid sp_dc cookie was found"
 
-    check = monitor.make_doctor_check("Configuration", "WARN", repeated, repeated, actionable_fix())
+    check = monitor.make_doctor_check("Configuration", "WARN", repeated, repeated, actionable_advice())
 
     assert check.label == repeated
     assert check.detail == ""
@@ -531,7 +532,7 @@ def test_the_python_row_names_the_minimum_supported_version():
     assert supported.detail == f"Minimum supported version: {monitor.MINIMUM_PYTHON_VERSION_TEXT}"
     assert unsupported.status == "FAIL"
     assert unsupported.detail == supported.detail
-    assert monitor.MINIMUM_PYTHON_VERSION_TEXT in unsupported.fix
+    assert monitor.MINIMUM_PYTHON_VERSION_TEXT in unsupported.advice.fix
 
 
 # Verifies valid numeric settings take no row, since a value that is merely fine is not a finding
@@ -556,8 +557,8 @@ def test_unusable_email_settings_warn_and_name_the_same_settings(monkeypatch):
     assert check.status == "WARN"
     assert check.label == monitor.EMAIL_UNUSABLE_CHECK_LABEL
     assert check.detail == "SMTP_USER or SMTP_PASSWORD is empty or still set to its placeholder"
-    assert "Set SMTP_USER and SMTP_PASSWORD or turn the email alerts off" in check.fix
-    assert monitor.SMTP_GUIDE_URL in check.fix
+    assert "Set SMTP_USER and SMTP_PASSWORD or turn the email alerts off" in check.advice.fix
+    assert monitor.SMTP_GUIDE_URL in check.advice.fix
 
 
 # Verifies every doctor detail keeps to the agreed shapes: it never repeats its label, gives an instruction or joins values with a pipe
@@ -611,7 +612,7 @@ def test_an_actionable_row_is_rejected_without_a_fix():
 # Verifies only the four shared markers can reach a report
 def test_only_the_four_shared_markers_are_accepted():
     assert monitor.DOCTOR_STATUSES == ("PASS", "WARN", "FAIL", "SKIP")
-    assert [monitor.make_doctor_check("Configuration", status, "a label", "", actionable_fix()).status for status in monitor.DOCTOR_STATUSES] == list(monitor.DOCTOR_STATUSES)
+    assert [monitor.make_doctor_check("Configuration", status, "a label", "", actionable_advice()).status for status in monitor.DOCTOR_STATUSES] == list(monitor.DOCTOR_STATUSES)
 
     with pytest.raises(ValueError):
         monitor.make_doctor_check("Configuration", "INFO", "a label")
@@ -620,10 +621,10 @@ def test_only_the_four_shared_markers_are_accepted():
 # Verifies one row reads as one block: the action lines sit under the marker at the detail indent while a pass row has none
 def test_the_action_lines_sit_indented_under_their_marker(monkeypatch):
     monkeypatch.setattr(monitor, "colorize", lambda theme, text: text)
-    fix = monitor.recovery_fix_with_guide("do the thing", monitor.DOCTOR_GUIDE_URL)
+    advice = monitor.make_recovery_advice("config.invalid", "a warning row", monitor.recovery_fix_with_guide("do the thing", monitor.DOCTOR_GUIDE_URL), False)
     report = monitor.DoctorReport([
-        monitor.make_doctor_check("Configuration", "WARN", "a warning row", "a detail worth keeping", fix),
-        monitor.make_doctor_check("Configuration", "PASS", "a passing row", "", fix),
+        monitor.make_doctor_check("Configuration", "WARN", "a warning row", "a detail worth keeping", advice),
+        monitor.make_doctor_check("Configuration", "PASS", "a passing row", "", advice),
     ])
 
     lines = render_doctor_report(report).splitlines()
@@ -693,7 +694,7 @@ def test_the_connectivity_row_names_the_shared_endpoint(monkeypatch):
 
     assert (passing.status, passing.label, passing.detail) == ("PASS", "The connectivity endpoint is reachable", "Endpoint: https://probe.example/ping")
     assert (failing.status, failing.label, failing.detail) == ("FAIL", "The connectivity endpoint could not be reached", "Endpoint: https://probe.example/ping")
-    assert failing.fix == "Check network, DNS, proxy and CHECK_INTERNET_URL settings"
+    assert failing.advice.fix == "Check network, DNS, proxy and CHECK_INTERNET_URL settings"
 
 
 # Verifies a report read on its own ends with the command that starts monitoring, carrying this run's files
@@ -768,7 +769,7 @@ def test_a_rate_limiting_interval_is_warned_about(monkeypatch):
     rows = [item for item in monitor.doctor_check_configuration() if item.label == "Check intervals are short"]
 
     assert [item.status for item in rows] == ["WARN"]
-    assert str(monitor.DOCTOR_MIN_SAFE_CHECK_INTERVAL) in rows[0].fix
+    assert str(monitor.DOCTOR_MIN_SAFE_CHECK_INTERVAL) in rows[0].advice.fix
 
 
 # The default interval is safe, so the row must stay away rather than warning about every run
@@ -803,8 +804,8 @@ def test_email_configured_but_nothing_selected_warns(monkeypatch):
     check = monitor.doctor_check_notifications()[0]
 
     assert (check.status, check.label) == ("WARN", "Email is configured but no alert types are selected")
-    assert check.fix.startswith("Turn on at least one email alert in the configuration file")
-    assert monitor.SMTP_GUIDE_URL in check.fix
+    assert check.advice.fix.startswith("Turn on at least one email alert in the configuration file")
+    assert monitor.SMTP_GUIDE_URL in check.advice.fix
 
 
 # Verifies webhook alert types selected while the channel is off warn, since nothing would ever be delivered
@@ -817,4 +818,48 @@ def test_webhook_alerts_selected_but_switched_off_warn(monkeypatch):
     check = monitor.doctor_check_notifications()[-1]
 
     assert (check.status, check.label) == ("WARN", "Webhook alert types are selected but webhooks are switched off")
-    assert "WEBHOOK_ENABLED" in check.fix
+    assert "WEBHOOK_ENABLED" in check.advice.fix
+
+
+# One row shape and one advice shape across the family: the advice rides on the row and its fix carries the
+# guide, so a row or an advice copied from a sibling means the same thing here
+def test_the_doctor_row_and_its_advice_share_one_contract():
+    row_parameters = list(inspect.signature(monitor.make_doctor_check).parameters.values())
+    advice_parameters = list(inspect.signature(monitor.make_recovery_advice).parameters.values())
+
+    assert [parameter.name for parameter in row_parameters] == ["section", "status", "label", "detail", "advice"]
+    assert [parameter.default for parameter in row_parameters[3:]] == ["", None]
+    assert [parameter.name for parameter in advice_parameters] == ["code", "summary", "fix", "retryable", "detail"]
+    assert monitor.recovery_fix_with_guide("do the thing", "https://example.invalid/page") == "do the thing\nGuide: https://example.invalid/page"
+
+
+# A non-pass row is refused without advice and keeps the advice it was given, which is where its fix and guide live
+def test_a_row_carries_its_advice_and_refuses_to_go_without():
+    advice = monitor.make_recovery_advice("config.invalid", "a warning row", monitor.recovery_fix_with_guide("do the thing", monitor.DOCTOR_GUIDE_URL), False)
+
+    row = monitor.make_doctor_check("Configuration", "WARN", "a warning row", "a detail worth keeping", advice)
+
+    assert row.advice is advice
+    assert not hasattr(advice, "guide_url")
+    with pytest.raises(ValueError):
+        monitor.make_doctor_check("Configuration", "WARN", "a warning row", "a detail worth keeping")
+
+
+# A retired setting used to stop the doctor at startup, so the warning row it becomes is pinned with the action it carries
+def test_a_retired_setting_becomes_a_warning_row_with_an_action(monkeypatch, tmp_path):
+    config_path = tmp_path / "spotify_profile_monitor.conf"
+    config_path.write_text("TOTP_VER = 1\n", encoding="utf-8")
+    received = {}
+    # main() records the selected paths in module globals, so they are restored for the tests that run after this one
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", monitor.CLI_CONFIG_PATH, raising=False)
+    monkeypatch.setattr(monitor, "DOTENV_FILE", monitor.DOTENV_FILE, raising=False)
+    monkeypatch.setattr(monitor.sys, "argv", ["spotify_profile_monitor", "--doctor", "--config-file", str(config_path), "--env-file", "none"])
+    monkeypatch.setattr(monitor, "run_doctor", lambda target, config, env, startup_checks, **kwargs: received.update(checks=list(startup_checks)) or 0)
+
+    with pytest.raises(SystemExit):
+        monitor.main()
+
+    row = next(check for check in received["checks"] if check.label == "Configuration file contains removed settings")
+    assert row.status == "WARN"
+    assert "TOTP_VER" in row.detail
+    assert row.advice.fix == monitor.recovery_fix_with_guide("Delete the listed settings from the configuration file", monitor.CONFIG_GUIDE_URL)

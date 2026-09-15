@@ -119,8 +119,8 @@ def test_the_doctor_warns_while_verification_is_off(tls_setting):
 
     assert check.status == "WARN"
     assert "VERIFY_SSL" in check.detail
-    assert "VERIFY_SSL" in check.fix
-    assert monitor.TLS_GUIDE_URL in check.fix
+    assert "VERIFY_SSL" in check.advice.fix
+    assert monitor.TLS_GUIDE_URL in check.advice.fix
     assert check.advice is not None and check.advice.code == "config.insecure"
 
 

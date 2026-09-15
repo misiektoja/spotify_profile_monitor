@@ -535,7 +535,7 @@ def test_doctor_build_reports_progress(monkeypatch):
 # Verifies Doctor preserves a startup failure for an explicitly missing dotenv file
 def test_doctor_preserves_explicit_missing_dotenv_failure():
     advice = monitor.classify_recovery_error(context="config_missing", detail="Dotenv file not found: missing.env")
-    startup = monitor.make_doctor_check("Configuration", "FAIL", "The requested dotenv file was not found", advice.detail, advice.fix, advice)
+    startup = monitor.make_doctor_check("Configuration", "FAIL", "The requested dotenv file was not found", advice.detail, advice)
 
     checks = monitor.doctor_check_configuration(startup_checks=(startup,))
 
