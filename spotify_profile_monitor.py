@@ -976,6 +976,8 @@ SP_WEB_PLAYLIST_BACKEND_PREFERRED = False
 
 # Counts consecutive legacy Web API failures before latching the web backend
 SP_WEB_PLAYLIST_API_FAILURES = 0
+SP_USER_PLAYLIST_WEB_UNTIL = {}
+SP_USER_PLAYLIST_RECHECK_SECONDS = 300
 
 # Number of consecutive non-restricted legacy Web API failures tolerated before preferring the web backend
 METADATA_API_FAILURE_LATCH_THRESHOLD = 3
@@ -5738,9 +5740,9 @@ def is_token_owner(access_token, user_uri_id) -> bool:
         return False
 
 
-# Returns detailed playlist information through the legacy Spotify Web API path
+# Returns detailed playlist information through the available Spotify Web API contract
 def _spotify_get_playlist_info_api(access_token, playlist_uri, get_tracks, oauth_app: bool = False):
-    debug_print("Playlist info (legacy Web API)", uri=playlist_uri, get_tracks=get_tracks, token_source=TOKEN_SOURCE, oauth_app_override=oauth_app)
+    debug_print("Playlist info (Web API)", uri=playlist_uri, get_tracks=get_tracks, token_source=TOKEN_SOURCE, oauth_app_override=oauth_app)
     if TOKEN_SOURCE in {"cookie", "client"} and not oauth_app:
         access_token = spotify_get_access_token_from_oauth_app(SP_APP_CLIENT_ID, SP_APP_CLIENT_SECRET)
         oauth_app = True
@@ -5760,6 +5762,14 @@ def _spotify_get_playlist_info_api(access_token, playlist_uri, get_tracks, oauth
     else:
         url1 = f"{SPOTIFY_API_BASE_URL}/playlists/{quote(playlist_id, safe='')}?fields=name,description,owner,followers,external_urls,tracks.total,images"
         url2 = f"{SPOTIFY_API_BASE_URL}/playlists/{quote(playlist_id, safe='')}/tracks?fields=next,total,items(added_at)"
+
+    user_items = TOKEN_SOURCE == "oauth_user" and not oauth_app
+    legacy_tracks_url = url2
+    if user_items:
+        # Unfiltered responses retain either generation of playlist and item fields
+        url1 = f"{SPOTIFY_API_BASE_URL}/playlists/{quote(playlist_id, safe='')}"
+        url2 = f"{SPOTIFY_API_BASE_URL}/playlists/{quote(playlist_id, safe='')}/items?limit=50"
+        legacy_tracks_url = f"{SPOTIFY_API_BASE_URL}/playlists/{quote(playlist_id, safe='')}/tracks?limit=50"
 
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -5781,6 +5791,8 @@ def _spotify_get_playlist_info_api(access_token, playlist_uri, get_tracks, oauth
             raise PlaylistRestrictedError(f"404 Not Found for playlist endpoint: {url1}")
         response1.raise_for_status()
         json_response1 = response1.json()
+        if user_items and isinstance(json_response1, dict) and json_response1.get("items") is None and json_response1.get("tracks") is None:
+            raise PlaylistRestrictedError("Spotify returned playlist metadata without access to its contents")
 
         sp_playlist_tracks_concatenated_list = []
         next_url = url2
@@ -5790,11 +5802,20 @@ def _spotify_get_playlist_info_api(access_token, playlist_uri, get_tracks, oauth
             debug_print("HTTP GET", url=next_url, context="playlist tracks", page=page_idx, headers=sanitize_debug_headers(headers))
             response2 = SESSION.get(next_url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
             debug_print("HTTP GET", url=next_url, context="playlist tracks", page=page_idx, status=response2.status_code)
+            if user_items and page_idx == 1 and response2.status_code in {404, 405, 501}:
+                # Older app contracts may still expose only the tracks route
+                response2 = SESSION.get(legacy_tracks_url, headers=headers, timeout=FUNCTION_TIMEOUT, verify=VERIFY_SSL)
+                debug_print("HTTP GET", url=legacy_tracks_url, context="playlist tracks compatibility", status=response2.status_code)
             response2.raise_for_status()
             json_response2 = response2.json()
-
-            for track in json_response2.get("items"):
-                sp_playlist_tracks_concatenated_list.append(track)
+            page_items = json_response2.get("items") if isinstance(json_response2, dict) else None
+            if not isinstance(page_items, list) or any(not isinstance(item, dict) for item in page_items):
+                raise ValueError("Spotify playlist response has an invalid items list")
+            for item in page_items:
+                normalized = dict(item)
+                if "item" in normalized:
+                    normalized["track"] = normalized.pop("item")
+                sp_playlist_tracks_concatenated_list.append(normalized)
 
             next_url = spotify_next_page_url(json_response2.get("next"), page_idx, "playlist tracks")
 
@@ -5918,9 +5939,47 @@ def spotify_tag_playlist_source(playlist_data, source):
     return playlist_data
 
 
+# Keeps OAuth user playlist restrictions local to the token and playlist that failed
+def spotify_get_user_playlist_info(access_token, playlist_uri, get_tracks):
+    key = (access_token, playlist_uri)
+    now = time.monotonic()
+    for cached_key, until in list(SP_USER_PLAYLIST_WEB_UNTIL.items()):
+        if until <= now:
+            SP_USER_PLAYLIST_WEB_UNTIL.pop(cached_key, None)
+    api_error = None
+    if key not in SP_USER_PLAYLIST_WEB_UNTIL:
+        try:
+            return spotify_tag_playlist_source(_spotify_get_playlist_info_api(access_token, playlist_uri, get_tracks), "api")
+        except Exception as error:
+            if is_too_many_open_files(error):
+                print_recovery_advice(classify_recovery_error(error))
+                raise SystemExit(1)
+            api_error = error
+            status = error.response.status_code if isinstance(error, req.HTTPError) and error.response is not None else None
+            if status in {403, 404} or isinstance(error, PlaylistRestrictedError):
+                if len(SP_USER_PLAYLIST_WEB_UNTIL) >= 256:
+                    SP_USER_PLAYLIST_WEB_UNTIL.pop(next(iter(SP_USER_PLAYLIST_WEB_UNTIL)))
+                SP_USER_PLAYLIST_WEB_UNTIL[key] = now + SP_USER_PLAYLIST_RECHECK_SECONDS
+            debug_print("OAuth user playlist", uri=playlist_uri, status=status, outcome="degraded", fallback="web player")
+    try:
+        return spotify_tag_playlist_source(spotify_get_playlist_info_web(playlist_uri, get_tracks), "web")
+    except Exception as error:
+        if is_too_many_open_files(error):
+            print_recovery_advice(classify_recovery_error(error))
+            raise SystemExit(1)
+        if isinstance(error, PlaylistRestrictedError):
+            raise
+        if api_error is not None:
+            raise RuntimeError(f"Both Spotify playlist backends failed for {playlist_uri}: Web API: {api_error}. Web player: {error}") from error
+        raise
+
+
 # Selects the legacy or web-player playlist backend and falls back automatically
 def spotify_get_playlist_info(access_token, playlist_uri, get_tracks, oauth_app: bool = False):
     global SP_WEB_PLAYLIST_BACKEND_PREFERRED, SP_WEB_PLAYLIST_API_FAILURES
+
+    if TOKEN_SOURCE == "oauth_user" and not oauth_app:
+        return spotify_get_user_playlist_info(access_token, playlist_uri, get_tracks)
 
     api_available = TOKEN_SOURCE in {"oauth_app", "oauth_user"} or oauth_app or spotify_has_oauth_app_credentials()
     api_error = None
@@ -5975,6 +6034,41 @@ def spotify_get_playlist_info(access_token, playlist_uri, get_tracks, oauth_app:
     raise RuntimeError(f"No Spotify playlist backend is available for {playlist_uri}")
 
 
+# Resolves available follow counts without turning an omitted collection into zero
+def spotify_follow_snapshot(user_data, profiles, kind):
+    count = user_data.get(f"sp_user_{kind}_count")
+    if user_data.get(f"sp_user_{kind}_count_available") is False:
+        count = None
+    if isinstance(profiles, list):
+        if profiles or count is None:
+            count = len(profiles)
+        elif count > 0:
+            profiles = None
+    if count == 0 and profiles is None:
+        profiles = []
+    return count, profiles
+
+
+# Saves a known follow baseline without exposing a partly written history file
+def spotify_save_follow_baseline(path, count, profiles):
+    if count is None:
+        return
+    destination = Path(path)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=destination.parent, prefix=f".{destination.name}.", delete=False) as handle:
+            temporary = Path(handle.name)
+            json.dump([count, profiles or []], handle, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, destination)
+    except OSError as error:
+        print_operation_error(f"Follow history could not be saved to '{destination}'", error)
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink()
+
+
 # Returns detailed info about user with specified URI
 def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_played_limit):
     # URL used for cookie and client token sources
@@ -6005,9 +6099,9 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
                     d.pop(k, None)
         return items or []
 
-    def _safe_int(raw, field: str) -> int:
+    def _safe_int(raw, field: str) -> Optional[int]:
         if raw is None:
-            return 0
+            return None
         try:
             return int(raw)
         except (ValueError, TypeError):
@@ -6015,10 +6109,10 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
 
     out = {
         "sp_username": "",
-        "sp_user_followers_count": 0,
+        "sp_user_followers_count": None,
         "sp_user_followers_count_available": False,
         "sp_user_show_follows": None,
-        "sp_user_followings_count": 0,
+        "sp_user_followings_count": None,
         "sp_user_public_playlists_count": 0,
         "sp_user_public_playlists_uris": [],
         "sp_user_recently_played_artists": [],
@@ -6157,7 +6251,7 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
 # Returns followings for user with specified URI
 def spotify_get_user_followings(access_token, user_uri_id):
     if TOKEN_SOURCE == "oauth_app":
-        return {"sp_user_followings": []}
+        return {"sp_user_followings": None}
 
     if TOKEN_SOURCE == "oauth_user":
         if is_token_owner(access_token, user_uri_id):
@@ -6181,7 +6275,7 @@ def spotify_get_user_followings(access_token, user_uri_id):
                     break
             return {"sp_user_followings": all_artists}
         else:
-            return {"sp_user_followings": []}
+            return {"sp_user_followings": None}
 
     url = f"{SPOTIFY_PROFILE_API_BASE_URL}/{quote(user_uri_id, safe='')}/following?market=from_token"
     headers = {
@@ -6202,6 +6296,8 @@ def spotify_get_user_followings(access_token, user_uri_id):
         json_response = response.json()
 
         sp_user_followings = json_response.get("profiles", None)
+        if sp_user_followings is not None and (not isinstance(sp_user_followings, list) or any(not isinstance(item, dict) for item in sp_user_followings)):
+            raise ValueError("Spotify followings response has an invalid profiles list")
 
         if sp_user_followings:
             remove_key_from_list_of_dicts(sp_user_followings, 'image_url')
@@ -6218,7 +6314,7 @@ def spotify_get_user_followings(access_token, user_uri_id):
 # Returns followers for user with specified URI
 def spotify_get_user_followers(access_token, user_uri_id):
     if TOKEN_SOURCE not in {"cookie", "client"}:
-        return {"sp_user_followers": []}
+        return {"sp_user_followers": None}
 
     url = f"{SPOTIFY_PROFILE_API_BASE_URL}/{quote(user_uri_id, safe='')}/followers?market=from_token"
     headers = {
@@ -6239,6 +6335,8 @@ def spotify_get_user_followers(access_token, user_uri_id):
         json_response = response.json()
 
         sp_user_followers = json_response.get("profiles", None)
+        if sp_user_followers is not None and (not isinstance(sp_user_followers, list) or any(not isinstance(item, dict) for item in sp_user_followers)):
+            raise ValueError("Spotify followers response has an invalid profiles list")
         if sp_user_followers:
             remove_key_from_list_of_dicts(sp_user_followers, 'image_url')
             remove_key_from_list_of_dicts(sp_user_followers, 'followers_count')
@@ -7242,17 +7340,9 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
     followers = sp_user_followers_data["sp_user_followers"]
     followings = sp_user_followings_data["sp_user_followings"]
 
-    followers_count = sp_user_data["sp_user_followers_count"]
-    if followers:
-        followers_count_tmp = len(followers)
-        if followers_count_tmp > 0:
-            followers_count = followers_count_tmp
+    followers_count, followers = spotify_follow_snapshot(sp_user_data, followers, "followers")
 
-    followings_count = sp_user_data["sp_user_followings_count"]
-    if followings:
-        followings_count_tmp = len(followings)
-        if followings_count_tmp > 0:
-            followings_count = followings_count_tmp
+    followings_count, followings = spotify_follow_snapshot(sp_user_data, followings, "followings")
 
     if DETECT_CHANGES_IN_PLAYLISTS:
         playlists_count = sp_user_data["sp_user_public_playlists_count"]
@@ -7268,7 +7358,7 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
 
     display_tmp_pic(image_url, f"spotify_{user_uri_id}_profile_pic_tmp_info.jpeg", imgcat_exe, True)
 
-    print(f"\nFollowers:\t\t{followers_count}" + (f" (list not supported with {TOKEN_SOURCE})" if TOKEN_SOURCE in {"oauth_app", "oauth_user"} else ""))
+    print(f"\nFollowers:\t\t{followers_count if followers_count is not None else 'n/a'}" + (f" (list not supported with {TOKEN_SOURCE})" if TOKEN_SOURCE in {"oauth_app", "oauth_user"} else ""))
     if followers:
         print()
         for f_dict in followers:
@@ -7280,9 +7370,9 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
         is_user_owner = is_token_owner(sp_accessToken, user_uri_id)
 
     if TOKEN_SOURCE == "oauth_user" and is_user_owner:
-        print(f"\nFollowings:\t\t{followings_count} (only artists, without users)")
+        print(f"\nFollowings:\t\t{followings_count if followings_count is not None else 'n/a'} (only artists, without users)")
     else:
-        print(f"\nFollowings:\t\t{followings_count}" + (f" (list and count not supported with {TOKEN_SOURCE})" if TOKEN_SOURCE in {"oauth_app", "oauth_user"} else ""))
+        print(f"\nFollowings:\t\t{followings_count if followings_count is not None else 'n/a'}" + (f" (list and count not supported with {TOKEN_SOURCE})" if TOKEN_SOURCE in {"oauth_app", "oauth_user"} else ""))
     if followings:
         print()
         for f_dict in followings:
@@ -7346,17 +7436,9 @@ def spotify_get_followers_and_followings(sp_accessToken, user_uri_id):
     followers = sp_user_followers_data["sp_user_followers"]
     followings = sp_user_followings_data["sp_user_followings"]
 
-    followers_count = sp_user_data["sp_user_followers_count"]
-    if followers:
-        followers_count_tmp = len(followers)
-        if followers_count_tmp > 0:
-            followers_count = followers_count_tmp
+    followers_count, followers = spotify_follow_snapshot(sp_user_data, followers, "followers")
 
-    followings_count = sp_user_data["sp_user_followings_count"]
-    if followings:
-        followings_count_tmp = len(followings)
-        if followings_count_tmp > 0:
-            followings_count = followings_count_tmp
+    followings_count, followings = spotify_follow_snapshot(sp_user_data, followings, "followings")
 
     print(f"Username:\t\t{username}")
     print(f"Spotify user ID:\t{user_uri_id}")
@@ -7371,16 +7453,16 @@ def spotify_get_followers_and_followings(sp_accessToken, user_uri_id):
         else:
             followers_label = f" (list not supported with {TOKEN_SOURCE})"
 
-    print(f"\nFollowers:\t\t{followers_count}{followers_label}")
+    print(f"\nFollowers:\t\t{followers_count if followers_count is not None else 'n/a'}{followers_label}")
     if followers:
         print()
         for f_dict in followers:
             if "name" in f_dict and "uri" in f_dict:
                 print(f"- {f_dict['name']} [ {spotify_convert_uri_to_url(f_dict['uri'])} ]")
     if TOKEN_SOURCE == "oauth_user" and is_token_owner(sp_accessToken, user_uri_id):
-        print(f"Followings:\t\t{followings_count} (only artists, without users)")
+        print(f"Followings:\t\t{followings_count if followings_count is not None else 'n/a'} (only artists, without users)")
     else:
-        print(f"Followings:\t\t{followings_count}" + (f" (list and count not supported with {TOKEN_SOURCE})" if TOKEN_SOURCE in {"oauth_app", "oauth_user"} else ""))
+        print(f"Followings:\t\t{followings_count if followings_count is not None else 'n/a'}" + (f" (list and count not supported with {TOKEN_SOURCE})" if TOKEN_SOURCE in {"oauth_app", "oauth_user"} else ""))
     if followings:
         print()
         for f_dict in followings:
@@ -11605,17 +11687,9 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     followers = sp_user_followers_data["sp_user_followers"]
     followings = sp_user_followings_data["sp_user_followings"]
 
-    followers_count = sp_user_data["sp_user_followers_count"]
-    if followers:
-        followers_count_tmp = len(followers)
-        if followers_count_tmp > 0:
-            followers_count = followers_count_tmp
+    followers_count, followers = spotify_follow_snapshot(sp_user_data, followers, "followers")
 
-    followings_count = sp_user_data["sp_user_followings_count"]
-    if followings:
-        followings_count_tmp = len(followings)
-        if followings_count_tmp > 0:
-            followings_count = followings_count_tmp
+    followings_count, followings = spotify_follow_snapshot(sp_user_data, followings, "followings")
 
     if DETECT_CHANGES_IN_PLAYLISTS:
         playlists_count = sp_user_data["sp_user_public_playlists_count"]
@@ -11640,16 +11714,16 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         else:
             followers_label = f" (list not supported with {TOKEN_SOURCE})"
 
-    print(f"\nFollowers:\t\t\t{followers_count}{followers_label}")
+    print(f"\nFollowers:\t\t\t{followers_count if followers_count is not None else 'n/a'}{followers_label}")
 
     is_user_owner = False
     if TOKEN_SOURCE == "oauth_user":
         is_user_owner = is_token_owner(sp_accessToken, user_uri_id)
 
     if TOKEN_SOURCE == "oauth_user" and is_user_owner:
-        print(f"Followings:\t\t\t{followings_count} (only artists, without users)")
+        print(f"Followings:\t\t\t{followings_count if followings_count is not None else 'n/a'} (only artists, without users)")
     else:
-        print(f"Followings:\t\t\t{followings_count}" + (f" (list and count not supported with {TOKEN_SOURCE})" if TOKEN_SOURCE in {"oauth_app", "oauth_user"} else ""))
+        print(f"Followings:\t\t\t{followings_count if followings_count is not None else 'n/a'}" + (f" (list and count not supported with {TOKEN_SOURCE})" if TOKEN_SOURCE in {"oauth_app", "oauth_user"} else ""))
 
     list_of_playlists = []
 
@@ -11729,10 +11803,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             followers_old = followers_read[1]
             followers_mdate = datetime.fromtimestamp(int(os.path.getmtime(followers_file)), pytz.timezone(LOCAL_TIMEZONE))
             print(f"* Followers ({followers_old_count}) loaded from file '{followers_file}' ({get_short_date_from_ts(followers_mdate, show_weekday=False, always_show_year=True)})")
-    if not followers_read:
+    if not followers_read and followers_count is not None:
         followers_to_save = []
         followers_to_save.append(followers_count)
-        followers_to_save.append(followers)
+        followers_to_save.append(followers or [])
         try:
             with open(followers_file, 'w', encoding="utf-8") as f:
                 json.dump(followers_to_save, f, indent=2)
@@ -11740,7 +11814,11 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         except Exception as e:
             print_operation_error(f"Follower history could not be saved to '{followers_file}'", e)
 
-    if followers_count != followers_old_count:
+    if followers_count is None:
+        followers_count, followers = followers_old_count, followers_old
+    elif followers is None:
+        followers = followers_old
+    if followers_count is not None and followers_old_count is not None and followers_count != followers_old_count:
         spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, False, False)
 
     print_cur_ts("Timestamp:\t\t\t")
@@ -11757,10 +11835,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             followings_old = followings_read[1]
             followings_mdate = datetime.fromtimestamp(int(os.path.getmtime(followings_file)), pytz.timezone(LOCAL_TIMEZONE))
             print(f"* Followings ({followings_old_count}) loaded from file '{followings_file}' ({get_short_date_from_ts(followings_mdate, show_weekday=False, always_show_year=True)})")
-    if not followings_read:
+    if not followings_read and followings_count is not None:
         followings_to_save = []
         followings_to_save.append(followings_count)
-        followings_to_save.append(followings)
+        followings_to_save.append(followings or [])
         try:
             with open(followings_file, 'w', encoding="utf-8") as f:
                 json.dump(followings_to_save, f, indent=2)
@@ -11768,7 +11846,11 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         except Exception as e:
             print_operation_error(f"Following history could not be saved to '{followings_file}'", e)
 
-    if followings_count != followings_old_count:
+    if followings_count is None:
+        followings_count, followings = followings_old_count, followings_old
+    elif followings is None:
+        followings = followings_old
+    if followings_count is not None and followings_old_count is not None and followings_count != followings_old_count:
         spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, False, False)
 
     print_cur_ts("Timestamp:\t\t\t")
@@ -11993,17 +12075,9 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         followers = sp_user_followers_data["sp_user_followers"]
         followings = sp_user_followings_data["sp_user_followings"]
 
-        followers_count = sp_user_data["sp_user_followers_count"]
-        if followers:
-            followers_count_tmp = len(followers)
-            if followers_count_tmp > 0:
-                followers_count = followers_count_tmp
+        followers_count, followers = spotify_follow_snapshot(sp_user_data, followers, "followers")
 
-        followings_count = sp_user_data["sp_user_followings_count"]
-        if followings:
-            followings_count_tmp = len(followings)
-            if followings_count_tmp > 0:
-                followings_count = followings_count_tmp
+        followings_count, followings = spotify_follow_snapshot(sp_user_data, followings, "followings")
 
         if DETECT_CHANGES_IN_PLAYLISTS:
             playlists_count = sp_user_data["sp_user_public_playlists_count"]
@@ -12012,6 +12086,15 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             if ADD_PLAYLISTS_TO_MONITOR:
                 playlists.extend(ADD_PLAYLISTS_TO_MONITOR)
                 playlists_count += len(ADD_PLAYLISTS_TO_MONITOR)
+
+        if followers_count is None:
+            followers_count, followers = followers_old_count, followers_old
+            followers_zeroed_counter = 0
+        elif followers_old_count is None:
+            followers_old_count, followers_old = followers_count, followers
+            spotify_save_follow_baseline(followers_file, followers_count, followers)
+        elif followers is None:
+            followers = followers_old
 
         if followers_count != followers_old_count:
             if followers_count == 0:
@@ -12050,6 +12133,15 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     print_cur_ts("Timestamp:\t\t\t")
                 followers_zeroed_counter = 0
                 followers_old = followers
+
+        if followings_count is None:
+            followings_count, followings = followings_old_count, followings_old
+            followings_zeroed_counter = 0
+        elif followings_old_count is None:
+            followings_old_count, followings_old = followings_count, followings
+            spotify_save_follow_baseline(followings_file, followings_count, followings)
+        elif followings is None:
+            followings = followings_old
 
         if followings_count != followings_old_count:
             if followings_count == 0:
