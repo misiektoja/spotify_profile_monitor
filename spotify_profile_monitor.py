@@ -168,6 +168,15 @@ WEBHOOK_ERROR_NOTIFICATION = True
 # Values support the same placeholders as WEBHOOK_TEMPLATE
 WEBHOOK_HEADERS = {}
 
+# Optional ntfy access token for Bearer authentication
+# Prefer an environment variable or dotenv file instead of storing this token here
+NTFY_ACCESS_TOKEN = ""
+
+# Whether to attach profile or playlist artwork to supported ntfy alerts
+# Requires the optional Pillow package: pip install "spotify_profile_monitor[notification-images]"
+# Image preparation or delivery failures fall back to text
+NTFY_IMAGES = False
+
 # ----------------------------
 # Advanced Webhook Settings
 # ----------------------------
@@ -205,15 +214,6 @@ WEBHOOK_TEMPLATE = {
 #       ("description", "strip"),
 #   ]
 WEBHOOK_TRANSFORMS = []
-
-# Optional ntfy access token for Bearer authentication
-# Prefer an environment variable or dotenv file instead of storing this token here
-NTFY_ACCESS_TOKEN = ""
-
-# Whether to attach profile or playlist artwork to supported ntfy alerts
-# Requires the optional Pillow package: pip install "spotify_profile_monitor[notification-images]"
-# Image preparation or delivery failures fall back to text
-NTFY_IMAGES = False
 
 # How often to check for user profile changes; in seconds
 # Can also be set using the -c flag
@@ -397,21 +397,12 @@ DISABLE_LOGGING = False
 #   "Off"  - preserve Unicode separators in logs
 ASCII_LOG_SEPARATORS = "Auto"
 
-# Enable debug mode for technical logging
-# Shows request flow, selected params and internal state changes (with sensitive values redacted)
-# Independent of VERBOSE_MODE, so enable both to see everything
-# Can also be enabled via the --debug flag, which turns it on regardless of this setting
-DEBUG_MODE = False
-
-# Enable verbose mode for occasional operational events and the complete startup summary
-# Full request flow and internal state details remain exclusive to DEBUG_MODE
-# Independent of DEBUG_MODE, so enable both to see everything
-# Can also be enabled via the --verbose flag, which turns it on regardless of this setting
-VERBOSE_MODE = False
-
-# Whether verbose output confirms each delivered email and webhook alert
-# Applies only when VERBOSE_MODE is enabled
-DELIVERY_CONFIRMATIONS = True
+# Max characters per line when printing to screen to avoid line wrapping
+# Does not affect log file output
+# Set to 999 to auto-detect terminal width
+# Applies only when DISABLE_LOGGING is False
+# Can also be set via the --truncate flag
+TRUNCATE_CHARS = 0
 
 # Width of horizontal line
 HORIZONTAL_LINE = 113
@@ -479,12 +470,21 @@ COLORED_OUTPUT = True
 #     "help_default": "bright_black",
 # }
 
-# Max characters per line when printing to screen to avoid line wrapping
-# Does not affect log file output
-# Set to 999 to auto-detect terminal width
-# Applies only when DISABLE_LOGGING is False
-# Can also be set via the --truncate flag
-TRUNCATE_CHARS = 0
+# Enable verbose mode for occasional operational events and the complete startup summary
+# Full request flow and internal state details remain exclusive to DEBUG_MODE
+# Independent of DEBUG_MODE, so enable both to see everything
+# Can also be enabled via the --verbose flag, which turns it on regardless of this setting
+VERBOSE_MODE = False
+
+# Enable debug mode for technical logging
+# Shows request flow, selected params and internal state changes (with sensitive values redacted)
+# Independent of VERBOSE_MODE, so enable both to see everything
+# Can also be enabled via the --debug flag, which turns it on regardless of this setting
+DEBUG_MODE = False
+
+# Whether verbose output confirms each delivered email and webhook alert
+# Applies only when VERBOSE_MODE is enabled
+DELIVERY_CONFIRMATIONS = True
 
 # Value used by signal handlers to increase or decrease profile check interval (SPOTIFY_CHECK_INTERVAL); in seconds
 SPOTIFY_CHECK_SIGNAL_VALUE = 300  # 5 minutes
@@ -728,27 +728,6 @@ SP_DC_COOKIE = ""
 SP_APP_CLIENT_ID = ""
 SP_APP_CLIENT_SECRET = ""
 SP_APP_TOKENS_FILE = ""
-SP_USER_CLIENT_ID = ""
-SP_USER_CLIENT_SECRET = ""
-SP_USER_REDIRECT_URI = ""
-SP_USER_SCOPE = ""
-SP_USER_TOKENS_FILE = ""
-LOGIN_REQUEST_BODY_FILE = ""
-CLIENTTOKEN_REQUEST_BODY_FILE = ""
-LOGIN_URL = ""
-USER_AGENT = ""
-DEVICE_ID = ""
-SYSTEM_ID = ""
-USER_URI_ID = ""
-REFRESH_TOKEN = ""
-CLIENTTOKEN_URL = ""
-APP_VERSION = ""
-CPU_ARCH = 0
-OS_BUILD = 0
-PLATFORM = 0
-OS_MAJOR = 0
-OS_MINOR = 0
-CLIENT_MODEL = 0
 SMTP_HOST = ""
 SMTP_PORT = 0
 SMTP_USER = ""
@@ -761,24 +740,21 @@ EMAIL_IMAGES = False
 FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
 ERROR_NOTIFICATION = False
 WEBHOOK_ENABLED = False
-WEBHOOK_URL = ""
 WEBHOOK_PROVIDER = ""
+WEBHOOK_URL = ""
 WEBHOOK_USERNAME = ""
 WEBHOOK_AVATAR_URL = ""
-WEBHOOK_HEADERS = {}
-WEBHOOK_TEMPLATE = {}
-WEBHOOK_TRANSFORMS = []
-NTFY_ACCESS_TOKEN = ""
-NTFY_IMAGES = False
 WEBHOOK_PROFILE_NOTIFICATION = False
 WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
 WEBHOOK_ERROR_NOTIFICATION = False
+WEBHOOK_HEADERS = {}
+NTFY_ACCESS_TOKEN = ""
+NTFY_IMAGES = False
+WEBHOOK_TEMPLATE = {}
+WEBHOOK_TRANSFORMS = []
 SPOTIFY_CHECK_INTERVAL = 0
 SPOTIFY_ERROR_INTERVAL = 0
 LOCAL_TIMEZONE = ""
-
-# How LOCAL_TIMEZONE was arrived at, which decides the row doctor prints for it
-LOCAL_TIMEZONE_STATE = "config"
 DETECT_CHANGED_PROFILE_PIC = False
 IMGCAT_PATH = ""
 SP_SHA256 = ""
@@ -786,19 +762,22 @@ DETECT_CHANGES_IN_PLAYLISTS = False
 GET_ALL_PLAYLISTS = False
 ADD_PLAYLISTS_TO_MONITOR = []
 IGNORE_SPOTIFY_PLAYLISTS = False
-HIDE_DUPLICATE_NETWORK_ERRORS = False
 PLAYLISTS_LIMIT = 0
 RECENTLY_PLAYED_ARTISTS_LIMIT = 0
 RECENTLY_PLAYED_ARTISTS_LIMIT_INFO = 0
 PLAYLISTS_DISAPPEARED_COUNTER = 0
+PLAYLISTS_CHANGE_COUNTER = 0
 FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER = 0
 COLLABORATORS_CHANGE_COUNTER = 0
-PLAYLISTS_CHANGE_COUNTER = 0
+HIDE_DUPLICATE_NETWORK_ERRORS = False
 USER_AGENT = ""
 LIVENESS_CHECK_INTERVAL = 0
 CHECK_INTERNET_URL = ""
 CHECK_INTERNET_TIMEOUT = 0
 VERIFY_SSL = True
+
+# How LOCAL_TIMEZONE was arrived at, which decides the row doctor prints for it
+LOCAL_TIMEZONE_STATE = "config"
 CSV_FILE = ""
 JSON_DIR = ""
 CSV_FILE_FORMAT_EXPORT = 0
@@ -809,16 +788,14 @@ FILE_SUFFIX = ""
 SP_LOGFILE = ""
 DISABLE_LOGGING = False
 ASCII_LOG_SEPARATORS = "Auto"
-DEBUG_MODE = False
-VERBOSE_MODE = False
-DELIVERY_CONFIRMATIONS = True
-
-# True once monitoring has printed its header, so a verbose notice after that closes its own block
-MONITORING_ACTIVE = False
+TRUNCATE_CHARS = 0
 HORIZONTAL_LINE = 0
 CLEAR_SCREEN = False
 COLORED_OUTPUT = False
 COLOR_THEME: dict = {}
+VERBOSE_MODE = False
+DEBUG_MODE = False
+DELIVERY_CONFIRMATIONS = True
 SPOTIFY_CHECK_SIGNAL_VALUE = 0
 ENABLE_APPLE_MUSIC_URL = False
 ENABLE_YOUTUBE_MUSIC_URL = False
@@ -834,7 +811,29 @@ TOKEN_MAX_RETRIES = 0
 TOKEN_RETRY_TIMEOUT = 0.0
 TOTP_VERSION = 0
 TOTP_SECRET_CIPHER_BYTES: tuple[int, ...] = ()
-TRUNCATE_CHARS = 0
+
+# True once monitoring has printed its header, so a verbose notice after that closes its own block
+MONITORING_ACTIVE = False
+SP_USER_CLIENT_ID = ""
+SP_USER_CLIENT_SECRET = ""
+SP_USER_REDIRECT_URI = ""
+SP_USER_SCOPE = ""
+SP_USER_TOKENS_FILE = ""
+LOGIN_REQUEST_BODY_FILE = ""
+DEVICE_ID = ""
+SYSTEM_ID = ""
+USER_URI_ID = ""
+REFRESH_TOKEN = ""
+LOGIN_URL = ""
+CLIENTTOKEN_URL = ""
+CLIENTTOKEN_REQUEST_BODY_FILE = ""
+CPU_ARCH = 0
+OS_BUILD = 0
+PLATFORM = 0
+OS_MAJOR = 0
+OS_MINOR = 0
+CLIENT_MODEL = 0
+APP_VERSION = ""
 EXPORT_ALL = False
 EXPORT_ALL_FORCE = False
 
