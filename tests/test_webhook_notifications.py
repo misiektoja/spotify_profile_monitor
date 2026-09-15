@@ -723,7 +723,7 @@ def test_a_delivered_webhook_is_reported_in_verbose(monkeypatch, capsys):
 
     assert monitor.send_webhook("Profile picture changed", "Body", "profile") == 0
 
-    assert "* Webhook delivered through discord: Profile picture changed" in capsys.readouterr().out
+    assert "* Webhook delivered through Discord: Profile picture changed" in capsys.readouterr().out
 
 
 # Verifies a delivered email names where it went and what it was, so verbose answers whether the alert arrived
