@@ -768,3 +768,24 @@ def test_delivery_confirmations_can_be_turned_off(monkeypatch, capsys):
     output = capsys.readouterr().out
     assert "Webhook sent through" not in output
     assert "Email sent to" not in output
+
+
+# Verifies a link whose text repeats its destination reaches Discord bare, because a masked link there prints as plain text
+def test_self_labeled_links_stay_bare_in_discord_markdown():
+    profile_url = "https://open.spotify.com/user/misiektoja"
+    markdown = monitor.html_body_to_discord_markdown(f"Profile: <a href=\"{profile_url}\">{profile_url}</a><br>")
+    assert markdown == f"Profile: {profile_url}"
+
+
+# Verifies a link with its own text keeps the masked form Discord renders as a hyperlink
+def test_labeled_links_keep_the_masked_discord_form():
+    body_html = "- <b><a href=\"https://open.spotify.com/playlist/1\">Road Trip</a></b><br>"
+    assert monitor.html_body_to_discord_markdown(body_html) == "- **[Road Trip](https://open.spotify.com/playlist/1)**"
+
+
+# Verifies an image link becomes its alt text or a bare URL instead of an empty masked link
+def test_image_links_never_produce_an_empty_discord_label():
+    with_alt = "<a href=\"https://open.spotify.com/playlist/1\"><img src=\"https://i.scdn.co/image/a.jpg\" alt=\"Cover\"></a>"
+    without_alt = "<a href=\"https://open.spotify.com/playlist/1\"><img src=\"https://i.scdn.co/image/a.jpg\"></a>"
+    assert monitor.html_body_to_discord_markdown(with_alt) == "[Cover](https://open.spotify.com/playlist/1)"
+    assert monitor.html_body_to_discord_markdown(without_alt) == "https://open.spotify.com/playlist/1"
