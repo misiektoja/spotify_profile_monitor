@@ -1810,6 +1810,13 @@ def _colorize_list_row(match):
     return f"{prefix}{colorize(style_name, name)}{opening}{meta}{closing}"
 
 
+# Colors a count transition using decimal text comparison without unbounded integer conversion
+def _colorize_count_change(match):
+    before, after = ("".join(str(int(digit)) for digit in match.group(index)).lstrip("0") or "0" for index in (2, 4))
+    style = "count_up" if (len(after), after) >= (len(before), before) else "count_down"
+    return f"{match.group(1)}{colorize(style, match.group(2))}{match.group(3)}{colorize(style, match.group(4))}"
+
+
 # Applies colour rules to a single output line
 def _colorize_line(line):
     lowered = line.lower()
@@ -1876,7 +1883,7 @@ def _colorize_line(line):
     line = _sub_outside_color(_USER_TAG_RE, lambda mo: f"{mo.group(1)}{mo.group(2)}{colorize('id', mo.group(3))}", line)
 
     # Highlight counters and their differences
-    line = _sub_outside_color(_FROM_TO_COUNT_RE, lambda mo: f"{mo.group(1)}{colorize('count_up' if int(mo.group(4)) >= int(mo.group(2)) else 'count_down', mo.group(2))}{mo.group(3)}{colorize('count_up' if int(mo.group(4)) >= int(mo.group(2)) else 'count_down', mo.group(4))}", line)
+    line = _sub_outside_color(_FROM_TO_COUNT_RE, _colorize_count_change, line)
     line = _sub_outside_color(_DIFF_COUNT_UP_RE, lambda mo: colorize("count_up", mo.group(0)), line)
     line = _sub_outside_color(_DIFF_COUNT_DOWN_RE, lambda mo: colorize("count_down", mo.group(0)), line)
 
@@ -3435,7 +3442,7 @@ def send_webhook(title: str, description: str, notification_type: str = "profile
                     sleep_func(delay)
                 continue
             if not retryable or attempt == WEBHOOK_MAX_ATTEMPTS - 1:
-                print_recovery_error(response, "webhook", detail=f"HTTP {response.status_code}: {getattr(response, 'text', '')[:200]}")
+                print_recovery_error(response, "webhook", detail=f"HTTP {response.status_code}: {sanitize_error_text(getattr(response, 'text', ''))[:200]}")
                 return 1
             delay = webhook_retry_after_seconds(response) if response.status_code == 429 else WEBHOOK_FALLBACK_RETRY_SECONDS
             debug_print("Webhook delivery", status=response.status_code, retry_in=f"{delay:g}s")
@@ -3800,6 +3807,44 @@ def decrease_check_signal_handler(sig, frame):
 
 
 # Signal handler for SIGHUP allowing to reload secrets from dotenv files and token source credentials
+DOTENV_RELOAD_STATE = {}
+
+
+# Names the effective source after a file-owned secret is reloaded or removed
+def dotenv_reload_source(key):
+    if key in DOTENV_RELOAD_STATE.get("managed", ()):
+        return "dotenv file reload" if "dotenv file reload" in SECRET_SOURCE_ORDER else "dotenv file"
+    return DOTENV_RELOAD_STATE.get("base_sources", {}).get(key, "environment" if key in DOTENV_RELOAD_STATE.get("exported", ()) else SECRET_SOURCE_ORDER[0])
+
+
+# Loads dotenv values and reconciles removed file-owned secrets without changing startup precedence
+def load_managed_dotenv(path, override=False, interpolate=True, protected_keys=()):
+    from io import StringIO
+    from dotenv.main import DotEnv
+    from dotenv.parser import parse_stream
+    if not override and not Path(path).is_file():
+        return False
+    content = Path(path).read_text(encoding="utf-8")
+    if override:
+        malformed = next((binding for binding in parse_stream(StringIO(content)) if binding.error), None)
+        if malformed is not None:
+            raise ValueError(f"Dotenv syntax error near line {malformed.original.line}. Correct the assignment and reload again")
+    values = DotEnv(dotenv_path=None, stream=StringIO(content), override=override, interpolate=interpolate).dict()
+    if not override or not DOTENV_RELOAD_STATE:
+        DOTENV_RELOAD_STATE.clear()
+        DOTENV_RELOAD_STATE.update(base={key: os.environ.get(key, globals().get(key, "")) for key in SECRET_KEYS}, exported=set(os.environ).intersection(SECRET_KEYS), managed=set())
+    protected = set(protected_keys)
+    applied = {key for key, value in values.items() if value is not None and key not in protected and (override or key not in os.environ)}
+    removed = DOTENV_RELOAD_STATE["managed"] - applied - protected
+    for key in removed:
+        value = DOTENV_RELOAD_STATE["base"].get(key)
+        os.environ[key] = "" if value is None else str(value)
+    for key in applied:
+        os.environ[key] = str(values[key])
+    DOTENV_RELOAD_STATE["managed"] = applied.intersection(SECRET_KEYS)
+    return bool(values)
+
+
 # from login & client token requests body files
 def reload_secrets_signal_handler(sig, frame):
     global DEVICE_ID, SYSTEM_ID, USER_URI_ID, REFRESH_TOKEN, LOGIN_URL, USER_AGENT, APP_VERSION, CPU_ARCH, OS_BUILD, PLATFORM, OS_MAJOR, OS_MINOR, CLIENT_MODEL
@@ -3819,18 +3864,22 @@ def reload_secrets_signal_handler(sig, frame):
     else:
         # Reload .env if python-dotenv is installed
         try:
-            from dotenv import load_dotenv, find_dotenv
+            from dotenv import find_dotenv
             if DOTENV_FILE:
                 env_path = DOTENV_FILE
             else:
                 env_path = find_dotenv()
             if env_path:
-                load_dotenv(env_path, override=True)
+                load_managed_dotenv(env_path, override=True)
             else:
                 print(f"* No .env file found, skipping env-var reload{suffix}")
         except ImportError:
             env_path = None
             print(render_recovery_error(RecoveryError(missing_dependency_advice("python-dotenv", f"Secrets were not reloaded from the dotenv file{suffix}", pip_install_command("python-dotenv")))))
+
+        except (OSError, UnicodeError, ValueError) as exc:
+            print_recovery_advice(make_recovery_advice("config.invalid", "The dotenv reload failed. Existing secrets were kept", recovery_fix_with_guide("Check the dotenv file path, UTF-8 encoding and assignment syntax, then reload again", SECRETS_GUIDE_URL), False, str(exc)))
+            return
 
     if env_path:
         for secret_key in SECRET_KEYS:
@@ -3840,7 +3889,7 @@ def reload_secrets_signal_handler(sig, frame):
                 globals()[secret_key] = val
                 if secret_key == "WEBHOOK_URL":
                     webhook_url_changed = True
-                record_secret_source(secret_key, "dotenv file reload", val)
+                record_secret_source(secret_key, dotenv_reload_source(secret_key), val)
                 print(f"* Reloaded {secret_key} from {env_path}{suffix}")
 
     if TOKEN_SOURCE == 'client':
@@ -8009,12 +8058,57 @@ def confirm_config_replacement(destination, force: bool = False, interactive=Non
     return answer in ("y", "yes")
 
 
+# Removes inline secret assignments from a setup backup while preserving other configuration text
+def redact_config_backup(content):
+    import ast
+    try:
+        text = content.decode("utf-8")
+        tree = ast.parse(text)
+    except (UnicodeError, SyntaxError) as exc:
+        raise ValueError("Cannot create a secret-free configuration backup. Correct the existing file's UTF-8 encoding or assignment syntax before running setup") from exc
+    lines = text.splitlines(keepends=True)
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line.encode("utf-8")))
+    replacements = []
+    secret_values = set()
+    for statement in ast.walk(tree):
+        if not isinstance(statement, (ast.Assign, ast.AnnAssign)):
+            continue
+        targets = statement.targets if isinstance(statement, ast.Assign) else [statement.target]
+        if any(isinstance(target, ast.Name) and target.id in SECRET_KEYS for target in targets):
+            value = statement.value
+            if value is not None and value.end_lineno is not None and value.end_col_offset is not None:
+                start = offsets[value.lineno - 1] + value.col_offset
+                end = offsets[value.end_lineno - 1] + value.end_col_offset
+                replacements.append((start, end))
+                if isinstance(value, ast.Constant) and isinstance(value.value, str) and value.value:
+                    secret_values.add(value.value)
+    for start, end in sorted(replacements, reverse=True):
+        content = content[:start] + b'""' + content[end:]
+    import io
+    import tokenize
+    text = content.decode("utf-8")
+    lines = text.splitlines(keepends=True)
+    for token in tokenize.generate_tokens(io.StringIO(text).readline):
+        if token.type == tokenize.COMMENT:
+            comment = token.string
+            for secret in sorted(secret_values, key=len, reverse=True):
+                comment = comment.replace(secret, "<redacted>")
+            row, start = token.start
+            end = token.end[1]
+            lines[row - 1] = lines[row - 1][:start] + comment + lines[row - 1][end:]
+    return "".join(lines).encode("utf-8")
+
+
 # Copies an existing file to a timestamped owner-only .bak beside it, returning the backup path or None when there was nothing to copy
-def create_timestamped_backup(destination, attempts=100):
+def create_timestamped_backup(destination, attempts=100, redact_secrets=False):
     destination_path = Path(destination).expanduser()
     if not destination_path.is_file():
         return None
     existing_bytes = destination_path.read_bytes()
+    if redact_secrets:
+        existing_bytes = redact_config_backup(existing_bytes)
     stamp = datetime.now().strftime("%Y%m%d%H%M%S")
     for attempt in range(attempts):
         suffix = f".{stamp}.bak" if attempt == 0 else f".{stamp}-{attempt}.bak"
@@ -8040,7 +8134,7 @@ def create_timestamped_backup(destination, attempts=100):
 
 
 # Writes validated config content atomically and backs up an existing destination
-def write_config_file(destination, content: str) -> dict:
+def write_config_file(destination, content: str, redact_secrets=False) -> dict:
     destination_path = Path(destination).expanduser()
     validate_config_content(content, str(destination_path))
     destination_path.parent.mkdir(parents=True, exist_ok=True)
@@ -8056,7 +8150,7 @@ def write_config_file(destination, content: str) -> dict:
         if os.name == "posix":
             os.chmod(str(temporary_path), 0o600)
         if destination_path.exists():
-            backup_path = create_timestamped_backup(destination_path)
+            backup_path = create_timestamped_backup(destination_path, redact_secrets=redact_secrets)
         os.replace(str(temporary_path), str(destination_path))
         temporary_path = None
     finally:
@@ -9489,6 +9583,9 @@ def secret_fields(value, key=None) -> Dict[str, Any]:
 
 # Records where one secret resolved from and traces it, so a later layer overwrites the earlier answer instead of adding to it
 def record_secret_source(name: str, source: str, value: Any = None) -> None:
+    if source == "command line" and DOTENV_RELOAD_STATE:
+        DOTENV_RELOAD_STATE["base"][name] = globals().get(name) if value is None else value
+        DOTENV_RELOAD_STATE.setdefault("base_sources", {})[name] = source
     if source not in SECRET_SOURCE_ORDER:
         raise ValueError(f"Unsupported secret source: {source}")
     resolved = globals().get(name) if value is None else value
@@ -11042,7 +11139,7 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
         raise SystemExit(1) from None
     config_content = generate_config_with_current_values(state.config_values)
     try:
-        write_status = write_config_file(state.config_path, config_content)
+        write_status = write_config_file(state.config_path, config_content, redact_secrets=True)
     except Exception as exc:
         print(f"Setup could not write configuration file '{state.config_path}': {sanitize_error_text(exc)}")
         print("No dotenv changes were attempted.")
@@ -13127,7 +13224,7 @@ def main():
         env_path = None
     else:
         try:
-            from dotenv import load_dotenv, find_dotenv
+            from dotenv import find_dotenv
             from dotenv.parser import parse_stream
 
             if DOTENV_FILE:
@@ -13149,7 +13246,7 @@ def main():
                     # An exported variable wins over the file at startup, matching python-dotenv's own default, so a
                     # one-off secret or one injected by systemd or a container is not silently shadowed by the dotenv.
                     # The SIGHUP reload still overrides, because there the edited file is exactly what must take effect.
-                    load_dotenv(env_path, override=False, interpolate=False)
+                    load_managed_dotenv(env_path, override=False, interpolate=False)
                     debug_print("Loaded dotenv file", path=env_path)
             else:
                 env_path = find_dotenv() or None
@@ -13159,7 +13256,7 @@ def main():
                     malformed = [binding for binding in bindings if binding.error]
                     if malformed:
                         raise ValueError(f"Dotenv syntax error near line {malformed[0].original.line}")
-                    load_dotenv(env_path, override=False, interpolate=False)
+                    load_managed_dotenv(env_path, override=False, interpolate=False)
                     debug_print("Loaded dotenv file", path=env_path, source="auto-discovered")
         except ImportError as exc:
             env_path = DOTENV_FILE if DOTENV_FILE else None

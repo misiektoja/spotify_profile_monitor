@@ -129,11 +129,16 @@ def test_webhook_provider_display_name(provider, expected):
 
 
 # Verifies SIGHUP adopts rotated client credentials, clears auth caches and redetects ntfy
-def test_sighup_reload_clears_auth_caches_and_updates_webhook_provider(monkeypatch):
+def test_sighup_reload_clears_auth_caches_and_updates_webhook_provider(monkeypatch, tmp_path):
     if not hasattr(monitor.signal, "SIGHUP"):
         pytest.skip("SIGHUP is unavailable on Windows")
     replacements = {"REFRESH_TOKEN": "new-refresh-token", "WEBHOOK_URL": "https://ntfy.sh/new-private-topic"}
-    monkeypatch.setattr(monitor, "DOTENV_FILE", "test.env")
+    dotenv_path = tmp_path / "test.env"
+    dotenv_path.write_text("".join(key + "=" + repr(value) + "\n" for key, value in replacements.items()), encoding="utf-8")
+    monkeypatch.setattr(monitor, "DOTENV_FILE", str(dotenv_path))
+    monkeypatch.setattr(monitor, "DOTENV_RELOAD_STATE", {})
+    for key in replacements:
+        monkeypatch.setenv(key, "")
     monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
     monkeypatch.setattr(monitor, "TOKEN_SOURCE", "client")
     monkeypatch.setattr(monitor, "LOGIN_REQUEST_BODY_FILE", "")
@@ -148,8 +153,7 @@ def test_sighup_reload_clears_auth_caches_and_updates_webhook_provider(monkeypat
     monkeypatch.setattr(monitor, "SP_CACHED_OAUTH_APP_TOKEN", "cached-oauth")
     monkeypatch.setattr(monitor, "SP_CACHED_CLIENT_TOKEN", "cached-client-token")
     monkeypatch.setattr(monitor, "SP_CLIENT_TOKEN_EXPIRES_AT", 999)
-    with patch("dotenv.load_dotenv"), patch.object(monitor.os, "getenv", side_effect=replacements.get):
-        monitor.reload_secrets_signal_handler(monitor.signal.SIGHUP, None)
+    monitor.reload_secrets_signal_handler(monitor.signal.SIGHUP, None)
     assert monitor.REFRESH_TOKEN == "new-refresh-token"
     assert monitor.WEBHOOK_PROVIDER == "ntfy"
     assert monitor.SP_CACHED_ACCESS_TOKEN is None
