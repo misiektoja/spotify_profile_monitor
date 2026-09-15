@@ -6815,7 +6815,7 @@ def _build_restricted_playlist_data(playlist: Dict[str, Any], cached_entry: Dict
 
 
 # Displays a progress bar with percentage and current playlist name
-def _display_progress(current, total, playlist_name: str = "", bar_length: int = 40, is_final: bool = False) -> None:
+def _display_progress(current, total, playlist_name: str = "", bar_length: int = 40, is_final: bool = False, prefix: str = "Playlists") -> None:
     if total == 0:
         return
 
@@ -6834,7 +6834,6 @@ def _display_progress(current, total, playlist_name: str = "", bar_length: int =
     # Sanitized here because this bar writes to the terminal and the log file directly, bypassing Logger.write.
     # Colour codes are stripped too: the bar is redrawn by overwriting a fixed width, so a styled remnant would survive
     display_name = ANSI_ESCAPE_RE.sub("", sanitize_terminal_text(playlist_name or ""))
-    prefix = "Playlists"
 
     def compute_base_length(include_prefix: bool) -> int:
         base = ""
@@ -6918,6 +6917,30 @@ def _display_progress(current, total, playlist_name: str = "", bar_length: int =
     else:
         terminal_out.write("\r\033[K" + progress_str)
         terminal_out.flush()
+
+
+# Returns the stream the transient progress bars draw on, which is the real terminal even while logging is active
+def _progress_terminal_stream():
+    return stdout_bck if stdout_bck is not None else sys.stdout
+
+
+# Draws the export progress bar, which stays transient because permanent per-playlist output reclaims its line
+def _display_export_progress(current, total, playlist_name: str = "") -> None:
+    terminal_out = _progress_terminal_stream()
+    if total <= 0 or CLEAN_OUTPUT or not terminal_out.isatty():
+        return
+
+    _display_progress(current, total, playlist_name, prefix="Exporting")
+
+
+# Clears the export progress bar so the line it occupied is free for the next permanent message
+def _clear_export_progress() -> None:
+    terminal_out = _progress_terminal_stream()
+    if CLEAN_OUTPUT or not terminal_out.isatty():
+        return
+
+    terminal_out.write("\r\033[K")
+    terminal_out.flush()
 
 
 # Processes items from all the provided playlists and returns a list of dictionaries
@@ -7240,12 +7263,31 @@ def playlist_export_directory() -> Path:
     return Path(os.path.expanduser(f"spotify_profile_{FILE_SUFFIX}_playlists_export"))
 
 
-# Builds one export path inside the export directory, keeping same-named playlists in separate files
-def build_playlist_export_path(playlist_name, playlist_id, used_paths=None) -> Path:
+# Separators divide words in a playlist name, so they become a dash instead of silently fusing the words around them
+PLAYLIST_NAME_SEPARATOR_RE = re.compile(r"\s*[\\/|:]+\s*")
+PLAYLIST_NAME_WHITESPACE_RE = re.compile(r"\s+")
+
+
+# Keeps the spacing the playlist name already had, so "Techno / House" and "techno/electronica" both stay readable
+def _playlist_name_separator(match: "re.Match[str]") -> str:
+    return " - " if match.group(0).strip() != match.group(0) else "-"
+
+
+# Turns a playlist name into a file name that is valid on every supported platform, not only the one running the export
+def sanitize_playlist_file_name(playlist_name) -> str:
     from pathvalidate import sanitize_filename
 
+    # The universal rule set is deliberate: an export made on one OS stays readable on the others and on FAT or exFAT volumes
+    replaced = PLAYLIST_NAME_SEPARATOR_RE.sub(_playlist_name_separator, playlist_name or "")
+    sanitized = str(sanitize_filename(replaced, platform="universal"))
+    collapsed = PLAYLIST_NAME_WHITESPACE_RE.sub(" ", sanitized)
+    return collapsed.strip().rstrip(".").strip() or "playlist"
+
+
+# Builds one export path inside the export directory, keeping same-named playlists in separate files
+def build_playlist_export_path(playlist_name, playlist_id, used_paths=None) -> Path:
     export_directory = playlist_export_directory()
-    safe_name = str(sanitize_filename(playlist_name or "")).strip().rstrip(".") or "playlist"
+    safe_name = sanitize_playlist_file_name(playlist_name)
     candidate = export_directory / f"{safe_name}.csv"
 
     # Two playlists can sanitize to the same name, so the ID disambiguates instead of appending to one file
@@ -7288,6 +7330,28 @@ def playlist_collection_changed(current_playlists, previous_playlists, current_c
     return current_count != previous_count or extract_playlist_uris(current_playlists) != extract_playlist_uris(previous_playlists)
 
 
+# Reports whether a playlist is excluded from processing by the skip list or by the Spotify-owned playlist filter
+def is_playlist_skipped(playlist_id, owner_name, owner_id, playlists_to_skip) -> bool:
+    if playlists_to_skip and (playlist_id in playlists_to_skip or owner_id in playlists_to_skip or owner_name in playlists_to_skip):
+        return True
+
+    return bool(IGNORE_SPOTIFY_PLAYLISTS and owner_id == "spotify")
+
+
+# Counts the playlists --export-all-playlists will write, so its progress bar knows the total before the first export
+def count_exportable_playlists(list_of_playlists, playlists_to_skip) -> int:
+    total = 0
+    for playlist in list_of_playlists or []:
+        if "uri" not in playlist or playlist.get("restricted", False):
+            continue
+        playlist_id = spotify_extract_id_or_name(playlist.get("uri", ""))
+        owner_name = spotify_extract_id_or_name(playlist.get("owner", ""))
+        owner_id = spotify_extract_id_or_name(playlist.get("owner_uri", ""))
+        if not is_playlist_skipped(playlist_id, owner_name, owner_id, playlists_to_skip):
+            total += 1
+    return total
+
+
 # Prints detailed info about user's playlists
 def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_to_skip=None):
     p_update = datetime.min.replace(tzinfo=pytz.timezone(LOCAL_TIMEZONE))
@@ -7301,6 +7365,8 @@ def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_
         playlists_to_skip = []
 
     used_export_paths = set()
+    export_total = 0
+    export_index = 0
     if EXPORT_ALL:
         # Exports are confined to their own directory so a playlist name chosen by the monitored user
         # cannot land beside, or append to, the operator's other files in the working directory
@@ -7310,7 +7376,8 @@ def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_
         except Exception as e:
             print_operation_error(f"The export directory '{export_directory}' could not be created", e)
             return
-        print(f"* Exporting playlists to '{export_directory}{os.sep}'\n")
+        export_total = count_exportable_playlists(list_of_playlists, playlists_to_skip)
+        print(f"* Exporting {export_total} playlist(s) to '{export_directory}{os.sep}'\n")
 
     if list_of_playlists:
         print()
@@ -7333,7 +7400,7 @@ def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_
                 p_owner_id = spotify_extract_id_or_name(p_owner_uri)
 
                 skipped_from_processing = ""
-                if (playlists_to_skip and (p_uri_id in playlists_to_skip or p_owner_id in playlists_to_skip or p_owner_name in playlists_to_skip)) or (IGNORE_SPOTIFY_PLAYLISTS and p_owner_id == "spotify"):
+                if is_playlist_skipped(p_uri_id, p_owner_name, p_owner_id, playlists_to_skip):
                     skipped_from_processing = " [ IGNORED ]"
 
                 restricted_label = " [ RESTRICTED ]" if p_restricted else ""
@@ -7350,14 +7417,20 @@ def spotify_print_public_playlists(sp_accessToken, list_of_playlists, playlists_
                 if p_descr:
                     print(f"'{p_descr}'")
                 if EXPORT_ALL and not skipped_from_processing and not p_restricted:
+                    export_index += 1
                     export_path = build_playlist_export_path(p_name, p_uri_id, used_export_paths)
                     if export_path.exists() and not EXPORT_ALL_FORCE:
-                        print(f"-- Skipping export to '{export_path}': the file already exists (use --force to overwrite)")
+                        print(f"-- [{export_index}/{export_total}] Skipping export to '{export_path}': the file already exists (use --force to overwrite)")
                     else:
-                        print(f"-- Exporting playlist to '{export_path}'")
+                        print(f"-- [{export_index}/{export_total}] Exporting playlist to '{export_path}'")
                         if export_path.exists():
                             export_path.unlink()
-                        spotify_list_tracks_for_playlist(sp_accessToken, p_url, str(export_path), CSV_FILE_FORMAT_EXPORT)
+                        # The bar covers the track download, which is the only slow step here, and is cleared so the result takes its line
+                        _display_export_progress(export_index, export_total, p_name)
+                        try:
+                            spotify_list_tracks_for_playlist(sp_accessToken, p_url, str(export_path), CSV_FILE_FORMAT_EXPORT)
+                        finally:
+                            _clear_export_progress()
                         print(f"-- Export completed")
                 print()
 
