@@ -2341,7 +2341,7 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
     if context == "file_write":
         return make_recovery_advice("file.unwritable", "An output destination is not writable", recovery_fix_with_guide("Choose a writable path and verify its parent directory permissions then retry", DIAGNOSTICS_GUIDE_URL), False, safe_detail)
     if context == "smtp_config":
-        return make_recovery_advice("smtp.invalid", "The SMTP configuration is incomplete or invalid", recovery_fix_with_guide("Correct SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SENDER_EMAIL and RECEIVER_EMAIL then run --send-test-email", SMTP_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("smtp.invalid", safe_detail or "The SMTP configuration is incomplete or invalid", recovery_fix_with_guide("Correct SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SENDER_EMAIL and RECEIVER_EMAIL then run --send-test-email", SMTP_GUIDE_URL), False, safe_detail)
     if context == "webhook_config":
         return make_recovery_advice("webhook.invalid", "The webhook configuration is invalid", recovery_fix_with_guide("Check the provider, URL, template, headers and ntfy access token then run --send-test-webhook", WEBHOOK_GUIDE_URL), False, safe_detail)
 

@@ -383,8 +383,8 @@ def test_a_missing_optional_library_names_the_loss_and_the_install(monkeypatch):
 
 
 # Verifies a mail setting that makes delivery impossible is reported through the recovery block rather than a bare line
-@pytest.mark.parametrize("setting,value", [("SMTP_HOST", "not a host"), ("SMTP_PORT", 0), ("SENDER_EMAIL", "not-an-address"), ("SMTP_USER", "your_smtp_user")])
-def test_an_unusable_mail_setting_is_reported_through_the_recovery_block(monkeypatch, capsys, setting, value):
+@pytest.mark.parametrize("setting,value,named", [("SMTP_HOST", "not a host", "invalid IP address/FQDN in SMTP_HOST"), ("SMTP_PORT", 0, "invalid port number in SMTP_PORT"), ("SENDER_EMAIL", "not-an-address", "invalid email in SENDER_EMAIL or RECEIVER_EMAIL"), ("SMTP_USER", "your_smtp_user", "check SMTP_USER & SMTP_PASSWORD configuration options")])
+def test_an_unusable_mail_setting_is_reported_through_the_recovery_block(monkeypatch, capsys, setting, value, named):
     monkeypatch.setattr(monitor, "COLOR_ENABLED", False)
     for name, usable in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "user"), ("SMTP_PASSWORD", "secret"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "receiver@example.com")):
         monkeypatch.setattr(monitor, name, usable)
@@ -393,7 +393,8 @@ def test_an_unusable_mail_setting_is_reported_through_the_recovery_block(monkeyp
     assert monitor.send_email("subject", "body", "", False) == 1
 
     printed = capsys.readouterr().out
-    assert "* Error: The SMTP configuration is incomplete or invalid" in printed
+    # The summary names the setting that failed, so the reader does not have to rerun with --debug to learn which one
+    assert f"* Error: The SMTP settings are incorrect ({named})" in printed
     assert "To fix: Correct SMTP_HOST" in printed
     assert f"Guide: {monitor.SMTP_GUIDE_URL}" in printed
 
@@ -406,7 +407,7 @@ def test_an_uncomposable_message_is_reported_through_the_recovery_block(monkeypa
         monkeypatch.setattr(monitor, name, usable)
 
     assert monitor.send_email(subject, body, "", False) == 1
-    assert "* Error: The SMTP configuration is incomplete or invalid" in capsys.readouterr().out
+    assert "* Error: The SMTP settings are incorrect (" in capsys.readouterr().out
 
 
 # Verifies a caller that adds context does not hide the error text the classification rules read
