@@ -21,9 +21,9 @@ spotify_profile_monitor --generate-config spotify_profile_monitor.conf
 
 Edit the `spotify_profile_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
 
-The configuration file is read as data, not executed. It may contain only `NAME = value` assignments where the name is one of the settings in the generated template and the value is a plain literal: a number, a quoted string, `True`, `False`, `None`, a list, tuple or dict of those. Expressions such as `30 * 60`, f-strings, imports, function calls and references to other settings are rejected. The startup error shows the config path plus offending line number and reason before exiting. It does not clear the error or continue into guided setup. Write the computed value directly instead, for example `SPOTIFY_CHECK_INTERVAL = 1800`. Because the tool also picks up a config file from the current directory, this ensures a `spotify_profile_monitor.conf` you did not write cannot run code when you start the tool.
+Use documented `NAME = value` assignments with literal values: numbers, quoted strings, `True`, `False`, `None` or lists, tuples and dictionaries containing those values. Expressions, imports, function calls and references to other settings are not supported. For example, use `SPOTIFY_CHECK_INTERVAL = 1800` instead of `30 * 60`. An invalid configuration stops startup and reports the file and line to correct.
 
-When `--generate-config FILENAME` targets an existing file, an interactive run asks for confirmation. A noninteractive run refuses replacement unless `--force` is present. An approved replacement validates the generated content, writes it atomically and saves a timestamped backup beside the original. The setup wizard provides the same confirmation and backup protection.
+`--generate-config FILENAME` asks before replacing an existing file and saves a timestamped backup beside it. Noninteractive replacement requires `--force`. Setup also asks before replacement and keeps a backup.
 
 Despite its legacy name, `TARGET_USER_URI_ID` accepts a complete Spotify profile URL, a `spotify:user:` URI or a user ID. Set it to run without a positional target. A positional target in any accepted form overrides the configured value.
 
@@ -116,7 +116,7 @@ Follow these steps:
 spotify_profile_monitor --set-sp-dc
 ```
 
-The command validates the cookie before atomically saving it as `SP_DC_COOKIE` in `.env`. To use another dotenv path, add `--env-file PATH`.
+The command validates the cookie and saves `SP_DC_COOKIE` to `.env`. Use `--env-file PATH` for another destination.
 
 As an alternative, [Cookie-Editor by cgagnier](https://cookie-editor.com/) can display the `sp_dc` value. Only use a browser extension that you trust because browser extensions can access sensitive login cookies.
 
@@ -295,8 +295,6 @@ This step is optional and required only for the username search feature (`-s`). 
 Example request:
 `https://api-partner.spotify.com/pathfinder/v1/query?operationName=searchUsers&variables={"searchTerm":"spotify_user_uri_id","offset":0,"limit":5,"numberOfTopResults":5,"includeAudiobooks":false}&extensions={"persistedQuery":{"version":1,"sha256Hash":"XXXXXXXXXX"}}`
 
-
-
  - Provide the `SP_SHA256` secret using one of the following methods:
    - Set it as an [environment variable](#storing-secrets) (e.g. `export SP_SHA256=...`)
    - Add it to [.env file](#storing-secrets) (`SP_SHA256=...`) for persistent use
@@ -350,7 +348,7 @@ spotify_profile_monitor --send-test-email
 <a id="webhook-settings"></a>
 ## Webhook Settings
 
-A delivery keeps its original destination and credentials for every retry. Provider errors also redact Bearer and Basic credentials echoed without their Authorization scheme. Reloaded settings apply to the next delivery. Discord templates must produce a JSON object. Dictionary templates and JSON strings are supported, including strings with escaped format braces. Unknown fields such as `{descripton}` and placeholders the alert cannot fill are reported with the template text that failed, before delivery. Legacy JSON strings with doubled object braces still work. Alert text is expanded once, so quotes and braces in a title remain literal text. Mentions remain disabled in every template.
+Discord templates must produce a JSON object. Dictionary templates and JSON strings are supported, including legacy strings with doubled object braces. Unsupported placeholders are reported before delivery. Alert text is kept literal and mentions are disabled. Reloaded settings apply to the next delivery.
 
 Spotify Profile Monitor can send profile, follower and error alerts through Discord or the native [ntfy publish API](https://docs.ntfy.sh/publish/). Webhook delivery works with or without email.
 
@@ -527,7 +525,9 @@ To colour saved log files when you view them later, see [Coloring Log Output wit
 <a id="storing-secrets"></a>
 ## Storing Secrets
 
-It is recommended to store secrets like `SP_DC_COOKIE`, `SP_APP_CLIENT_ID`, `SP_APP_CLIENT_SECRET`, `SP_USER_CLIENT_ID`, `SP_USER_CLIENT_SECRET`, `REFRESH_TOKEN`, `SP_SHA256`, `SMTP_PASSWORD`, `WEBHOOK_URL` or `NTFY_ACCESS_TOKEN` as either an environment variable or in a dotenv file. An exported environment value wins when the same key also exists in the selected dotenv file. For `SP_DC_COOKIE`, prefer `spotify_profile_monitor --set-sp-dc` so the value is entered through a hidden prompt and validated before it is saved. Prefer `spotify_profile_monitor --set-smtp-password` for `SMTP_PASSWORD`: the value is entered through a hidden prompt and the mail server has to accept it before it is saved. It reports incomplete mail settings before asking for the password, naming the ones still to set. An exported `SMTP_PASSWORD` wins over the saved one at startup, so the command says so after saving rather than leaving you with a value the next run will not read.
+Store `SP_DC_COOKIE`, `SP_APP_CLIENT_ID`, `SP_APP_CLIENT_SECRET`, `SP_USER_CLIENT_ID`, `SP_USER_CLIENT_SECRET`, `REFRESH_TOKEN`, `SP_SHA256`, `SMTP_PASSWORD`, `WEBHOOK_URL` and `NTFY_ACCESS_TOKEN` in environment variables or a dotenv file. Exported values override the file at startup.
+
+Use `spotify_profile_monitor --set-sp-dc` to enter and validate the cookie through a hidden prompt. For the mail password, use `spotify_profile_monitor --set-smtp-password` after configuring the other SMTP settings. It checks sign-in before saving without sending an email.
 
 A secret you clear, such as declining the ntfy access token during setup, has its line removed from the dotenv file rather than left behind as an empty value.
 
@@ -590,8 +590,7 @@ A forgotten `export` can shadow the dotenv file invisibly, so `--debug` names ev
 
 A secret still holding its `your_...` placeholder counts as unset and is left out, and a run with no secret anywhere says so on one line. A length appears only for the secrets whose length the provider issues, never for a password you chose.
 
-When a `--set-*` command or the setup wizard replaces a secret, it rewrites that one assignment in place and leaves every other line alone. A line you wrote as `export NAME=...` keeps its `export`, so a dotenv file you also source in a shell still exports it. A value you clear has its line removed rather than left empty.
-
+Secret commands update the selected value without changing other dotenv settings. Clearing a value removes its assignment.
 
 ### Reloading secrets and backup contents
 
@@ -600,7 +599,6 @@ assignment restores its independently configured fallback or clears the value wh
 A read or parsing failure keeps the last usable credentials and reports how to correct the file.
 An explicit reload can override a startup export with a value present in the file.
 
+Setup keeps the saved `DOTENV_FILE` unless you choose another path with `--env-file`. When you move it, review the private settings before saving. Kept credentials are copied to the new destination and the old file stays intact. Values already in the new dotenv file take precedence unless you replace them. At startup, a nonempty exported secret overrides the dotenv file. A dotenv value, including an empty one, overrides the configuration.
 
-Setup's configuration backup blanks inline secret assignments from older configurations while retaining
-other settings and comments. General `--generate-config` backups remain exact copies and can contain
-inline credentials. The dotenv file is not backed up during secret replacement.
+Setup moves retained credentials from older configuration files into the selected dotenv file unless that file already defines the same key. It leaves the original configuration in place if it cannot preserve those credentials. Setup creates a timestamped configuration backup with inline secrets removed. General `--generate-config` backups can contain inline credentials. Replaced dotenv secrets are not backed up.

@@ -13,7 +13,7 @@ Most examples on this page use the PyPI command `spotify_profile_monitor`. If yo
 
 For example, `spotify_profile_monitor --doctor TARGET` becomes `python3 spotify_profile_monitor.py --doctor TARGET` with the manual script.
 
-The manual-script examples assume the current directory contains `spotify_profile_monitor.py`. Commands printed by setup, Doctor and recovery messages use the running interpreter and the full script path. Packaged installations use the running interpreter with `-m spotify_profile_monitor`.
+Activate the tool's virtual environment before running these commands. For a downloaded script, run them from the directory containing `spotify_profile_monitor.py`.
 
 Throughout this page `<spotify_target>` means any accepted target form: a complete Spotify profile URL, a `spotify:user:` URI or a bare user ID.
 
@@ -56,7 +56,6 @@ By default, the tool looks for a configuration file named `spotify_profile_monit
  - script directory
 
  If you generated a configuration file as described in [Configuration](configuration.md#configuration-file), but saved it under a different name or in a different directory, you can specify its location using the `--config-file` flag:
-
 
 ```sh
 spotify_profile_monitor <spotify_target> --config-file /path/spotify_profile_monitor_new.conf
@@ -240,7 +239,7 @@ To disable sending an email on errors (enabled by default):
 spotify_profile_monitor <spotify_target> -e
 ```
 
-An error alert goes out once the same failure has lasted **5 minutes**, so a short outage or one lost request reaches nobody, while a failure that cannot clear on its own, such as an expired sp_dc cookie, is alerted at once. Each channel gets one alert and nothing more until a whole check completes. Any failing request counts, including a request that halted and the follower poll. A channel that could not deliver is tried again on a later failing check, after **5 minutes** at first and then after twice the previous wait, up to an hour. A run that recovered alerts again when it fails later. The same rule governs the webhook error alert.
+Email and webhook error alerts are sent after **5 minutes** of a continuing failure. Problems that need your action, such as an expired `sp_dc` cookie, alert immediately. Each channel gets one alert until a full check succeeds, including the follower poll. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour.
 
 Make sure you defined your SMTP settings earlier (see [SMTP settings](configuration.md#smtp-settings)).
 

@@ -1,14 +1,6 @@
 # Setup & First Run
 
-Moving the dotenv destination reviews the private settings again. Kept file credentials are saved to the new destination when you choose Save. An existing value at that destination, including an empty value, takes precedence unless you explicitly replace it. The old file is left intact.
-
-Printed commands use short names. Activate the tool's virtual environment before running them. For a downloaded script, run them from the script directory. Recovery commands retain selected configuration and dotenv paths.
-
-Before replacing a configuration, setup copies retained inline credentials to the selected private dotenv file when that file has no value for the same key. An existing dotenv value, including an explicit empty value, keeps precedence. If preservation fails, the original configuration stays in place. Setup backups omit inline credentials.
-
 This page covers the first run: the setup wizard, importing a Spotify login from your browser and starting monitoring. Examples use the PyPI command `spotify_profile_monitor`. Manual script users should replace that command with `python3 spotify_profile_monitor.py` on macOS or Linux, or `python spotify_profile_monitor.py` on Windows.
-When rebuilding an existing configuration, setup keeps its saved `DOTENV_FILE` unless you pass `--env-file PATH`. A nonempty exported secret takes precedence over the dotenv file. An explicit empty value in that file still overrides the configuration, both after saving and on the next run. Quoted dotenv keys receive the same replacement confirmation as unquoted keys.
-
 
 <a id="before-you-start"></a>
 
@@ -20,7 +12,7 @@ The easiest path is the interactive wizard:
 spotify_profile_monitor --setup
 ```
 
-It asks for the target, authentication, polling interval, optional email or webhook alerts and where output goes. The output questions ask whether to write the per-target log file and whether to write a CSV file, and the CSV path is asked for only after you say yes, so answering no clears a saved one. A CSV path with no extension is saved with `.csv` added. The polling prompt accepts seconds or `s`, `m`, `h` and `d` units and shows both seconds and a readable default. You can review or change each section before saving. Regular settings go to `spotify_profile_monitor.conf`. Private values go to `.env`.
+The wizard asks for the target, authentication, polling interval, optional email or webhook alerts and output files. Review or change each section before saving. Settings go to `spotify_profile_monitor.conf` and private values go to `.env`.
 
 For manual setup you need two values:
 
@@ -64,15 +56,17 @@ Run `spotify_profile_monitor --setup` in an interactive terminal. Press Enter to
 * Review or change target, authentication, polling, email, webhook or file destinations.
 * Discard every answer without changing the destination files.
 
-If the selected config file already exists, setup asks before replacement or lets you choose another destination. An approved replacement creates a timestamped `.bak` copy and validates the new Python config before atomically installing it. A rebuilt file starts from the settings already in place with your answers applied over them. A section you decline is cleared rather than carried over, so declining email leaves no mail server behind. A manually entered `sp_dc` value is validated before it is queued for saving. Setup can then run Doctor and optionally start monitoring. `--setup` needs somewhere to put both files, so it refuses `--config-file none` and `--env-file none`.
+Setup asks before replacing an existing configuration and keeps a timestamped backup. A rerun uses saved settings as defaults. Declining a section disables it. After saving, setup can run Doctor and start monitoring. See [Storing Secrets](configuration.md#storing-secrets) for backup details.
 
-Every answer setup cannot use offers a way out, so one value you cannot produce right now does not cost you the answers already given. A blank answer asks whether to continue without it and names what stops working, and a rejected one offers to enter it again. Declining switches the part that needed it off, so half a mail server or a webhook with no destination is never written. Email setup signs in to the mail server before saving, so a wrong password or an unreachable host is caught during setup instead of at the first alert. No email is sent. A refused sign-in offers the mail server questions again, and if the server was only unreachable the answers are kept so `--doctor` can check them later.
+Use `--config-file PATH` and `--env-file PATH` or the summary's **File destinations** section to choose other files. Both paths must be writable. `--config-file none` and `--env-file none` are not supported by setup.
+
+Setup validates your `sp_dc` cookie and checks email sign-in without sending a message. Invalid answers can be retried. If the mail server is unreachable, check the saved settings later with `--doctor`.
 
 When you enable email or ntfy alerts, setup offers artwork attachments. If the optional Pillow package is missing it says so and can install the `notification-images` extra for you, then enables the matching setting only when the install succeeds. Declining keeps the alerts text-only.
 
 Polling intervals accept seconds or readable durations such as `90`, `2m`, `1.5h` or `1h 30m`.
 
-Generated Doctor, browser import and monitoring commands use the active Python interpreter. They also carry explicit `--config-file` and `--env-file` paths so virtual environments and custom destinations remain intact.
+Use the printed commands for the next steps. For manual installations, see [Command Format](usage.md#command-format).
 
 <a id="browser-cookie-import"></a>
 ## Browser Cookie Import
@@ -85,10 +79,9 @@ spotify_profile_monitor --import-browser-cookie --browser firefox
 
 Supported sources are Firefox, Chrome, Brave and Chromium. Firefox works on macOS, Linux and Windows without an extra package. Chromium import works on macOS and Linux with the `browser` extra. If that extra is missing, setup can install it through the active Python interpreter after approval. Current Chromium app-bound encryption prevents reliable import on Windows, so use Firefox there.
 
-The importer discovers browser profiles, lets you choose when several exist, reads only the Spotify `sp_dc` cookie, validates it through Spotify and updates only `SP_DC_COOKIE` in the selected dotenv file. Existing dotenv content is preserved. Replacement needs confirmation in an interactive terminal or `--force` in a noninteractive script.
+Select a browser profile if prompted. The importer validates its Spotify login and saves `SP_DC_COOKIE` to the selected dotenv file. Replacing a saved cookie needs confirmation or `--force` in a noninteractive script. Other dotenv settings are preserved.
 
 Useful overrides are `--browser-profile PROFILE`, `--cookie-file PATH` and `--env-file PATH`.
-
 
 <a id="next-step"></a>
 ## Next Step
