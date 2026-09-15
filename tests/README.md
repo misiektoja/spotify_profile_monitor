@@ -31,6 +31,7 @@ would see.
 | File | Area under test |
 | --- | --- |
 | `conftest.py` | Shared fixture: exported secrets are cleared between tests, so a dotenv one test loads cannot change what a later one resolves |
+| `test_startup_summary_channels.py` | Summary rows naming the webhook provider, the mail server, the masked recipient, the delivery confirmations and the runtime |
 | `test_target_inputs.py` | Target normalization, rejection of unsafe forms, CLI and config precedence |
 | `test_config_effects.py` | Config-file settings reaching their consumers, including polling cadence, playlist cache and connectivity |
 | `test_recovery_and_parity.py` | Atomic config loading, refusal of executable config content, recovery advice, in-app guide links matching published documentation anchors and the documentation site contract |
