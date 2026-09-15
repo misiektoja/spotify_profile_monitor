@@ -2419,37 +2419,30 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
     return make_recovery_advice("unknown", "An unexpected error occurred", recovery_fix_with_guide("Run --doctor. If the issue continues retry with --debug", DOCTOR_GUIDE_URL), True, safe_detail)
 
 
-# Renders one structured recovery error with technical detail limited to debug mode
-def render_recovery_error(error: Any = None, context: str = "runtime", debug: Optional[bool] = None, detail: Any = "") -> str:
-    advice = classify_recovery_error(error, context, detail)
-    lines = [f"* Error: {advice.summary}", f"To fix: {advice.fix}"]
-    if (DEBUG_MODE if debug is None else debug) and advice.detail:
-        lines.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
-    return "\n".join(lines)
-
-
-# Prints one structured recovery error and returns its stable advice
-def print_recovery_error(error: Any = None, context: str = "runtime", debug: Optional[bool] = None, detail: Any = "", target_user_id: Optional[str] = None) -> RecoveryAdvice:
-    advice = classify_recovery_error(error, context, detail, target_user_id)
-    print(render_recovery_error(RecoveryError(advice), debug=debug))
-    return advice
-
-
-# Renders one monitoring failure in the shape every monitor in this family prints
-def render_monitor_recovery(advice: RecoveryAdvice, retry_note: str = "", with_fix: bool = True, label: str = "Error") -> str:
+# Renders one built advice as the shared Error, To fix and optional Technical detail block
+def render_recovery_advice(advice: RecoveryAdvice, debug: Optional[bool] = None, retry_note: str = "", with_fix: bool = True, label: str = "Error") -> str:
     lines = [f"* {label}: {advice.summary}" + (f" ({retry_note})" if retry_note else "")]
     if with_fix:
         lines.append(f"To fix: {advice.fix}")
-        if DEBUG_MODE and advice.detail:
+        if (DEBUG_MODE if debug is None else debug) and advice.detail:
             lines.append(f"Technical detail: {sanitize_error_text(advice.detail)}")
     return "\n".join(lines)
 
 
-# Prints one recurring error while suppressing unchanged recovery instructions
-def print_monitor_recovery(error: Any, context: str, tracker: Optional[RecoveryHintTracker] = None, retry_note: str = "", label: str = "Error") -> RecoveryAdvice:
-    advice = classify_recovery_error(error, context)
-    print(render_monitor_recovery(advice, retry_note, tracker is None or tracker.should_render(advice), label))
+# Classifies one failure and renders it through the shared recovery block
+def render_recovery_error(error: Any = None, context: str = "runtime", debug: Optional[bool] = None, detail: Any = "", retry_note: str = "", with_fix: bool = True, label: str = "Error", target_user_id: Optional[str] = None) -> str:
+    return render_recovery_advice(classify_recovery_error(error, context, detail, target_user_id), debug, retry_note, with_fix, label)
+
+
+# Prints one built advice through the shared recovery block and returns it
+def print_recovery_advice(advice: RecoveryAdvice, debug: Optional[bool] = None, retry_note: str = "", with_fix: bool = True, label: str = "Error", tracker: Optional[RecoveryHintTracker] = None) -> RecoveryAdvice:
+    print(render_recovery_advice(advice, debug, retry_note, with_fix and (tracker is None or tracker.should_render(advice)), label))
     return advice
+
+
+# Classifies one failure, prints it through the shared recovery block and returns its stable advice
+def print_recovery_error(error: Any = None, context: str = "runtime", debug: Optional[bool] = None, detail: Any = "", retry_note: str = "", with_fix: bool = True, label: str = "Error", tracker: Optional[RecoveryHintTracker] = None, target_user_id: Optional[str] = None) -> RecoveryAdvice:
+    return print_recovery_advice(classify_recovery_error(error, context, detail, target_user_id), debug, retry_note, with_fix, label, tracker)
 
 
 # Reports one operation that failed, naming the step in front of the classified failure it carries
@@ -10945,7 +10938,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             _restore_timeout_alarm(alarm_state)
         except TimeoutException as e:
             _restore_timeout_alarm(alarm_state)
-            print_monitor_recovery(e, "runtime", monitor_recovery_tracker, f"retrying in {display_time(ALARM_RETRY)}")
+            print_recovery_error(e, "runtime", retry_note=f"retrying in {display_time(ALARM_RETRY)}", tracker=monitor_recovery_tracker)
             print_cur_ts("Timestamp:\t\t\t")
             time.sleep(ALARM_RETRY)
             continue
@@ -10967,7 +10960,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
             outage_outcome = outage.failed(advice, LIVENESS_REMINDER_SECONDS)
             if outage_outcome in ("full", "repeat"):
-                print_monitor_recovery(e, context, monitor_recovery_tracker, f"retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}")
+                print_recovery_error(e, context, retry_note=f"retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}", tracker=monitor_recovery_tracker)
             elif outage_outcome == "degraded":
                 print_outage_liveness(user_uri_id, advice, outage.since)
 
@@ -11021,7 +11014,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
             follower_outcome = follower_outage.failed(follower_advice, LIVENESS_REMINDER_SECONDS)
             if follower_outcome in ("full", "repeat"):
-                print_monitor_recovery(e, f"{TOKEN_SOURCE}_auth", follower_recovery_tracker, f"retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}", "Error while getting followers and followings")
+                print_recovery_error(e, f"{TOKEN_SOURCE}_auth", retry_note=f"retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}", label="Error while getting followers and followings", tracker=follower_recovery_tracker)
                 print_cur_ts("Timestamp:\t\t\t")
             elif follower_outcome == "degraded":
                 print_outage_liveness(user_uri_id, follower_advice, follower_outage.since)
