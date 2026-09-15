@@ -2015,6 +2015,7 @@ def smtp_ssl_context():
         context.verify_mode = ssl.CERT_NONE
     return context
 
+
 # The last connectivity failure, so a quiet caller can classify it instead of the check printing it
 LAST_CONNECTIVITY_ERROR = None
 
@@ -2279,9 +2280,10 @@ def is_too_many_open_files(error):
             return True
     return False
 
-# Returns the next step for a failure no rule recognized, since a run already printing the technical cause cannot be told to re-run for it
-def unknown_failure_fix(): return "Run --doctor, then open an issue with this output if the failure continues" if DEBUG_MODE else "Run --doctor. If the issue continues retry with --debug"
 
+# Returns the next step for a failure no rule recognized, since a run already printing the technical cause cannot be told to re-run for it
+def unknown_failure_fix():
+    return "Run --doctor, then open an issue with this output if the failure continues" if DEBUG_MODE else "Run --doctor. If the issue continues retry with --debug"
 
 
 # Classifies a failure into stable user-facing recovery guidance
@@ -2463,11 +2465,13 @@ def print_argument_error(summary: str, fix: str, guide_url: str = USAGE_GUIDE_UR
 
 
 # Returns the command that installs one package through the active Python environment
-def pip_install_command(requirement: str) -> str: return _wizard_render_command([sys.executable or ("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", requirement])
+def pip_install_command(requirement: str) -> str:
+    return _wizard_render_command([sys.executable or ("python" if platform.system() == "Windows" else "python3"), "-m", "pip", "install", requirement])
 
 
 # Returns the advice an optional library that is missing carries, naming what the run loses and how to install it
-def missing_dependency_advice(package: str, effect: str, install_command: str, alternative: str = "") -> RecoveryAdvice: return make_recovery_advice("dependency.missing", f"{effect} because the optional '{package}' library is missing", recovery_fix_with_guide(f"Install it with: {install_command}" + (f". {alternative}" if alternative else ""), INSTALLATION_GUIDE_URL), False)
+def missing_dependency_advice(package: str, effect: str, install_command: str, alternative: str = "") -> RecoveryAdvice:
+    return make_recovery_advice("dependency.missing", f"{effect} because the optional '{package}' library is missing", recovery_fix_with_guide(f"Install it with: {install_command}" + (f". {alternative}" if alternative else ""), INSTALLATION_GUIDE_URL), False)
 
 
 # Converts absolute value of seconds to human readable format
@@ -9058,7 +9062,8 @@ def doctor_secret_is_set(value) -> bool:
 
 
 # Returns the diagnostic fields describing one secret, keeping the length out of the value so a line still splits on ", "
-def secret_fields(value, key=None) -> Dict[str, Any]: return {"value": "set" if doctor_secret_is_set(value) else "not set", "chars": len(str(value).strip()) if key in FIXED_LENGTH_SECRET_KEYS and doctor_secret_is_set(value) else None}
+def secret_fields(value, key=None) -> Dict[str, Any]:
+    return {"value": "set" if doctor_secret_is_set(value) else "not set", "chars": len(str(value).strip()) if key in FIXED_LENGTH_SECRET_KEYS and doctor_secret_is_set(value) else None}
 
 
 # Records where one secret resolved from and traces it, so a later layer overwrites the earlier answer instead of adding to it
@@ -11863,7 +11868,6 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             if error_while_processing:
                 debug_print("Playlist processing was partial: advancing successful baselines while retaining failed baselines")
             list_of_playlists_old = merge_playlist_snapshots(list_of_playlists_old, list_of_playlists, playlists_old)
-
 
         debug_print("Completed check", check=f"#{check_count}", user=user_uri_id, next=display_time(SPOTIFY_CHECK_INTERVAL))
 
