@@ -2488,9 +2488,10 @@ def active_config_path():
 # Returns the config a printed command should name, so a run started with discovery off cannot point the reader
 # at a file it deliberately ignored
 def resolved_command_config(config_path=None):
-    if CONFIG_DISCOVERY_DISABLED or (config_path is not None and str(config_path).casefold() == "none"):
-        return "none"
-    return config_path or find_config_file()
+    # A path the caller was given is what the command names, so a stale discovery flag cannot override it
+    if config_path is not None:
+        return "none" if str(config_path).casefold() == "none" else config_path
+    return "none" if CONFIG_DISCOVERY_DISABLED else find_config_file()
 
 
 # Returns an install-aware Firefox cookie recovery command
