@@ -8058,6 +8058,55 @@ def confirm_config_replacement(destination, force: bool = False, interactive=Non
     return answer in ("y", "yes")
 
 
+# Validates a saved collection while retaining extra fields from older or edited files
+def read_collection_record(path):
+    with open(path, "r", encoding="utf-8") as source:
+        record = json.load(source)
+    if not isinstance(record, list) or len(record) < 2:
+        raise ValueError("expected a collection list containing a count and entries")
+    if not isinstance(record[0], int) or isinstance(record[0], bool) or record[0] < 0:
+        raise ValueError("the saved collection count must be a nonnegative integer")
+    if not isinstance(record[1], list) or any(not isinstance(item, dict) for item in record[1]):
+        raise ValueError("saved collection entries must be a list of objects")
+    return record
+
+
+# Accepts finite numeric values without overflowing on unusually large integers
+def finite_number(value):
+    import math
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return False
+    try:
+        return math.isfinite(value)
+    except OverflowError:
+        return False
+
+
+# Preserves inline credentials privately before setup replaces their only saved source
+def preserve_inline_config_secrets(config_path, env_path):
+    from dotenv import dotenv_values
+    source = Path(config_path).expanduser()
+    if not source.is_file():
+        return None
+    original = {}
+    if not load_config_file(source, namespace=original, report_errors=False):
+        raise ValueError("Existing configuration could not be read before preserving its inline secrets")
+    defaults = _config_template_defaults()
+    destination = Path(env_path).expanduser()
+    saved = dotenv_values(str(destination), interpolate=False) if destination.exists() else {}
+    updates = {}
+    for key in SECRET_KEYS:
+        value = original.get(key)
+        if isinstance(value, str) and value and value != defaults.get(key) and saved.get(key) is None:
+            updates[key] = value
+    if not updates:
+        return None
+    try:
+        return update_dotenv_file(destination, updates)
+    except Exception as exc:
+        raise OSError(f"Could not preserve inline secrets in '{destination}'. The original configuration was not replaced") from exc
+
+
 # Removes inline secret assignments from a setup backup while preserving other configuration text
 def redact_config_backup(content):
     import ast
@@ -8929,8 +8978,6 @@ def load_config_file(config_path, namespace=None, error_out=None, report_errors=
         details = [f"Config file '{config_path}' has invalid Python syntax"]
         if exc.lineno is not None:
             details.append(f"line {exc.lineno}")
-        if exc.text:
-            details.append(f"Source: {exc.text.rstrip()}")
         details.append(f"Parser: {exc.msg}")
         detail = " | ".join(details)
         summary = details[0] + (f" at line {exc.lineno}" if exc.lineno is not None else "")
@@ -9656,7 +9703,7 @@ def runtime_boolean_errors() -> List[str]:
 # Lists numeric settings that cannot be used by monitoring or Doctor
 def runtime_numeric_errors() -> List[str]:
     numeric_values = (("SPOTIFY_CHECK_INTERVAL", SPOTIFY_CHECK_INTERVAL, 1, None), ("SPOTIFY_ERROR_INTERVAL", SPOTIFY_ERROR_INTERVAL, 0, None), ("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL, 0, None), ("PLAYLISTS_LIMIT", PLAYLISTS_LIMIT, 1, None), ("RECENTLY_PLAYED_ARTISTS_LIMIT", RECENTLY_PLAYED_ARTISTS_LIMIT, 0, None), ("RECENTLY_PLAYED_ARTISTS_LIMIT_INFO", RECENTLY_PLAYED_ARTISTS_LIMIT_INFO, 0, None), ("PLAYLISTS_DISAPPEARED_COUNTER", PLAYLISTS_DISAPPEARED_COUNTER, 1, None), ("FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER", FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER, 1, None), ("COLLABORATORS_CHANGE_COUNTER", COLLABORATORS_CHANGE_COUNTER, 0, None), ("PLAYLISTS_CHANGE_COUNTER", PLAYLISTS_CHANGE_COUNTER, 0, None), ("TRUNCATE_CHARS", TRUNCATE_CHARS, 0, None), ("SMTP_PORT", SMTP_PORT, 1, 65535))
-    return [f"{name}={value!r}" for name, value, minimum, maximum in numeric_values if not isinstance(value, (int, float)) or isinstance(value, bool) or value < minimum or maximum is not None and value > maximum]
+    return [f"{name}={value!r}" for name, value, minimum, maximum in numeric_values if not finite_number(value) or value < minimum or maximum is not None and value > maximum]
 
 
 # Validates effective settings and file destinations without writing them
@@ -11139,6 +11186,7 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
         raise SystemExit(1) from None
     config_content = generate_config_with_current_values(state.config_values)
     try:
+        preserve_inline_config_secrets(config_path, state.env_path)
         write_status = write_config_file(state.config_path, config_content, redact_secrets=True)
     except Exception as exc:
         print(f"Setup could not write configuration file '{state.config_path}': {sanitize_error_text(exc)}")
@@ -11383,10 +11431,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     if DETECT_CHANGES_IN_PLAYLISTS:
         if os.path.isfile(playlists_file):
             try:
-                with open(playlists_file, 'r', encoding="utf-8") as f:
-                    playlists_read = json.load(f)
+                playlists_read = read_collection_record(playlists_file)
             except Exception as e:
-                print_operation_error(f"Playlist history could not be loaded from '{playlists_file}'", e)
+                print_operation_error(f"Playlist history could not be loaded from '{playlists_file}': {e}. Correct the file or move it aside to start a new baseline", e)
+                raise SystemExit(1) from None
             if playlists_read:
                 playlists_old_count = playlists_read[0]
                 playlists_old = playlists_read[1]
@@ -11411,10 +11459,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     # followers
     if os.path.isfile(followers_file):
         try:
-            with open(followers_file, 'r', encoding="utf-8") as f:
-                followers_read = json.load(f)
+            followers_read = read_collection_record(followers_file)
         except Exception as e:
-            print_operation_error(f"Follower history could not be loaded from '{followers_file}'", e)
+            print_operation_error(f"Follower history could not be loaded from '{followers_file}': {e}. Correct the file or move it aside to start a new baseline", e)
+            raise SystemExit(1) from None
         if followers_read:
             followers_old_count = followers_read[0]
             followers_old = followers_read[1]
@@ -11439,10 +11487,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     # followings
     if os.path.isfile(followings_file):
         try:
-            with open(followings_file, 'r', encoding="utf-8") as f:
-                followings_read = json.load(f)
+            followings_read = read_collection_record(followings_file)
         except Exception as e:
-            print_operation_error(f"Following history could not be loaded from '{followings_file}'", e)
+            print_operation_error(f"Following history could not be loaded from '{followings_file}': {e}. Correct the file or move it aside to start a new baseline", e)
+            raise SystemExit(1) from None
         if followings_read:
             followings_old_count = followings_read[0]
             followings_old = followings_read[1]
@@ -13406,6 +13454,11 @@ def main():
         command_env = "none" if args.env_file and args.env_file.casefold() == "none" else env_path
         _wizard_print_monitor_after_doctor(command_config, command_env, args.user_id, TARGET_USER_URI_ID, doctor_exit=doctor_exit)
         sys.exit(doctor_exit)
+
+    configuration_errors = runtime_numeric_errors() + runtime_boolean_errors()
+    if configuration_errors:
+        print_recovery_advice(make_recovery_advice("config.invalid", "Invalid settings: " + ". ".join(configuration_errors), recovery_fix_with_guide("Correct the reported settings in the configuration file or command line", CONFIG_GUIDE_URL), False))
+        sys.exit(1)
 
     if (EMAIL_IMAGES or NTFY_IMAGES) and not NOTIFICATION_IMAGES_AVAILABLE:
         print(render_recovery_error(RecoveryError(missing_dependency_advice("Pillow", "Email and ntfy alerts are sent without artwork", notification_images_install_command()))))

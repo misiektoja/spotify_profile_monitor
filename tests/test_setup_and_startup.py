@@ -1309,6 +1309,18 @@ def test_a_missing_target_prints_the_banner_first():
 
 # Verifies both test commands carry the subject, title and body shared with the sibling monitors
 def test_the_test_messages_use_the_shared_wording(monkeypatch):
+    import requests
+
+    # Keeps the real connectivity request while avoiding a live service dependency
+    def send(session, request, **kwargs):
+        response = requests.Response()
+        response.request = request
+        response.url = request.url
+        response.status_code = 200
+        response._content = b"OK"
+        return response
+
+    monkeypatch.setattr(requests.Session, "send", send)
     email = Mock(return_value=0)
     delivery = Mock(return_value=0)
     monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", None)
