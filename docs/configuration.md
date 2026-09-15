@@ -395,6 +395,8 @@ Spotify Profile Monitor sends the alert body as a native UTF-8 ntfy message and 
 
 The ntfy provider needs no request template. `WEBHOOK_TEMPLATE`, `WEBHOOK_USERNAME` and `WEBHOOK_AVATAR_URL` shape the Discord embed only and are ignored when `WEBHOOK_PROVIDER` is `"ntfy"`. To customize ntfy delivery, add ntfy options such as priority or tags through `WEBHOOK_HEADERS` (for example `X-Priority` or `X-Tags`).
 
+Discord alerts carry the same emphasis as the HTML email, since Discord renders markdown in an embed. Bold values stay bold and links stay clickable. Only Discord gets that wording: ntfy receives the plain body, because it would show the markers literally.
+
 Profile and playlist artwork is disabled by default and needs the optional artwork extra (`pip install "spotify_profile_monitor[notification-images]"`). Enable it in `spotify_profile_monitor.conf` once the extra is installed:
 
 ```ini
