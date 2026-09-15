@@ -244,3 +244,44 @@ def test_artwork_requirement_follows_the_running_interpreter():
 def test_artwork_install_command_names_the_extra():
     assert "spotify_profile_monitor[notification-images]" in monitor.notification_images_install_command("pip")
     assert monitor.notification_images_requirement() in monitor.notification_images_install_command("manual")
+
+
+@pytest.mark.parametrize("playlist_name,expected", [("dark techno/electronica", "dark techno-electronica"), ("Hardgroove Techno / House", "Hardgroove Techno - House"), ("Hypnotic Trance / Techno / House", "Hypnotic Trance - Techno - House"), ("Artist: Best of", "Artist - Best of"), ("Live @ 22:00", "Live @ 22-00"), ("back\\slash|pipe", "back-slash-pipe")])
+# A separator that simply vanished used to fuse the words around it, so it becomes a dash that keeps the original spacing
+def test_export_names_turn_separators_into_dashes(playlist_name, expected):
+    assert monitor.sanitize_playlist_file_name(playlist_name) == expected
+
+
+# Exports must stay readable when the directory is copied to another OS, so Windows-invalid characters go on every platform
+def test_export_names_are_valid_on_every_platform():
+    assert monitor.sanitize_playlist_file_name('a*b?c"d<e>f') == "abcdef"
+    assert monitor.sanitize_playlist_file_name("CON") == "CON_"
+    assert monitor.sanitize_playlist_file_name("trailing dot.") == "trailing dot"
+
+
+# Emoji are valid in file names on every supported platform and identify a playlist, so sanitizing must leave them alone
+def test_export_names_keep_emoji():
+    assert monitor.sanitize_playlist_file_name("BDSM 🔥⛓ (dark techno/electronica)") == "BDSM 🔥⛓ (dark techno-electronica)"
+
+
+# Removing a character between two spaces would otherwise leave a gap that reads as a bug
+def test_export_names_collapse_whitespace():
+    assert monitor.sanitize_playlist_file_name("Move your body  *  Do tanczenia") == "Move your body Do tanczenia"
+    assert monitor.sanitize_playlist_file_name("   ") == "playlist"
+
+
+# The export progress bar needs its total before the first export, so the count must apply the same skip rules as the loop
+def test_exportable_count_matches_the_export_rules(monkeypatch):
+    monkeypatch.setattr(monitor, "IGNORE_SPOTIFY_PLAYLISTS", True)
+    playlists = [
+        {"uri": "spotify:playlist:keep1", "owner": "spotify:user:someone", "owner_uri": "spotify:user:someone"},
+        {"uri": "spotify:playlist:keep2", "owner": "spotify:user:someone", "owner_uri": "spotify:user:someone"},
+        {"uri": "spotify:playlist:official", "owner": "spotify:user:spotify", "owner_uri": "spotify:user:spotify"},
+        {"uri": "spotify:playlist:restricted", "owner": "spotify:user:someone", "owner_uri": "spotify:user:someone", "restricted": True},
+        {"uri": "spotify:playlist:skipped", "owner": "spotify:user:someone", "owner_uri": "spotify:user:someone"},
+        {"name": "no uri"},
+    ]
+
+    assert monitor.count_exportable_playlists(playlists, ["skipped"]) == 2
+    assert monitor.count_exportable_playlists([], []) == 0
+    assert monitor.count_exportable_playlists(None, []) == 0

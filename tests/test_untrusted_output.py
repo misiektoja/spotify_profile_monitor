@@ -119,6 +119,45 @@ def test_display_progress_sanitizes_playlist_name(monkeypatch):
     assert "\x1b" not in output[3:] and "\r" not in output[1:]
 
 
+# The export bar overwrites its own line, so a redirected stream or a log file must never receive the escape sequences
+def test_export_progress_stays_out_of_non_terminal_output(monkeypatch):
+    terminal = StringIO()
+    monkeypatch.setattr(monitor, "stdout_bck", terminal)
+    monkeypatch.setattr(monitor, "CLEAN_OUTPUT", False)
+    monitor._display_export_progress(1, 2, "Chill Vibes")
+    monitor._clear_export_progress()
+
+    assert terminal.getvalue() == ""
+
+
+# The bar is transient because the permanent export result reclaims its line, so clearing must erase what was drawn
+def test_export_progress_is_drawn_then_cleared(monkeypatch):
+    terminal = StringIO()
+    monkeypatch.setattr(terminal, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(monitor, "stdout_bck", terminal)
+    monkeypatch.setattr(monitor, "CLEAN_OUTPUT", False)
+    monitor._display_export_progress(1, 2, HOSTILE_NAME)
+
+    drawn = terminal.getvalue()
+    assert "Exporting" in drawn and "(1/2)" in drawn
+    assert drawn.startswith("\r\x1b[K")
+    assert "\x1b" not in drawn[3:] and "\r" not in drawn[1:]
+
+    monitor._clear_export_progress()
+    assert terminal.getvalue() == drawn + "\r\x1b[K"
+
+
+# A zero total means nothing will be exported, so the bar must not divide by it or draw an empty run
+def test_export_progress_skips_an_empty_run(monkeypatch):
+    terminal = StringIO()
+    monkeypatch.setattr(terminal, "isatty", lambda: True, raising=False)
+    monkeypatch.setattr(monitor, "stdout_bck", terminal)
+    monkeypatch.setattr(monitor, "CLEAN_OUTPUT", False)
+    monitor._display_export_progress(0, 0, "Chill Vibes")
+
+    assert terminal.getvalue() == ""
+
+
 @pytest.mark.parametrize("value,expected", [("=cmd|'/c calc'!A1", "'=cmd|'/c calc'!A1"), ("+1", "'+1"), ("-2+3", "'-2+3"), ("@SUM(A1)", "'@SUM(A1)"), ("\tx", "'\tx"), ("\rx", "'\rx"), ("Normal Track", "Normal Track"), ("", ""), (7, 7), (None, None)])
 # Confirms only formula-leading strings are prefixed and every other value is left alone
 def test_escape_csv_formula(value, expected):
