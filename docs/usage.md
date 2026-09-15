@@ -238,7 +238,7 @@ To disable sending an email on errors (enabled by default):
 spotify_profile_monitor <spotify_target> -e
 ```
 
-An error alert goes out once the same failure has lasted **5 minutes**, so a short outage or one lost request reaches nobody, while a failure that cannot clear on its own, such as an expired sp_dc cookie, is alerted at once. Each kind of failure alerts once per channel, a channel that could not deliver is tried again on the next failing check and a run that recovered alerts again when it fails later. The same rule governs the webhook error alert.
+An error alert goes out once the same failure has lasted **5 minutes**, so a short outage or one lost request reaches nobody, while a failure that cannot clear on its own, such as an expired sp_dc cookie, is alerted at once. Each kind of failure alerts once per channel. A channel that could not deliver is tried again on a later failing check, after **5 minutes** at first and then after twice the previous wait, up to an hour. A run that recovered alerts again when it fails later. The same rule governs the webhook error alert.
 
 Make sure you defined your SMTP settings earlier (see [SMTP settings](configuration.md#smtp-settings)).
 

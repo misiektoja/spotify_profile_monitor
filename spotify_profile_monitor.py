@@ -1016,6 +1016,44 @@ PLAYLISTS_PENDING_CACHE = {}
 LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL > 0 else 0
 # How long a failure the tool can retry away must last before it is alerted, a failure it cannot is alerted at once
 ERROR_ALERT_AFTER_SECONDS = 300  # 5 minutes
+# How long a channel that could not deliver an error alert waits before the next attempt, doubled on every further failure up to the cap
+ERROR_ALERT_RETRY_SECONDS = 300  # 5 minutes
+ERROR_ALERT_RETRY_MAX_SECONDS = 3600  # 1 hour
+
+
+# Tracks the error alert per channel: what was delivered, and how long a channel that failed waits before the next attempt
+class ErrorAlertState:
+    # Starts with nothing delivered and no channel on hold
+    def __init__(self) -> None:
+        self.email_sent = False
+        self.webhook_sent = False
+        self.email_failures = 0
+        self.webhook_failures = 0
+        self.email_retry_at = 0
+        self.webhook_retry_at = 0
+
+    # Forgets the delivered alert and any hold, so the next failure earns each channel a new one
+    def reset(self) -> None:
+        self.__init__()
+
+    # Tells whether a channel still owes the alert and its wait after a failed attempt, if any, has passed
+    def pending(self, channel: str, enabled, now: int) -> bool:
+        return bool(enabled) and not getattr(self, f"{channel}_sent") and now >= getattr(self, f"{channel}_retry_at")
+
+    # Records one attempt, holding a channel that failed for a growing wait so a broken server is not dialled on every check
+    def record(self, channel: str, attempted: bool, delivered: bool, now: int) -> None:
+        if not attempted:
+            return
+        if delivered:
+            setattr(self, f"{channel}_sent", True)
+            setattr(self, f"{channel}_failures", 0)
+            setattr(self, f"{channel}_retry_at", 0)
+            return
+        failures = getattr(self, f"{channel}_failures") + 1
+        delay = min(ERROR_ALERT_RETRY_SECONDS * 2 ** (failures - 1), ERROR_ALERT_RETRY_MAX_SECONDS)
+        setattr(self, f"{channel}_failures", failures)
+        setattr(self, f"{channel}_retry_at", now + delay)
+        print(f"* The {channel} alert is on hold for {display_time(delay)} after {failures} {'attempt' if failures == 1 else 'attempts'}, then tried again")
 
 stdout_bck = None
 csvfieldnames = ['Date', 'Type', 'Name', 'Old', 'New']
@@ -2968,11 +3006,6 @@ def notification_channels_enabled(notification_type: str, email_enabled: bool = 
     return bool(email_enabled or webhook_event_enabled(notification_type))
 
 
-# Returns whether either enabled notification channel has not attempted one event
-def notification_channels_pending(notification_type: str, email_enabled: bool, email_attempted: bool, webhook_attempted: bool) -> bool:
-    return bool((email_enabled and not email_attempted) or (webhook_event_enabled(notification_type) and not webhook_attempted))
-
-
 # Parses a webhook rate-limit delay and caps untrusted server values to a short wait
 def webhook_retry_after_seconds(response: Any) -> float:
     candidates = []
@@ -3421,12 +3454,6 @@ def send_notification_channels(notification_type: str, subject: str, body: str, 
         print(f"Sending webhook notification via {webhook_provider_display_name()}")
         send_webhook(subject, body, notification_type, force=True, image_url=image_url)
     return email_attempted, webhook_attempted
-
-
-# Sends one error only through notification channels that have not attempted it
-def send_pending_error_notification(subject: str, body: str, body_html: str, email_attempted: bool, webhook_attempted: bool) -> Tuple[bool, bool]:
-    email_sent_now, webhook_sent_now = send_notification_channels("error", subject, body, body_html, email_enabled=ERROR_NOTIFICATION and not email_attempted, webhook_enabled=webhook_event_enabled("error") and not webhook_attempted)
-    return email_attempted or email_sent_now, webhook_attempted or webhook_sent_now
 
 
 # Prefixes one CSV value so spreadsheet software cannot evaluate Spotify-supplied text as a formula
@@ -10896,8 +10923,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     except Exception as e:
         print_recovery_error(e, "file_write")
 
-    email_sent = False
-    webhook_sent = False
+    error_alert = ErrorAlertState()
 
     mark_monitoring_started()
 
@@ -11195,8 +11221,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         playlists_old_count = playlists_count
 
     time.sleep(SPOTIFY_CHECK_INTERVAL)
-    email_sent = False
-    webhook_sent = False
+    error_alert.reset()
     alive_since = int(time.time())
     check_count = 0
 
@@ -11218,8 +11243,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             else:
                 sp_accessToken = spotify_get_access_token_from_sp_dc(SP_DC_COOKIE)
             sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS, 0)
-            email_sent = False
-            webhook_sent = False
+            error_alert.reset()
             monitor_recovery_tracker.reset()
             outage_lasted = outage.recovered()
             if outage_lasted is not None:
@@ -11258,12 +11282,17 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
             # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
             alert_due = not advice.retryable or int(time.time()) - outage.since >= ERROR_ALERT_AFTER_SECONDS
-            if alert_due and notification_channels_pending("error", ERROR_NOTIFICATION, email_sent, webhook_sent):
+            now = int(time.time())
+            error_email_pending = alert_due and error_alert.pending("email", ERROR_NOTIFICATION, now)
+            error_webhook_pending = alert_due and error_alert.pending("webhook", webhook_event_enabled("error"), now)
+            if error_email_pending or error_webhook_pending:
                 safe_detail = sanitize_error_text(e)
                 m_subject = f"spotify_profile_monitor: {advice.summary} (uri: {user_uri_id})"
                 m_body = f"{advice.summary}\n\nTo fix: {advice.fix}\n\nTechnical detail: {safe_detail}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
                 m_body_html = f"<html><head></head><body>{html_text(advice.summary)}<br><br>To fix: {html_text(advice.fix)}<br><br>Technical detail: {html_text(safe_detail)}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
-                email_sent, webhook_sent = send_pending_error_notification(m_subject, m_body, m_body_html, email_sent, webhook_sent)
+                email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, m_body_html, email_enabled=error_email_pending, webhook_enabled=error_webhook_pending)
+                error_alert.record("email", error_email_pending, email_delivered, now)
+                error_alert.record("webhook", error_webhook_pending, webhook_delivered, now)
 
             if outage_outcome in ("full", "changed"):
                 print_cur_ts("Timestamp:\t\t\t")
