@@ -790,6 +790,8 @@ DISABLE_LOGGING = False
 ASCII_LOG_SEPARATORS = "Auto"
 TRUNCATE_CHARS = 0
 HORIZONTAL_LINE = 0
+# Counts the reports printed so far, so a check can tell whether it said anything before the banner claims it was quiet
+REPORTS_PRINTED = 0
 CLEAR_SCREEN = False
 COLORED_OUTPUT = False
 COLOR_THEME: dict = {}
@@ -2483,6 +2485,14 @@ def active_config_path():
     return CLI_CONFIG_PATH or ("none" if CONFIG_DISCOVERY_DISABLED else None)
 
 
+# Returns the config a printed command should name, so a run started with discovery off cannot point the reader
+# at a file it deliberately ignored
+def resolved_command_config(config_path=None):
+    if CONFIG_DISCOVERY_DISABLED or (config_path is not None and str(config_path).casefold() == "none"):
+        return "none"
+    return config_path or find_config_file()
+
+
 # Returns an install-aware Firefox cookie recovery command
 def cookie_auth_recovery_fix() -> str:
     # The import reads the config and writes the dotenv, so the config sentinel is carried while the dotenv one is not
@@ -3578,6 +3588,8 @@ def get_cur_ts(ts_str=""):
 
 # Prints the current date/time in human readable format with separator; eg. Sun 21 Apr 2024, 15:08:45
 def print_cur_ts(ts_str=""):
+    global REPORTS_PRINTED
+    REPORTS_PRINTED += 1
     print(get_cur_ts(str(ts_str)))
     print("─" * HORIZONTAL_LINE)
 
@@ -4383,6 +4395,8 @@ def spotify_get_access_token_from_oauth_app(sp_client_id, sp_client_secret):
 
     session = req.Session()
     session.headers.update({'User-Agent': USER_AGENT})
+    # Spotipy owns the requests this session makes, so the setting is applied here rather than per call like everywhere else
+    session.verify = VERIFY_SSL
 
     auth_manager = SpotifyClientCredentials(client_id=sp_client_id, client_secret=sp_client_secret, cache_handler=cache_handler, requests_session=session)  # type: ignore[arg-type]
 
@@ -4423,6 +4437,8 @@ def spotify_get_access_token_from_oauth_user(sp_client_id, sp_client_secret, red
 
     session = req.Session()
     session.headers.update({'User-Agent': USER_AGENT})
+    # Spotipy owns the requests this session makes, so the setting is applied here rather than per call like everywhere else
+    session.verify = VERIFY_SSL
 
     if sp_client_secret:
         # Use standard Authorization Code flow with client secret
@@ -7898,15 +7914,35 @@ def _config_value_comment(comment: str, template_expression: str, value: Any) ->
     return f"# {restated}" if restated else ""
 
 
+# Renders an explicit assignment for a setting the template ships commented out, so overrides the user wrote
+# survive a rewrite instead of being replaced by the commented default
+def _rendered_commented_setting(variable: str, values) -> List[str]:
+    value = values.get(variable)
+    if not isinstance(value, dict) or not value:
+        return []
+    lines = ["", f"{variable} = {{"]
+    lines.extend(f"    {_format_config_value(str(name), True)}: {_format_config_value(str(setting), True)}," for name, setting in value.items())
+    lines.append("}")
+    return lines
+
+
 # Renders CONFIG_BLOCK with current non-secret values and original secret placeholders
 def generate_config_with_current_values(values=None) -> str:
     current_values = globals() if values is None else values
     assignment_pattern = re.compile(r"^([A-Z][A-Z0-9_]*)\s*=\s*(.*)$")
+    commented_pattern = re.compile(r"^#\s*([A-Z][A-Z0-9_]*)\s*=\s*\{$")
+    commented_block = ""
     output_lines = []
     for line in CONFIG_BLOCK.strip("\n").splitlines():
         stripped = line.strip()
         if not stripped or stripped.startswith("#"):
             output_lines.append(line)
+            commented_match = commented_pattern.match(stripped)
+            if commented_match and commented_match.group(1) in COMMENTED_CONFIG_SETTINGS:
+                commented_block = commented_match.group(1)
+            elif commented_block and stripped == "# }":
+                output_lines.extend(_rendered_commented_setting(commented_block, current_values))
+                commented_block = ""
             continue
         match = assignment_pattern.match(line)
         if not match:
@@ -8496,7 +8532,7 @@ def run_browser_cookie_import(browser="firefox", browser_profile=None, cookie_fi
         raise BrowserCookieImportError(f"Could not update dotenv destination '{destination}'. Check the path and file permissions.") from None
     print("* Browser cookie import completed successfully\n")
     method = _wizard_install_method()
-    selected_config = config_path or find_config_file()
+    selected_config = resolved_command_config(config_path)
     doctor_target, monitor_target = _wizard_command_targets(target, _config_file_target(selected_config) if saved_target is None else saved_target)
     _wizard_print_command("Check setup again:", _wizard_action_command(method, "--doctor", selected_config, destination, doctor_target))
     _wizard_print_command("After Doctor passes, start monitoring:", _wizard_action_command(method, "", selected_config, destination, monitor_target))
@@ -8536,7 +8572,7 @@ def run_set_sp_dc(env_file=None, interactive=None, input_func=None, getpass_func
     print(f"* Updated private settings file: {destination}")
     print()
     method = _wizard_install_method()
-    selected_config = config_path or find_config_file()
+    selected_config = resolved_command_config(config_path)
     doctor_target, monitor_target = _wizard_command_targets(None, _config_file_target(selected_config))
     _wizard_print_command("Check setup again:", _wizard_action_command(method, "--doctor", selected_config, destination, doctor_target))
     _wizard_print_command("After Doctor passes, start monitoring:", _wizard_action_command(method, "", selected_config, destination, monitor_target))
@@ -8571,7 +8607,7 @@ def run_set_webhook_url(env_file=None, interactive=None, input_func=None, getpas
     except Exception:
         raise WebhookConfigurationError(f"Could not save the webhook URL in '{destination}'. Check file permissions or choose another path with --env-file.") from None
     method = _wizard_install_method()
-    selected_config = config_path or find_config_file()
+    selected_config = resolved_command_config(config_path)
     test_command = _wizard_action_command(method, "--send-test-webhook", selected_config, destination)
     doctor_command = _wizard_action_command(method, "--doctor", selected_config, destination)
     print("* Webhook URL looks valid")
@@ -8664,7 +8700,7 @@ def run_set_smtp_password(env_file=None, interactive=None, input_func=None, getp
     except Exception as exc:
         raise RecoveryError(classify_recovery_error(exc, context="file_write", detail=f"Cannot save SMTP_PASSWORD to '{destination}'"), exc) from None
     method = _wizard_install_method()
-    selected_config = config_path or find_config_file()
+    selected_config = resolved_command_config(config_path)
     print(f"* The mail server accepted the password for {signed_in_user}")
     print(f"* Updated private settings file: {destination}")
     # Startup loads the dotenv file without overriding the environment, so a saved replacement that an export
@@ -8725,7 +8761,7 @@ def early_config_file_argument(arguments=None):
 # The startup banner and the screen clear both run before the config file is loaded, so colour has to be
 # resolved here or a configured COLORED_OUTPUT would only take effect after the first output was written
 def apply_early_output_config() -> None:
-    global CLEAR_SCREEN, COLORED_OUTPUT
+    global CLEAR_SCREEN, COLORED_OUTPUT, COLOR_THEME
     try:
         cli_path = early_config_file_argument()
         if cli_path is not None and cli_path.casefold() == "none":
@@ -8743,6 +8779,10 @@ def apply_early_output_config() -> None:
         CLEAR_SCREEN = values["CLEAR_SCREEN"]
     if isinstance(values.get("COLORED_OUTPUT"), bool):
         COLORED_OUTPUT = values["COLORED_OUTPUT"]
+    # --help is printed and exited from inside argparse, long before the config load, so the help_* overrides
+    # have to be here or they could never colour the one screen they name. Unusable styles are dropped downstream
+    if isinstance(values.get("COLOR_THEME"), dict):
+        COLOR_THEME = values["COLOR_THEME"]
 
 
 # Loads one UTF-8 config atomically and reports exact failures and ignored settings safely
@@ -10720,7 +10760,12 @@ def _wizard_normalize_csv_path(answer: str) -> str:
 def _wizard_collect_output_section(state: WizardSetupState) -> None:
     _wizard_reset_section(state, WIZARD_OUTPUT_CONFIG_KEYS, ())
     state.config_values["DISABLE_LOGGING"] = not _wizard_ask_yes_no("Write the normal per-target log file?", default=not bool(state.config_values.get("DISABLE_LOGGING")))
-    state.config_values["CSV_FILE"] = _wizard_normalize_csv_path(_wizard_ask_text("Optional CSV output path (blank disables it)", default=str(state.config_values.get("CSV_FILE") or "")))
+    saved_csv = str(state.config_values.get("CSV_FILE") or "")
+    # Asked as its own question, since Enter on the path prompt takes the shown default and so could never clear a saved one
+    if _wizard_ask_yes_no("Write a CSV file of the changes?", default=bool(saved_csv)):
+        state.config_values["CSV_FILE"] = _wizard_normalize_csv_path(_wizard_ask_text("CSV output path", default=saved_csv, required=True))
+    else:
+        state.config_values["CSV_FILE"] = ""
 
 
 # Lets the user change file destinations and recollects secret-bearing sections
@@ -10829,18 +10874,21 @@ def _wizard_load_effective_setup(config_path: Path, env_path: Path) -> bool:
     global USER_AGENT
     if not load_config_file(config_path):
         return False
-    if env_path.is_file():
-        try:
-            from dotenv import dotenv_values
-            parsed = dotenv_values(str(env_path), interpolate=False)
-            for key in SECRET_KEYS:
-                if parsed.get(key) is not None:
-                    globals()[key] = parsed[key]
-                    # A secret exported before startup still wins at the next start, so the export keeps the credit
-                    record_secret_source(key, "environment" if key in EXPORTED_SECRET_KEYS else "dotenv file")
-        except Exception as exc:
-            print_operation_error(f"Dotenv file '{env_path}' could not be loaded", exc, context="file_read")
-            return False
+    try:
+        # The same precedence startup applies, so Doctor checks the values the next run resolves rather than the
+        # file's copy of a secret an export shadows
+        for key in SECRET_KEYS:
+            value, from_export = effective_secret_after_setup(key, env_path, {})
+            if not value:
+                continue
+            globals()[key] = value
+            if from_export:
+                record_secret_source(key, "environment")
+            else:
+                record_secret_source(key, "dotenv file" if _wizard_saved_secret_value(key, env_path) else "configuration file or command line")
+    except Exception as exc:
+        print_operation_error(f"Dotenv file '{env_path}' could not be loaded", exc, context="file_read")
+        return False
     if not USER_AGENT:
         USER_AGENT = get_random_spotify_user_agent() if TOKEN_SOURCE == "client" else get_random_user_agent()
     return True
@@ -11352,6 +11400,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     # Primary loop
     while True:
         check_count += 1
+        reports_before_check = REPORTS_PRINTED
         debug_print("Starting check", check=f"#{check_count}", user=user_uri_id, token_source=TOKEN_SOURCE, check_interval=SPOTIFY_CHECK_INTERVAL, error_interval=SPOTIFY_ERROR_INTERVAL)
         # Sometimes Spotify network functions halt even though we specified the timeout
         # To overcome this we use alarm signal functionality to kill it inevitably, not available on Windows
@@ -11371,7 +11420,6 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             outage_lasted = outage.recovered()
             if outage_lasted is not None:
                 print_outage_recovery(user_uri_id, outage_lasted)
-                alive_since = int(time.time())
             _restore_timeout_alarm(alarm_state)
         except TimeoutException as e:
             _restore_timeout_alarm(alarm_state)
@@ -11456,7 +11504,6 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             follower_lasted = follower_outage.recovered()
             if follower_lasted is not None:
                 print_outage_recovery(user_uri_id, follower_lasted)
-                alive_since = int(time.time())
         except Exception as e:
             follower_advice = classify_recovery_error(e, f"{TOKEN_SOURCE}_auth")
 
@@ -12300,7 +12347,11 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
         debug_print("Completed check", check=f"#{check_count}", user=user_uri_id, next=display_time(SPOTIFY_CHECK_INTERVAL))
 
-        if LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
+        # The banner speaks for a quiet, complete check, so anything this one reported or could not finish
+        # restarts the clock instead of being contradicted by it
+        if REPORTS_PRINTED != reports_before_check or error_while_processing:
+            alive_since = int(time.time())
+        elif LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
             print_liveness_banner(f"Monitoring healthy for {user_uri_id}. No profile or playlist change since the last check")
             alive_since = int(time.time())
 
