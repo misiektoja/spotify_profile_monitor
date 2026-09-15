@@ -8910,17 +8910,6 @@ def _wizard_set_sp_dc_cmd(method: str, env_path=None, exact: bool = False, confi
     return _wizard_render_command(parts)
 
 
-# Returns an exact hidden webhook destination entry command
-def _wizard_set_webhook_url_cmd(method: str, env_path=None, exact: bool = False, config_path=None) -> str:
-    parts = list(_wizard_local_command_args(method, exact=exact))
-    parts.append("--set-webhook-url")
-    if config_path is not None:
-        parts.extend(("--config-file", str(Path(config_path).expanduser().resolve())))
-    if env_path is not None:
-        parts.extend(("--env-file", str(Path(env_path).expanduser().resolve())))
-    return _wizard_render_command(parts)
-
-
 # Prints the exact monitoring command after a successful Doctor run
 def _wizard_print_monitor_after_doctor(config_path, env_path, target: Optional[str] = None, saved_target: Optional[str] = None, doctor_exit: int = 0) -> None:
     command = _wizard_action_command(_wizard_install_method(), "", config_path, env_path, _wizard_command_targets(target, saved_target)[1])
@@ -8957,7 +8946,7 @@ def _build_help_epilog() -> str:
             ("Start monitoring, a complete profile URL, spotify:user URI or user ID all work", f"{prefix} <spotify_target>"),
         )),
         ("Notifications", (
-            ("Save a Discord or ntfy destination through a hidden prompt", _wizard_set_webhook_url_cmd(method)),
+            ("Email when the user's profile changes", f"{prefix} <spotify_target> -p"),
             ("Send one test email", f"{prefix} --send-test-email"),
             ("Send one test webhook", f"{prefix} --send-test-webhook"),
         )),
