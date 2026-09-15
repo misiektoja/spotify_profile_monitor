@@ -53,7 +53,7 @@ def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answer
     def record_delivery(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, **_keywords):
         calls.append({"type": notification_type, "subject": subject, "body": body, "body_html": body_html, "email": email_enabled, "webhook": webhook_enabled})
         delivered = deliveries.pop(0) if deliveries else True
-        return monitor.NotificationOutcome(bool(email_enabled), bool(webhook_enabled), bool(email_enabled) and delivered, bool(webhook_enabled) and delivered)
+        return bool(email_enabled) and delivered, bool(webhook_enabled) and delivered
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(monitor.time, "sleep", stopping_sleep)

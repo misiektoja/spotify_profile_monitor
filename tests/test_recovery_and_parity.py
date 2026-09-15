@@ -1004,10 +1004,7 @@ def test_the_dispatcher_separates_an_attempt_from_a_delivery(monkeypatch):
     monkeypatch.setattr(monitor, "send_email", lambda *arguments, **keywords: 1)
     monkeypatch.setattr(monitor, "send_webhook", lambda *arguments, **keywords: 0)
 
-    outcome = monitor.send_notification_channels("error", "Subject", "Body", email_enabled=True, webhook_enabled=True)
-
-    assert (outcome.email_attempted, outcome.webhook_attempted) == (True, True)
-    assert (outcome.email_delivered, outcome.webhook_delivered) == (False, True)
+    assert monitor.send_notification_channels("error", "Subject", "Body", email_enabled=True, webhook_enabled=True) == (False, True)
 
 
 # Verifies a save that cannot reach its destination names the write failure, since the existing-file advice

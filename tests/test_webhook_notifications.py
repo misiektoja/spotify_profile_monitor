@@ -458,7 +458,7 @@ def test_notification_channels_are_independent(monkeypatch):
     webhook = Mock(return_value=0)
     monkeypatch.setattr(monitor, "send_email", email)
     monkeypatch.setattr(monitor, "send_webhook", webhook)
-    assert monitor.send_notification_channels("profile", "Title", "Body", email_enabled=True) == monitor.NotificationOutcome(True, True, False, True)
+    assert monitor.send_notification_channels("profile", "Title", "Body", email_enabled=True) == (False, True)
     email.assert_called_once()
     webhook.assert_called_once()
 
@@ -470,7 +470,7 @@ def test_notification_channels_embed_email_artwork(monkeypatch):
     monkeypatch.setattr(monitor, "send_email", email)
     monkeypatch.setattr(monitor, "build_email_artwork", Mock(return_value=b"jpeg-data"))
     body_html = "<html><head></head><body>Playlist changed</body></html>"
-    assert monitor.send_notification_channels("profile", "Title", "Body", body_html, email_enabled=True, webhook_enabled=False, email_image_url="https://i.scdn.co/image/playlist.jpg") == monitor.NotificationOutcome(True, False, True, False)
+    assert monitor.send_notification_channels("profile", "Title", "Body", body_html, email_enabled=True, webhook_enabled=False, email_image_url="https://i.scdn.co/image/playlist.jpg") == (True, False)
     request = email.call_args
     assert f'cid:{monitor.EMAIL_ARTWORK_CONTENT_ID}' in request.args[2]
     assert request.kwargs["image_name"] == monitor.EMAIL_ARTWORK_CONTENT_ID
@@ -488,7 +488,7 @@ def test_email_images_setting_disables_remote_artwork_only(monkeypatch):
     monkeypatch.setattr(monitor, "build_email_artwork", Mock(side_effect=AssertionError("email artwork attempted")))
     body_html = "<html><body>Playlist changed</body></html>"
     image_url = "https://i.scdn.co/image/playlist.jpg"
-    assert monitor.send_notification_channels("profile", "Title", "Body", body_html, email_enabled=True, image_url=image_url, email_image_url=image_url) == monitor.NotificationOutcome(True, True, True, True)
+    assert monitor.send_notification_channels("profile", "Title", "Body", body_html, email_enabled=True, image_url=image_url, email_image_url=image_url) == (True, True)
     email.assert_called_once_with("Title", "Body", body_html, monitor.SMTP_SSL)
     assert webhook.call_args.kwargs["image_url"] == image_url
 
@@ -499,7 +499,7 @@ def test_email_images_setting_preserves_profile_picture_attachment(monkeypatch):
     monkeypatch.setattr(monitor, "EMAIL_IMAGES", False)
     monkeypatch.setattr(monitor, "send_email", email)
     body_html = "<html><body>Profile picture changed</body></html>"
-    assert monitor.send_notification_channels("profile", "Title", "Body", body_html, email_enabled=True, webhook_enabled=False, email_image_file="profile.jpg", email_image_name="profile_pic") == monitor.NotificationOutcome(True, False, True, False)
+    assert monitor.send_notification_channels("profile", "Title", "Body", body_html, email_enabled=True, webhook_enabled=False, email_image_file="profile.jpg", email_image_name="profile_pic") == (True, False)
     email.assert_called_once_with("Title", "Body", body_html, monitor.SMTP_SSL, "profile.jpg", "profile_pic")
 
 
@@ -532,7 +532,7 @@ def test_notification_channels_preserve_profile_picture_attachment(monkeypatch):
     email = Mock(return_value=0)
     monkeypatch.setattr(monitor, "send_email", email)
     monkeypatch.setattr(monitor, "build_email_artwork", Mock(side_effect=AssertionError("remote artwork attempted")))
-    assert monitor.send_notification_channels("profile", "Title", "Body", "<html><body>Profile picture changed</body></html>", email_enabled=True, webhook_enabled=False, email_image_file="profile.jpg", email_image_name="profile_pic", email_image_url="https://i.scdn.co/image/profile.jpg") == monitor.NotificationOutcome(True, False, True, False)
+    assert monitor.send_notification_channels("profile", "Title", "Body", "<html><body>Profile picture changed</body></html>", email_enabled=True, webhook_enabled=False, email_image_file="profile.jpg", email_image_name="profile_pic", email_image_url="https://i.scdn.co/image/profile.jpg") == (True, False)
     email.assert_called_once_with("Title", "Body", "<html><body>Profile picture changed</body></html>", monitor.SMTP_SSL, "profile.jpg", "profile_pic")
 
 

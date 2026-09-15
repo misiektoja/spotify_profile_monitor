@@ -3454,38 +3454,29 @@ def send_webhook(title: str, description: str, notification_type: str = "profile
     return 1
 
 
-# What one alert dispatch tried per channel and what each channel actually delivered
-@dataclass(frozen=True)
-class NotificationOutcome:
-    email_attempted: bool
-    webhook_attempted: bool
-    email_delivered: bool
-    webhook_delivered: bool
-
-
 # Sends one alert through the enabled email and webhook channels
-def send_notification_channels(notification_type: str, subject: str, body: str, body_html: str = "", email_enabled: bool = False, webhook_enabled: Optional[bool] = None, image_url: str = "", email_image_file: str = "", email_image_name: str = "image1", email_image_url: str = "") -> NotificationOutcome:
+def send_notification_channels(notification_type: str, subject: str, body: str, body_html: str = "", email_enabled: bool = False, webhook_enabled: Optional[bool] = None, image_url: str = "", email_image_file: str = "", email_image_name: str = "image1", email_image_url: str = "") -> Tuple[bool, bool]:
     email_attempted = bool(email_enabled)
     webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
-    # Both transports report zero for a delivery the far end accepted, so anything else is a failure a caller can retry
-    email_result = 1
-    webhook_result = 1
+    email_delivered = False
+    webhook_delivered = False
     if email_attempted:
         print(f"Sending email notification to {RECEIVER_EMAIL}")
         if email_image_file:
-            email_result = send_email(subject, body, body_html, SMTP_SSL, email_image_file, email_image_name)
+            email_delivered = send_email(subject, body, body_html, SMTP_SSL, email_image_file, email_image_name) == 0
         elif EMAIL_IMAGES and email_image_url:
             email_artwork = build_email_artwork(email_image_url)
             if email_artwork:
-                email_result = send_email(subject, body, add_email_artwork_html(body_html), SMTP_SSL, image_name=EMAIL_ARTWORK_CONTENT_ID, image_bytes=email_artwork)
+                email_delivered = send_email(subject, body, add_email_artwork_html(body_html), SMTP_SSL, image_name=EMAIL_ARTWORK_CONTENT_ID, image_bytes=email_artwork) == 0
             else:
-                email_result = send_email(subject, body, body_html, SMTP_SSL)
+                email_delivered = send_email(subject, body, body_html, SMTP_SSL) == 0
         else:
-            email_result = send_email(subject, body, body_html, SMTP_SSL)
+            email_delivered = send_email(subject, body, body_html, SMTP_SSL) == 0
     if webhook_attempted:
         print(f"Sending webhook notification via {webhook_provider_display_name()}")
-        webhook_result = send_webhook(subject, body, notification_type, force=True, image_url=image_url)
-    return NotificationOutcome(email_attempted, webhook_attempted, email_attempted and email_result == 0, webhook_attempted and webhook_result == 0)
+        webhook_delivered = send_webhook(subject, body, notification_type, force=True, image_url=image_url) == 0
+    # Delivery, not the attempt, so a channel that failed is retried while one that succeeded is not resent
+    return email_delivered, webhook_delivered
 
 
 # Alerts each enabled channel about a failing check once its outage is old enough, and holds a channel that could not deliver
@@ -3502,9 +3493,9 @@ def dispatch_error_alert(state: "ErrorAlertState", advice: "RecoveryAdvice", err
     m_subject = f"spotify_profile_monitor: {advice.summary} (uri: {user_uri_id})"
     m_body = f"{advice.summary}\n\nTo fix: {advice.fix}\n\nTechnical detail: {safe_detail}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
     m_body_html = f"<html><head></head><body>{html_text(advice.summary)}<br><br>To fix: {html_text(advice.fix)}<br><br>Technical detail: {html_text(safe_detail)}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
-    outcome = send_notification_channels("error", m_subject, m_body, m_body_html, email_enabled=email_pending, webhook_enabled=webhook_pending)
-    state.record("email", email_pending, outcome.email_delivered, now)
-    state.record("webhook", webhook_pending, outcome.webhook_delivered, now)
+    email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, m_body_html, email_enabled=email_pending, webhook_enabled=webhook_pending)
+    state.record("email", email_pending, email_delivered, now)
+    state.record("webhook", webhook_pending, webhook_delivered, now)
 
 
 # Prefixes one CSV value so spreadsheet software cannot evaluate Spotify-supplied text as a formula
