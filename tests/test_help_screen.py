@@ -1,5 +1,6 @@
 """Tests the --help screen: the shared argument group names, the task-grouped examples and the startup banner."""
 
+from command_expectations import runtime_command
 import re
 import subprocess
 import sys
@@ -61,7 +62,7 @@ def test_the_wizard_is_the_first_example(help_screen):
     block = help_screen.split("Examples:", 1)[1]
     first = [line.strip() for line in block.splitlines() if line.startswith("  ")][:2]
 
-    assert first == ["# Guided setup, recommended for the first run", "python3 spotify_profile_monitor.py --setup"]
+    assert first == ["# Guided setup, recommended for the first run", runtime_command("python3 spotify_profile_monitor.py --setup")]
 
 
 # Verifies the one-line description carries the repository link in the form the sibling monitors print

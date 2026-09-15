@@ -1026,6 +1026,7 @@ ERROR_ALERT_RETRY_MAX_SECONDS = 3600  # 1 hour
 class ErrorAlertState:
     # Starts with nothing delivered and no channel on hold
     def __init__(self) -> None:
+        self.since: Optional[int] = None
         self.email_sent = False
         self.webhook_sent = False
         self.email_failures = 0
@@ -3483,8 +3484,10 @@ def send_notification_channels(notification_type: str, subject: str, body: str, 
 # Alerts each enabled channel about a failing check once its outage is old enough, and holds a channel that could not deliver
 def dispatch_error_alert(state: "ErrorAlertState", advice: "RecoveryAdvice", error: BaseException, user_uri_id: str, outage_since: int) -> None:
     now = int(time.time())
+    if state.since is None:
+        state.since = outage_since
     # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
-    if advice.retryable and now - outage_since < ERROR_ALERT_AFTER_SECONDS:
+    if advice.retryable and now - state.since < ERROR_ALERT_AFTER_SECONDS:
         return
     email_pending = state.pending("email", ERROR_NOTIFICATION, now)
     webhook_pending = state.pending("webhook", webhook_event_enabled("error"), now)
@@ -4359,6 +4362,14 @@ def spotify_get_access_token_from_sp_dc(sp_dc: str):
 # ----------------------------------------------------------
 
 
+# Applies the configured TLS policy to requests made by Spotipy
+class SpotifyAuthSession(req.Session):
+    # Overrides Spotipy's per-request verification argument before Requests merges settings
+    def request(self, method, url, *args, **kwargs):
+        kwargs["verify"] = VERIFY_SSL
+        return super().request(method, url, *args, **kwargs)
+
+
 # Fetches Spotify access token based on provided sp_client_id & sp_client_secret values (Client Credentials OAuth Flow)
 def spotify_get_access_token_from_oauth_app(sp_client_id, sp_client_secret):
     global SP_CACHED_OAUTH_APP_TOKEN
@@ -4385,9 +4396,8 @@ def spotify_get_access_token_from_oauth_app(sp_client_id, sp_client_secret):
     else:
         cache_handler = MemoryCacheHandler()
 
-    session = req.Session()
+    session = SpotifyAuthSession()
     session.headers.update({'User-Agent': USER_AGENT})
-    # Spotipy owns the requests this session makes, so the setting is applied here rather than per call like everywhere else
     session.verify = VERIFY_SSL
 
     auth_manager = SpotifyClientCredentials(client_id=sp_client_id, client_secret=sp_client_secret, cache_handler=cache_handler, requests_session=session)  # type: ignore[arg-type]
@@ -4427,9 +4437,8 @@ def spotify_get_access_token_from_oauth_user(sp_client_id, sp_client_secret, red
     else:
         cache_handler = MemoryCacheHandler()
 
-    session = req.Session()
+    session = SpotifyAuthSession()
     session.headers.update({'User-Agent': USER_AGENT})
-    # Spotipy owns the requests this session makes, so the setting is applied here rather than per call like everywhere else
     session.verify = VERIFY_SSL
 
     if sp_client_secret:
@@ -6564,7 +6573,7 @@ def _display_progress(current, total, playlist_name: str = "", bar_length: int =
 
 
 # Processes items from all the provided playlists and returns a list of dictionaries
-def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, playlists_to_skip=None, show_progress=True):
+def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, playlists_to_skip=None, show_progress=True, errors=None):
     global PLAYLIST_INFO_CACHE
     list_of_playlists = []
     error_while_processing = False
@@ -6664,6 +6673,8 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                             }
                             # print(f"\n* Playlist {spotify_format_playlist_reference(p_uri)} is restricted, tracking metadata only")
                         except Exception as e:
+                            if errors is not None and not errors:
+                                errors.append(e)
                             debug_print("Playlist loop", uri=p_uri, outcome="failed", error=sanitize_error_text(e))
                             existing = PLAYLIST_INFO_CACHE.get(p_uri, {})
                             existing.update({
@@ -6674,12 +6685,12 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                             PLAYLIST_INFO_CACHE[p_uri] = existing
 
                             failure_count += 1
-                            if failure_count == 1 or not HIDE_DUPLICATE_NETWORK_ERRORS:
+                            error_while_processing = True
+                            if errors is None and (failure_count == 1 or not HIDE_DUPLICATE_NETWORK_ERRORS):
                                 print_operation_error(f"Playlist {spotify_format_playlist_reference(p_uri)} could not be processed and will be retried", e)
                                 if not HIDE_DUPLICATE_NETWORK_ERRORS:
                                     print_cur_ts("Timestamp:\t\t\t")
-                                error_while_processing = True
-                            elif failure_count == 2 and HIDE_DUPLICATE_NETWORK_ERRORS:
+                            elif errors is None and failure_count == 2 and HIDE_DUPLICATE_NETWORK_ERRORS:
                                 print(f"\n- (Masking additional errors)")
                             if show_progress:
                                 _display_progress(idx, total_playlists, current_playlist_name, is_final=(idx == total_playlists))
@@ -6777,15 +6788,18 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                 list_of_tracks.append({"artist": p_artist, "track": p_track, "duration": track_duration, "added_at": added_at_dt, "uri": track_uri, "added_by": added_by_name, "added_by_id": added_by_id, "album_image_url": album_image_url})
 
                 except Exception as e:
+                    if errors is not None and not errors:
+                        errors.append(e)
                     debug_print("Playlist loop: build", uri=p_uri, outcome="failed", error=f"{type(e).__name__}: {e}")
 
                     failure_count += 1
-                    if failure_count == 1 or not HIDE_DUPLICATE_NETWORK_ERRORS:
+                    error_while_processing = True
+                    if errors is None and (failure_count == 1 or not HIDE_DUPLICATE_NETWORK_ERRORS):
                         print_operation_error(f"Playlist data for {spotify_format_playlist_reference(p_uri)} could not be built", e)
                         if not HIDE_DUPLICATE_NETWORK_ERRORS:
                             print_cur_ts("Timestamp:\t\t\t")
                         error_while_processing = True
-                    elif failure_count == 2 and HIDE_DUPLICATE_NETWORK_ERRORS:
+                    elif errors is None and failure_count == 2 and HIDE_DUPLICATE_NETWORK_ERRORS:
                         print(f"\n- (Masking additional errors)")
                     if show_progress:
                         _display_progress(idx, total_playlists, current_playlist_name, is_final=(idx == total_playlists))
@@ -8087,11 +8101,10 @@ def _dotenv_contains_key(destination, key, error_type: Type[Exception] = Webhook
     if not destination_path.exists():
         return False
     try:
-        lines = destination_path.read_text(encoding="utf-8").splitlines()
+        content = destination_path.read_text(encoding="utf-8")
     except (OSError, UnicodeError):
         raise error_type(f"Could not read private settings file '{destination_path}'. Check that it is a readable UTF-8 file.") from None
-    assignment_pattern = re.compile(rf"^\s*(?:export\s+)?{re.escape(key)}\s*=")
-    return any(assignment_pattern.match(line) for line in lines)
+    return any(binding.key == key for binding in _dotenv_bindings(content))
 
 
 # Quotes one secret value for lossless parsing by python-dotenv
@@ -8897,7 +8910,7 @@ def _wizard_collect_notification_images(question: str) -> bool:
 
 
 # Returns command arguments using friendly names or exact runtime paths
-def _wizard_local_command_args(method: str, exact: bool = False) -> List[str]:
+def _wizard_local_command_args(method: str, exact: bool = True) -> List[str]:
     if exact:
         executable = sys.executable or ("python" if platform.system() == "Windows" else "python3")
         if method == "pip":
@@ -8927,7 +8940,7 @@ def _wizard_quote_argument(value: Any) -> str:
 
 
 # Returns the command prefix for the detected installation method
-def _wizard_cmd_prefix(method: str, exact: bool = False) -> str:
+def _wizard_cmd_prefix(method: str, exact: bool = True) -> str:
     return _wizard_render_command(_wizard_local_command_args(method, exact=exact))
 
 
@@ -9012,7 +9025,7 @@ def _wizard_action_command(method: str, action: str, config_path, env_path, targ
 
 
 # Returns an exact Firefox import command with optional setup context
-def _wizard_firefox_import_cmd(method: str, env_path=None, exact: bool = False, config_path=None, target: Optional[str] = None) -> str:
+def _wizard_firefox_import_cmd(method: str, env_path=None, exact: bool = True, config_path=None, target: Optional[str] = None) -> str:
     parts = list(_wizard_local_command_args(method, exact=exact))
     parts.extend(("--import-browser-cookie", "--browser", "firefox"))
     if target:
@@ -9025,7 +9038,7 @@ def _wizard_firefox_import_cmd(method: str, env_path=None, exact: bool = False, 
 
 
 # Returns an exact hidden sp_dc entry command with optional setup context
-def _wizard_set_sp_dc_cmd(method: str, env_path=None, exact: bool = False, config_path=None) -> str:
+def _wizard_set_sp_dc_cmd(method: str, env_path=None, exact: bool = True, config_path=None) -> str:
     parts = list(_wizard_local_command_args(method, exact=exact))
     parts.append("--set-sp-dc")
     if config_path is not None:
@@ -9527,6 +9540,12 @@ def runtime_boolean_errors() -> List[str]:
     return errors
 
 
+# Lists numeric settings that cannot be used by monitoring or Doctor
+def runtime_numeric_errors() -> List[str]:
+    numeric_values = (("SPOTIFY_CHECK_INTERVAL", SPOTIFY_CHECK_INTERVAL, 1, None), ("SPOTIFY_ERROR_INTERVAL", SPOTIFY_ERROR_INTERVAL, 0, None), ("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL, 0, None), ("PLAYLISTS_LIMIT", PLAYLISTS_LIMIT, 1, None), ("RECENTLY_PLAYED_ARTISTS_LIMIT", RECENTLY_PLAYED_ARTISTS_LIMIT, 0, None), ("RECENTLY_PLAYED_ARTISTS_LIMIT_INFO", RECENTLY_PLAYED_ARTISTS_LIMIT_INFO, 0, None), ("PLAYLISTS_DISAPPEARED_COUNTER", PLAYLISTS_DISAPPEARED_COUNTER, 1, None), ("FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER", FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER, 1, None), ("COLLABORATORS_CHANGE_COUNTER", COLLABORATORS_CHANGE_COUNTER, 0, None), ("PLAYLISTS_CHANGE_COUNTER", PLAYLISTS_CHANGE_COUNTER, 0, None), ("TRUNCATE_CHARS", TRUNCATE_CHARS, 0, None), ("SMTP_PORT", SMTP_PORT, 1, 65535))
+    return [f"{name}={value!r}" for name, value, minimum, maximum in numeric_values if not isinstance(value, (int, float)) or isinstance(value, bool) or value < minimum or maximum is not None and value > maximum]
+
+
 # Validates effective settings and file destinations without writing them
 def doctor_check_configuration(config_path=None, env_path=None, startup_checks: Sequence[DoctorCheck] = (), target_value=None, timezone_advice=None) -> List[DoctorCheck]:
     checks = list(startup_checks)
@@ -9552,8 +9571,7 @@ def doctor_check_configuration(config_path=None, env_path=None, startup_checks: 
         else:
             advice = classify_recovery_error(context="config_invalid", detail="TOTP_VERSION must be a positive integer and TOTP_SECRET_CIPHER_BYTES must be a non-empty integer sequence")
             checks.append(make_doctor_check("Configuration", "FAIL", "Web-player TOTP parameters are invalid", advice.detail, advice))
-    numeric_values = (("SPOTIFY_CHECK_INTERVAL", SPOTIFY_CHECK_INTERVAL, 1, None), ("SPOTIFY_ERROR_INTERVAL", SPOTIFY_ERROR_INTERVAL, 0, None), ("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL, 0, None), ("PLAYLISTS_LIMIT", PLAYLISTS_LIMIT, 1, None), ("RECENTLY_PLAYED_ARTISTS_LIMIT", RECENTLY_PLAYED_ARTISTS_LIMIT, 0, None), ("RECENTLY_PLAYED_ARTISTS_LIMIT_INFO", RECENTLY_PLAYED_ARTISTS_LIMIT_INFO, 0, None), ("PLAYLISTS_DISAPPEARED_COUNTER", PLAYLISTS_DISAPPEARED_COUNTER, 1, None), ("FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER", FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER, 1, None), ("COLLABORATORS_CHANGE_COUNTER", COLLABORATORS_CHANGE_COUNTER, 0, None), ("PLAYLISTS_CHANGE_COUNTER", PLAYLISTS_CHANGE_COUNTER, 0, None), ("TRUNCATE_CHARS", TRUNCATE_CHARS, 0, None), ("SMTP_PORT", SMTP_PORT, 1, 65535))
-    invalid_numeric = [f"{name}={value!r}" for name, value, minimum, maximum in numeric_values if not isinstance(value, (int, float)) or isinstance(value, bool) or value < minimum or maximum is not None and value > maximum]
+    invalid_numeric = runtime_numeric_errors()
     if invalid_numeric:
         advice = classify_recovery_error(context="config_invalid", detail="Invalid numeric settings: " + ", ".join(invalid_numeric))
         checks.append(make_doctor_check("Configuration", "FAIL", "One or more numeric settings are invalid", advice.detail, advice))
@@ -10244,16 +10262,23 @@ def _wizard_destinations(config_file=None, env_file=None):
     return _wizard_validate_destination(config_path, "Configuration destination"), _wizard_validate_destination(env_path, "Dotenv destination")
 
 
+# Preserves a saved dotenv destination unless setup received an explicit override
+def _wizard_saved_env_destination(values: dict, env_file, fallback: Path) -> Path:
+    selected = env_file if env_file is not None else values.get("DOTENV_FILE") or fallback
+    if str(selected).casefold() == "none":
+        raise ValueError("Setup needs a writable dotenv destination. Pass --env-file PATH to choose one.")
+    return _wizard_validate_destination(selected, "Dotenv destination")
+
+
 # Seeds the proposed answers from the configuration the wizard is about to rebuild, which is what the rebuild question offers
-def _wizard_seed_saved_settings(values: dict, config_path: Path) -> None:
+def _wizard_seed_saved_settings(values: dict, config_path: Path) -> dict:
     if not config_path.is_file():
-        return
+        return {}
     saved: dict = {}
     if not load_config_file(config_path, namespace=saved):
-        print("  Those settings could not be read, so the questions start from the built-in defaults.\n")
-        return
-    # Secrets are resolved from the dotenv file and the config keeps their placeholders, so only the settings this wizard writes are proposed
+        raise ValueError(f"Configuration file '{config_path}' could not be read. Correct it before retrying setup.")
     values.update({key: value for key, value in saved.items() if key not in SENSITIVE_CONFIG_KEYS})
+    return saved
 
 
 # Confirms replacement or selects another config destination before collecting secrets
@@ -10497,16 +10522,35 @@ def _wizard_email_enabled(config_values: dict) -> bool:
     return bool(config_values.get("FOLLOWERS_FOLLOWINGS_NOTIFICATION")) or bool(config_values.get("ERROR_NOTIFICATION"))
 
 
+# Reads complete dotenv assignments without interpolation and reports invalid syntax
+def read_private_settings(env_path: Path) -> dict:
+    path = Path(env_path)
+    if not path.exists():
+        return {}
+    bindings = list(_dotenv_bindings(path.read_text(encoding="utf-8")))
+    invalid = next((binding for binding in bindings if binding.error), None)
+    if invalid is not None:
+        raise ValueError(f"Dotenv file '{path}' has invalid syntax near line {invalid.original.line}. Correct that assignment before retrying.")
+    return {binding.key: binding.value for binding in bindings if binding.key is not None}
+
+
+# Resolves allowlisted secrets and their origins using startup precedence
+def resolve_secret_settings(configured: dict, saved: dict, exported: dict) -> Tuple[dict, dict]:
+    values = {}
+    sources = {}
+    for key in SECRET_KEYS:
+        if exported.get(key):
+            values[key], sources[key] = exported[key], "environment"
+        elif saved.get(key) is not None:
+            values[key], sources[key] = saved[key], "dotenv file"
+        else:
+            values[key], sources[key] = configured.get(key), "configuration file or command line"
+    return values, sources
+
+
 # Returns the secret stored in the dotenv file or None when the file has no assignment for it
 def _wizard_saved_secret_value(key: str, env_path: Path) -> Optional[str]:
-    value = None
-    path = Path(env_path)
-    if path.is_file():
-        try:
-            from dotenv import dotenv_values
-            value = dotenv_values(str(path), interpolate=False).get(key)
-        except Exception:
-            value = None
+    value = read_private_settings(env_path).get(key)
     return value if isinstance(value, str) else None
 
 
@@ -10519,7 +10563,7 @@ def effective_secret_after_setup(key: str, env_path: Path, secret_updates: dict)
     if key in secret_updates:
         return str(secret_updates[key] or ""), False
     saved = _wizard_saved_secret_value(key, env_path)
-    if saved:
+    if saved is not None:
         return saved, False
     # Nothing private holds it, so the configuration file is what a restart would read
     return str(globals().get(key) or ""), False
@@ -10873,21 +10917,15 @@ def _wizard_review_setup(state: WizardSetupState, method: str) -> bool:
 # Loads generated config and allowlisted dotenv secrets for Doctor
 def _wizard_load_effective_setup(config_path: Path, env_path: Path) -> bool:
     global USER_AGENT
+    exported = {key: os.environ.get(key) for key in SECRET_KEYS if SECRET_SOURCES.get(key) not in ("dotenv file", "dotenv file reload")}
     if not load_config_file(config_path):
         return False
     try:
-        # The same precedence startup applies, so Doctor checks the values the next run resolves rather than the
-        # file's copy of a secret an export shadows
-        for key in SECRET_KEYS:
-            value, from_export = effective_secret_after_setup(key, env_path, {})
-            if not value:
-                continue
+        values, sources = resolve_secret_settings(globals(), read_private_settings(env_path), exported)
+        for key, value in values.items():
             globals()[key] = value
-            if from_export:
-                record_secret_source(key, "environment")
-            else:
-                record_secret_source(key, "dotenv file" if _wizard_saved_secret_value(key, env_path) else "configuration file or command line")
-    except Exception as exc:
+            record_secret_source(key, sources[key])
+    except (OSError, UnicodeError, ValueError) as exc:
         print_operation_error(f"Dotenv file '{env_path}' could not be loaded", exc, context="file_read")
         return False
     if not USER_AGENT:
@@ -10958,7 +10996,10 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
     try:
         config_path = _wizard_choose_config_destination(config_path)
         baseline_values = dict(globals())
-        _wizard_seed_saved_settings(baseline_values, config_path)
+        saved_settings = _wizard_seed_saved_settings(baseline_values, config_path)
+        env_path = _wizard_saved_env_destination(saved_settings, env_file, env_path)
+        if env_path == config_path.resolve():
+            raise ValueError("Configuration and dotenv destinations must be different files. Pass --env-file with another path.")
         config_values = dict(baseline_values)
         config_values["DOTENV_FILE"] = str(env_path)
         initial_auth = {"complete": False, "validated": False, "browser": None, "source": "not configured"}
@@ -10976,6 +11017,10 @@ def run_setup_wizard(initial_target: Optional[str] = None, config_file=None, env
         if not _wizard_review_setup(state, method):
             print("\n" + colorize("warning", "Setup cancelled. Destination files were not changed."))
             raise SystemExit(1)
+    except (OSError, UnicodeError, ValueError) as exc:
+        print_recovery_error(exc, "config_invalid")
+        print("Correct the selected file or pass --env-file with a writable destination.")
+        raise SystemExit(1) from None
     except (EOFError, KeyboardInterrupt):
         print(colorize("warning", "Setup cancelled. Destination files were not changed."))
         raise SystemExit(1) from None
@@ -11089,6 +11134,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     follower_recovery_tracker = RecoveryHintTracker()
     outage = OutageReporter()
     follower_outage = OutageReporter()
+    playlist_outage = OutageReporter()
 
     try:
         if csv_file_name:
@@ -11499,8 +11545,6 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         try:
             sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
             sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
-            # Every request this check needs has now answered, so the alert is cleared here rather than after the profile alone
-            error_alert.reset()
             follower_recovery_tracker.reset()
             follower_lasted = follower_outage.recovered()
             if follower_lasted is not None:
@@ -11732,6 +11776,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
         list_of_playlists = []
         error_while_processing = False
+        playlist_errors = []
 
         # Swept every cycle rather than only when a playlist change fires, so a long-running process
         # does not accumulate entries for playlists the user has since removed
@@ -11739,7 +11784,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
         if DETECT_CHANGES_IN_PLAYLISTS:
             if playlists:
-                list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True, playlists_to_skip, show_progress=False)
+                list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True, playlists_to_skip, show_progress=False, errors=playlist_errors)
 
             for playlist in list_of_playlists:
                 if "uri" in playlist:
@@ -12239,6 +12284,9 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             stable_playlist_list = stable_entry.get("playlist_list") or []
             current_uris = extract_playlist_uris(playlists)
             suppress_playlists_notification = False
+            # Each protection counts consecutive observations of its own candidate
+            if not current_uris:
+                PLAYLISTS_PENDING_CACHE.pop(user_playlists_key, None)
 
             if current_uris != stable_uris:
                 # Playlists have changed vs stable baseline
@@ -12295,6 +12343,9 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     except Exception:
                         pass
 
+            if current_uris and suppress_playlists_notification:
+                playlists_zeroed_counter = 0
+
             if not suppress_playlists_notification and playlist_collection_changed(playlists, playlists_old, playlists_count, playlists_old_count):
                 if playlists_count == 0:
                     playlists_zeroed_counter += 1
@@ -12345,6 +12396,24 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             if error_while_processing:
                 debug_print("Playlist processing was partial: advancing successful baselines while retaining failed baselines")
             list_of_playlists_old = merge_playlist_snapshots(list_of_playlists_old, list_of_playlists, playlists_old)
+
+        if error_while_processing:
+            playlist_error = playlist_errors[0] if playlist_errors else RuntimeError("One or more playlists could not be processed")
+            playlist_advice = classify_recovery_error(playlist_error, "playlist")
+            playlist_outcome = playlist_outage.failed(playlist_advice)
+            if playlist_outcome == "full":
+                print_recovery_error(playlist_error, "playlist", retry_note=f"retrying in {display_time(SPOTIFY_CHECK_INTERVAL)}", label="Error while processing playlists")
+                print_cur_ts("Timestamp:\t\t\t")
+            elif playlist_outcome == "changed":
+                print_outage_change(user_uri_id, playlist_advice)
+            elif playlist_outcome == "reminder":
+                print_outage_liveness(user_uri_id, playlist_advice, playlist_outage.since, playlist_outage.failures)
+            dispatch_error_alert(error_alert, playlist_advice, playlist_error, user_uri_id, playlist_outage.since)
+        else:
+            error_alert.reset()
+            playlist_lasted = playlist_outage.recovered()
+            if playlist_lasted is not None:
+                print_outage_recovery(user_uri_id, playlist_lasted)
 
         debug_print("Completed check", check=f"#{check_count}", user=user_uri_id, next=display_time(SPOTIFY_CHECK_INTERVAL))
 
@@ -13092,11 +13161,12 @@ def main():
                 sys.exit(1)
 
     # Environment variables are a documented alternative to a dotenv file, so they apply even when no file was loaded
-    for secret in SECRET_KEYS:
-        val = os.getenv(secret)
-        if val is not None:
-            globals()[secret] = val
-            record_secret_source(secret, "environment" if secret in EXPORTED_SECRET_KEYS else "dotenv file")
+    saved_secrets = {key: os.environ.get(key) for key in SECRET_KEYS if key not in EXPORTED_SECRET_KEYS}
+    exported_secrets = {key: os.environ.get(key) for key in EXPORTED_SECRET_KEYS}
+    resolved_secrets, resolved_sources = resolve_secret_settings(globals(), saved_secrets, exported_secrets)
+    for secret, value in resolved_secrets.items():
+        globals()[secret] = value
+        record_secret_source(secret, resolved_sources[secret])
 
     if args.no_color is True:
         COLORED_OUTPUT = False
@@ -13176,9 +13246,13 @@ def main():
 
     # Recompute interval-derived values after config file and CLI resolution so a config-file
     # SPOTIFY_CHECK_INTERVAL is honored, not only a --check-interval override
-    if SPOTIFY_CHECK_INTERVAL > 0:
+    numeric_errors = [f"{name} must be a number, not {value!r}" for name, value in (("SPOTIFY_CHECK_INTERVAL", SPOTIFY_CHECK_INTERVAL), ("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL)) if not isinstance(value, (int, float))]
+    if numeric_errors and not args.doctor:
+        print_recovery_error(context="config_invalid", detail="Invalid numeric settings: " + ", ".join(numeric_errors))
+        sys.exit(1)
+    if not numeric_errors:
         LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL > 0 else 0
-    PLAYLIST_INFO_CACHE_TTL = (SPOTIFY_CHECK_INTERVAL * 2 if SPOTIFY_CHECK_INTERVAL > 43200 else 43200)
+        PLAYLIST_INFO_CACHE_TTL = SPOTIFY_CHECK_INTERVAL * 2 if SPOTIFY_CHECK_INTERVAL > 43200 else 43200
     if args.profile_notification is True:
         PROFILE_NOTIFICATION = True
     if args.disable_followers_followings_notification is False:

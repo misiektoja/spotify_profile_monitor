@@ -1,8 +1,11 @@
 # Setup & First Run
 
 This page covers the first run: the setup wizard, importing a Spotify login from your browser and starting monitoring. Examples use the PyPI command `spotify_profile_monitor`. Manual script users should replace that command with `python3 spotify_profile_monitor.py` on macOS or Linux, or `python spotify_profile_monitor.py` on Windows.
+When rebuilding an existing configuration, setup keeps its saved `DOTENV_FILE` unless you pass `--env-file PATH`. A nonempty exported secret takes precedence over the dotenv file. An explicit empty value in that file still overrides the configuration, both after saving and on the next run. Quoted dotenv keys receive the same replacement confirmation as unquoted keys.
+
 
 <a id="before-you-start"></a>
+
 ## Before you start
 
 The easiest path is the interactive wizard:

@@ -17,7 +17,7 @@ def profile_snapshot():
 
 
 # Runs the loop until stop_after sleeps have passed and returns the error alerts it handed to the channels
-def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answers=(), check_interval=1800, liveness_seconds=None, delivery_results=()):
+def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answers=(), check_interval=1800, liveness_seconds=None, delivery_results=(), playlist_checks=False, playlist_answers=(), collection_events=None):
     calls = []
     sleeps = []
     now = [1_800_000_000.0]
@@ -25,6 +25,16 @@ def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answer
     remaining_followers = list(follower_answers)
     follower_calls = []
     deliveries = list(delivery_results)
+    remaining_playlists = list(playlist_answers)
+
+    # Returns real processor inputs while allowing individual metadata requests to fail
+    def scripted_playlist_info(*_arguments, **_keywords):
+        if remaining_playlists:
+            answer = remaining_playlists.pop(0)
+            if isinstance(answer, BaseException):
+                raise answer
+            return answer
+        return {"sp_playlist_name": "Playlist", "sp_playlist_owner": "Owner", "sp_playlist_owner_uri": "spotify:user:owner", "sp_playlist_description": "", "sp_playlist_tracks": [], "sp_playlist_tracks_count": 0, "sp_playlist_tracks_count_before_filtering": 0, "sp_playlist_followers_count": 1}
 
     def stopping_sleep(seconds):
         sleeps.append(seconds)
@@ -69,7 +79,13 @@ def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answer
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
     monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", True)
     monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", True)
-    monkeypatch.setattr(monitor, "DETECT_CHANGES_IN_PLAYLISTS", False)
+    monkeypatch.setattr(monitor, "DETECT_CHANGES_IN_PLAYLISTS", playlist_checks)
+    monkeypatch.setattr(monitor, "PLAYLIST_INFO_CACHE", {})
+    monkeypatch.setattr(monitor, "PLAYLISTS_BASELINE_CACHE", {})
+    monkeypatch.setattr(monitor, "PLAYLISTS_PENDING_CACHE", {})
+    monkeypatch.setattr(monitor, "spotify_get_playlist_info", scripted_playlist_info)
+    if collection_events is not None:
+        monkeypatch.setattr(monitor, "spotify_print_changed_followers_followings_playlists", lambda *args, **kwargs: collection_events.append(args))
     monkeypatch.setattr(monitor, "DETECT_CHANGED_PROFILE_PIC", False)
     monkeypatch.setattr(monitor, "DEBUG_MODE", False)
     monkeypatch.setattr(monitor, "VERBOSE_MODE", False)

@@ -13,7 +13,7 @@ Most examples on this page use the PyPI command `spotify_profile_monitor`. If yo
 
 For example, `spotify_profile_monitor --doctor TARGET` becomes `python3 spotify_profile_monitor.py --doctor TARGET` with the manual script.
 
-The manual-script prefix names the file rather than its path, so run it from the directory holding `spotify_profile_monitor.py`. From another directory, use the full path instead, for example `python3 /opt/spotify-profile-monitor/spotify_profile_monitor.py --doctor TARGET`. The commands the tool prints after setup and Doctor use the same short form.
+The manual-script examples assume the current directory contains `spotify_profile_monitor.py`. Commands printed by setup, Doctor and recovery messages use the running interpreter and the full script path. Packaged installations use the running interpreter with `-m spotify_profile_monitor`.
 
 Throughout this page `<spotify_target>` means any accepted target form: a complete Spotify profile URL, a `spotify:user:` URI or a bare user ID.
 
@@ -397,6 +397,10 @@ For restricted playlists, the tool cannot monitor:
 - creation/last update timestamps derived from track history
 
 <a id="check-intervals"></a>
+## Playlist change confirmation
+
+`PLAYLISTS_CHANGE_COUNTER` requires repeated matching nonempty playlist collections before reporting a change. Set it to `0` to accept a nonempty change immediately. `PLAYLISTS_DISAPPEARED_COUNTER` separately controls how many consecutive empty responses confirm that all playlists disappeared. A nonempty response resets the disappearance count and an empty response clears a pending nonempty change. Playlist metadata failures retain the last successful details and can trigger error alerts without bypassing either threshold.
+
 ## Check Intervals
 
 If you want to customize polling interval, use `-c` flag (or `SPOTIFY_CHECK_INTERVAL` configuration option):

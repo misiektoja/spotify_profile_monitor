@@ -752,7 +752,6 @@ def test_the_guide_guard_still_inspects_the_source():
 
 
 CLASSIFIER_EXEMPTIONS = {
-    "the questions start from the built-in defaults": "a wizard result printed under the classified config failure above it",
     "or higher required": "runs at import on an interpreter too old to load the rest of the file",
     "Couldn't find the pytz library": "raised at import, before the classifier and the settings it reads exist",
     "Cannot clear the screen contents": "a cosmetic notice with nothing for the operator to recover from",

@@ -1,3 +1,4 @@
+from command_expectations import runtime_command
 import shlex
 import builtins
 import platform
@@ -269,7 +270,7 @@ def test_action_command_uses_portable_entry_point_and_custom_paths(tmp_path, mon
 
     command = monitor._wizard_action_command("pip", "--doctor", config_path, env_path, "target.user")
 
-    assert command.startswith("spotify_profile_monitor --doctor target.user")
+    assert command.startswith(runtime_command("spotify_profile_monitor --doctor target.user"))
     assert str(config_path.resolve()) in command
     assert str(env_path.resolve()) in command
 
@@ -1268,7 +1269,7 @@ def test_the_cookie_recovery_command_names_the_files_this_run_was_given(monkeypa
 
     fix = monitor.cookie_auth_recovery_fix()
 
-    assert f"{PYTHON_NAME} spotify_profile_monitor.py --import-browser-cookie --browser firefox --config-file {config_path} --env-file {env_path}" in fix
+    assert runtime_command(f"{PYTHON_NAME} spotify_profile_monitor.py --import-browser-cookie --browser firefox --config-file {config_path} --env-file {env_path}") in fix
 
 
 # Verifies the dotenv sentinel is left out, since the import it suggests refuses --env-file none
@@ -1280,7 +1281,7 @@ def test_the_cookie_recovery_command_leaves_the_dotenv_sentinel_out(monkeypatch)
     fix = monitor.cookie_auth_recovery_fix()
 
     assert "--env-file" not in fix
-    assert fix.endswith(f"{PYTHON_NAME} spotify_profile_monitor.py --import-browser-cookie --browser firefox")
+    assert fix.endswith(runtime_command(f"{PYTHON_NAME} spotify_profile_monitor.py --import-browser-cookie --browser firefox"))
 
 
 # Verifies the config sentinel is carried, since the import it suggests reads the config rather than writing it
@@ -1292,7 +1293,7 @@ def test_the_cookie_recovery_command_carries_the_config_sentinel(monkeypatch):
 
     fix = monitor.cookie_auth_recovery_fix()
 
-    assert fix.endswith(f"{PYTHON_NAME} spotify_profile_monitor.py --import-browser-cookie --browser firefox --config-file none")
+    assert fix.endswith(runtime_command(f"{PYTHON_NAME} spotify_profile_monitor.py --import-browser-cookie --browser firefox --config-file none"))
 
 
 # Verifies the no-target error opens with the banner, the way every other error path in the sibling monitors does

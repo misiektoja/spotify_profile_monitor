@@ -31,6 +31,9 @@ would see.
 | File | Area under test |
 | --- | --- |
 | `conftest.py` | Shared fixture: exported secrets are cleared between tests, so a dotenv one test loads cannot change what a later one resolves |
+| `test_setup_resolution_regressions.py` | Saved dotenv destinations, empty secrets, export precedence and recovery paths |
+| `test_spotipy_request_policy.py` | TLS policy at the Spotipy request boundary for token exchanges and refreshes |
+| `test_playlist_outage_integration.py` | Real monitoring flow for playlist outages, alert retries and confirmation counters |
 | `test_dotenv_quoted_keys.py` | Quoted dotenv keys, export prefixes, multiline values and duplicate removal |
 | `test_startup_summary_channels.py` | Summary rows naming the webhook provider, the mail server, the masked recipient, the delivery confirmations and the runtime |
 | `test_target_inputs.py` | Target normalization, rejection of unsafe forms, CLI and config precedence |
