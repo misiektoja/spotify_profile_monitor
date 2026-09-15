@@ -321,6 +321,21 @@ def test_the_outage_reporter_keeps_repeating_without_a_liveness_banner():
     assert [reporter.failed(advice, 0) for _ in range(2)] == ["repeat", "repeat"]
 
 
+# Verifies a destination that already exists is refused as itself, since --force rather than permissions is the answer
+def test_an_existing_destination_is_not_reported_as_unwritable(tmp_path):
+    destination = tmp_path / "spotify_profile_monitor.conf"
+    destination.write_text("SPOTIFY_CHECK_INTERVAL = 60\n", encoding="utf-8")
+
+    with pytest.raises(FileExistsError) as refusal:
+        monitor.confirm_config_replacement(str(destination), force=False, interactive=False)
+    advice = monitor.classify_recovery_error(refusal.value, "file_exists", detail=str(refusal.value))
+
+    assert advice.code == "file.exists"
+    assert "already exists" in advice.summary
+    assert "--force" in advice.fix
+    assert f"Guide: {monitor.CONFIG_GUIDE_URL}" in advice.fix
+
+
 # Verifies a local file descriptor limit is reported as itself rather than as a failure of the call that hit it
 def test_a_file_descriptor_limit_is_not_reported_as_a_service_failure():
     try:

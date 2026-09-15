@@ -917,7 +917,7 @@ PLAYLIST_INPUT_ERROR = f"Invalid Spotify playlist. Use {SPOTIFY_WEB_BASE_URL}/pl
 SPOTIFY_OBJECT_TYPES = frozenset({"user", "artist", "track", "album", "playlist"})
 
 # Stable machine-readable categories used by recovery output and Doctor checks
-RECOVERY_CODES = frozenset({"config.missing", "config.invalid", "config.insecure", "dependency.missing", "secret.missing", "secret.entry", "auth.cookie_invalid", "auth.client_invalid", "auth.oauth_invalid", "auth.rejected", "network.unavailable", "network.timeout", "spotify.rate_limited", "spotify.unavailable", "target.invalid", "target.not_found", "smtp.invalid", "smtp.authentication", "smtp.connection", "webhook.invalid", "webhook.rejected", "webhook.redirected", "webhook.rate_limited", "webhook.connection", "file.unreadable", "file.unwritable", "resource.exhausted", "unknown"})
+RECOVERY_CODES = frozenset({"config.missing", "config.invalid", "config.insecure", "dependency.missing", "secret.missing", "secret.entry", "auth.cookie_invalid", "auth.client_invalid", "auth.oauth_invalid", "auth.rejected", "network.unavailable", "network.timeout", "spotify.rate_limited", "spotify.unavailable", "target.invalid", "target.not_found", "smtp.invalid", "smtp.authentication", "smtp.connection", "webhook.invalid", "webhook.rejected", "webhook.redirected", "webhook.rate_limited", "webhook.connection", "file.exists", "file.unreadable", "file.unwritable", "resource.exhausted", "unknown"})
 
 # Strings removed from track names for generating proper Genius search URLs
 re_search_str = r'remaster|extended|original mix|remix|original soundtrack|radio( |-)edit|\(feat\.|( \(.*version\))|( - .*version)'
@@ -2340,6 +2340,8 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         return make_recovery_advice("file.unreadable", "A required file could not be read", recovery_fix_with_guide("Verify the path, file format and read permissions then retry", DIAGNOSTICS_GUIDE_URL), False, safe_detail)
     if context == "file_write":
         return make_recovery_advice("file.unwritable", "An output destination is not writable", recovery_fix_with_guide("Choose a writable path and verify its parent directory permissions then retry", DIAGNOSTICS_GUIDE_URL), False, safe_detail)
+    if context == "file_exists":
+        return make_recovery_advice("file.exists", safe_detail or "The destination file already exists", recovery_fix_with_guide("Re-run with --force to replace it after a timestamped backup, or write to a different path", CONFIG_GUIDE_URL), False, safe_detail)
     if context == "smtp_config":
         return make_recovery_advice("smtp.invalid", safe_detail or "The SMTP configuration is incomplete or invalid", recovery_fix_with_guide("Correct SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SENDER_EMAIL and RECEIVER_EMAIL then run --send-test-email", SMTP_GUIDE_URL), False, safe_detail)
     if context == "webhook_config":
@@ -2402,6 +2404,8 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         return make_recovery_advice("auth.oauth_invalid", "The Spotify OAuth credentials are invalid or require authorization", recovery_fix_with_guide(fix, guide), False, safe_detail)
     if isinstance(error, ModuleNotFoundError):
         return classify_recovery_error(error, "dependency", safe_detail)
+    if isinstance(error, FileExistsError):
+        return classify_recovery_error(error, "file_exists", safe_detail)
     if isinstance(error, (PermissionError, IsADirectoryError)):
         return classify_recovery_error(error, "file_write", safe_detail)
     if isinstance(error, FileNotFoundError):
@@ -12356,6 +12360,9 @@ def main():
                 print("Config replacement cancelled. The existing file was not changed.")
                 sys.exit(1)
             write_status = write_config_file(output_file, config_content)
+        except FileExistsError as exc:
+            print_recovery_error(exc, "file_exists", detail=str(exc))
+            sys.exit(1)
         except Exception as exc:
             print_recovery_error(exc, "file_write", detail=f"Could not write config file '{output_file}': {exc}")
             sys.exit(1)
