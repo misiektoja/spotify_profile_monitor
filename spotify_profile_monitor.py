@@ -1054,6 +1054,7 @@ class ErrorAlertState:
         setattr(self, f"{channel}_retry_at", now + delay)
         print(f"* The {channel} alert is on hold for {display_time(delay)} after {failures} {'attempt' if failures == 1 else 'attempts'}, then tried again")
 
+
 stdout_bck = None
 csvfieldnames = ['Date', 'Type', 'Name', 'Old', 'New']
 csvfieldnames_export = ['Date', 'Playlist Name', 'Artist', 'Track']
@@ -9096,7 +9097,6 @@ class DoctorReport:
     target_profile: Optional[dict] = field(default=None, repr=False)
     authentication_error: str = ""
     authentication_advice: Optional[RecoveryAdvice] = None
-
 
 
 # Hides the middle of an address's local part, so a log can be shared while the reader can still spot a typo
