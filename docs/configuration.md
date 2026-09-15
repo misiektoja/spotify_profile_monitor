@@ -345,7 +345,7 @@ You can get the list of all time zones supported by pytz like this:
 python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
 ```
 
-Path settings are validated before startup opens files. An invalid value names the setting to correct. Command-line path overrides still take precedence.
+Path settings are validated before startup opens files. A monitoring run stops and names the setting to correct. `--doctor`, `--setup` and the `--set-...` commands report the same setting and continue on the built-in value, so it can still be repaired. Command-line path overrides still take precedence.
 
 <a id="smtp-settings"></a>
 ## SMTP Settings
@@ -365,7 +365,7 @@ spotify_profile_monitor --send-test-email
 <a id="webhook-settings"></a>
 ## Webhook Settings
 
-A delivery keeps its original destination and credentials for every retry. Provider errors also redact Bearer and Basic credentials echoed without their Authorization scheme. Reloaded settings apply to the next delivery. Discord templates must produce a JSON object. Dictionary templates and JSON strings are supported, including strings with escaped format braces. Mentions remain disabled in every template.
+A delivery keeps its original destination and credentials for every retry. Provider errors also redact Bearer and Basic credentials echoed without their Authorization scheme. Reloaded settings apply to the next delivery. Discord templates must produce a JSON object. Dictionary templates and JSON strings are supported, including strings with escaped format braces. A placeholder the alert cannot fill, such as `{title[0]}` or `{0}`, is reported with the template text that failed. Mentions remain disabled in every template.
 
 Spotify Profile Monitor can send profile, follower and error alerts through Discord or the native [ntfy publish API](https://docs.ntfy.sh/publish/). Webhook delivery works with or without email.
 
