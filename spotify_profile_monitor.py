@@ -1963,6 +1963,11 @@ def colorize_links(text):
     return _sub_outside_color(_URL_RE, lambda mo: colorize("link", mo.group(0)), text)
 
 
+# Colours one line of a fix block the way the output stream colours it, keeping its guide line a link
+def colorize_fix_line(line):
+    return colorize_links(line) if line.lstrip().startswith("Guide: ") else colorize("info", line)
+
+
 # Returns the underlying terminal behind any number of sanitizing stream wrappers
 def unwrap_terminal_stream(stream):
     while isinstance(stream, TerminalStream):
@@ -9793,7 +9798,7 @@ def render_doctor_marker(status: str) -> str:
 def _doctor_print_check(check) -> None:
     print(f"{render_doctor_marker(check.status)} {check.label}")
     if check.detail:
-        print(f"  {check.detail}")
+        print(f"  {colorize_links(check.detail)}")
 
 
 # Returns the raw terminal stream for trusted Doctor cursor movement
@@ -9878,11 +9883,11 @@ def render_doctor_sections(report: DoctorReport) -> str:
         for check in section_checks:
             lines.append(f"{render_doctor_marker(check.status)} {check.label}")
             if check.detail:
-                lines.append(f"  {check.detail}")
+                lines.append(f"  {colorize_links(check.detail)}")
             if check.status != "PASS" and check.advice is not None:
                 # The fix carries its own guide line, so each line is indented and styled on its own rather
                 # than leaving one colour sequence open across the newline
-                lines.extend(f"  {colorize('info', fix_line)}" for fix_line in f"To fix: {check.advice.fix}".splitlines())
+                lines.extend(f"  {colorize_fix_line(fix_line)}" for fix_line in f"To fix: {check.advice.fix}".splitlines())
     return sanitize_error_text("\n".join(lines))
 
 
@@ -9896,7 +9901,7 @@ def render_doctor_summary(checks: Sequence[DoctorCheck]) -> str:
         summary_line = colorize("warning", f"  All critical checks passed with {warnings} warning(s). Review the warnings above.")
     else:
         summary_line = colorize("boolean_true", "  All checks passed. You are good to go!")
-    return "\n".join(("", colorize("header", "Summary"), summary_line, "", colorize("info", f"Guide: {DOCTOR_GUIDE_URL}")))
+    return "\n".join(("", colorize("header", "Summary"), summary_line, "", colorize_links(f"Guide: {DOCTOR_GUIDE_URL}")))
 
 
 # Runs Doctor preflight plus approved delivery tests
