@@ -1602,3 +1602,9 @@ def test_the_early_output_config_carries_the_help_theme(monkeypatch, tmp_path):
     monitor.apply_early_output_config()
 
     assert monitor.COLOR_THEME == {"help_option": "red"}
+
+
+@pytest.fixture(autouse=True)
+# Starts each setup scenario without file ownership left by another test
+def isolated_dotenv_ownership(monkeypatch):
+    monkeypatch.setattr(monitor, "DOTENV_RELOAD_STATE", {})

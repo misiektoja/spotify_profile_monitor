@@ -39,6 +39,7 @@ would see.
 | `test_compact_commands.py` | Literal short command prefixes, real help output and dependency hints |
 | `test_release_safety.py` | Credential preservation, private error rendering, runtime timing validation and saved-state compatibility |
 | `test_recovery_safety.py` | Real dotenv reloads, setup backups, oversized counts and provider-error privacy |
+| `test_secret_policy.py` | Shared credential priority, reload ownership and setup destination conflicts |
 | `test_startup_numeric_message.py` | Real offline startup names the invalid interval without debug mode |
 | `test_smtp_error_privacy.py` | Short and escaped passwords in rejected SMTP sign-ins through commands, setup, Doctor and delivery |
 | `conftest.py` | Shared fixture: exported secrets are cleared between tests, so a dotenv one test loads cannot change what a later one resolves |

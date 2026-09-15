@@ -468,6 +468,8 @@ List of supported signals:
 | ABRT | Decrease the profile check timer (by 5 minutes) |
 | HUP | Reload secrets from .env file and token source credentials from Protobuf files |
 
+`SIGHUP` keeps command-line credentials and nonempty environment values exported before startup. Change those values and restart to replace them.
+
 Send signals with `kill` or `pkill`, e.g.:
 
 ```sh
