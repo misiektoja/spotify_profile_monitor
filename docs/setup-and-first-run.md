@@ -11,7 +11,7 @@ The easiest path is the interactive wizard:
 spotify_profile_monitor --setup
 ```
 
-It asks for the target, authentication, polling interval, optional email or webhook alerts and where output goes. The output questions cover the per-target log file and an optional CSV path, and leaving the CSV answer blank disables it. A CSV path with no extension is saved with `.csv` added. The polling prompt accepts seconds or `s`, `m`, `h` and `d` units and shows both seconds and a readable default. You can review or change each section before saving. Regular settings go to `spotify_profile_monitor.conf`. Private values go to `.env`.
+It asks for the target, authentication, polling interval, optional email or webhook alerts and where output goes. The output questions ask whether to write the per-target log file and whether to write a CSV file, and the CSV path is asked for only after you say yes, so answering no clears a saved one. A CSV path with no extension is saved with `.csv` added. The polling prompt accepts seconds or `s`, `m`, `h` and `d` units and shows both seconds and a readable default. You can review or change each section before saving. Regular settings go to `spotify_profile_monitor.conf`. Private values go to `.env`.
 
 For manual setup you need two values:
 

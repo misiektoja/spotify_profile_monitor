@@ -214,7 +214,9 @@ def test_requirements_match_project_metadata():
     declared = re.search(r"^dependencies = \[(.*?)^\]", pyproject, re.S | re.M)
     assert declared is not None
     packaged = {name.casefold().replace("_", "-") for name in re.findall(r'"([A-Za-z0-9_.-]+)', declared.group(1))}
-    manual = {re.match(r"[A-Za-z0-9_.-]+", requirement).group(0).casefold().replace("_", "-") for requirement in requirements}
+    manual_names = [re.match(r"[A-Za-z0-9_.-]+", requirement) for requirement in requirements]
+    assert all(name is not None for name in manual_names)
+    manual = {name.group(0).casefold().replace("_", "-") for name in manual_names if name is not None}
 
     assert manual == packaged
 

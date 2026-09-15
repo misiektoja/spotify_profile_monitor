@@ -13205,6 +13205,12 @@ def main():
         if timezone_advice is not None:
             # The report still stamps timestamps, so it falls back rather than stopping before the diagnosis
             LOCAL_TIMEZONE = "UTC"
+        # Doctor exits before monitoring applies these, so they are resolved here too and the output rows
+        # describe the run that was actually asked for. Nothing is written, only reported
+        if args.csv_file:
+            CSV_FILE = os.path.expanduser(args.csv_file)
+        if args.disable_logging is True:
+            DISABLE_LOGGING = True
         doctor_target = args.user_id if args.user_id is not None else TARGET_USER_URI_ID
         doctor_exit = run_doctor(doctor_target, cfg_path or CLI_CONFIG_PATH, env_path, doctor_startup_checks, timezone_advice=timezone_advice)
         command_config = "none" if CONFIG_DISCOVERY_DISABLED else cfg_path or CLI_CONFIG_PATH

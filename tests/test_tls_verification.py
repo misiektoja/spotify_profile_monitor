@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 import spotify_profile_monitor as monitor
+from conftest import advice_of
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -119,9 +120,9 @@ def test_the_doctor_warns_while_verification_is_off(tls_setting):
 
     assert check.status == "WARN"
     assert "VERIFY_SSL" in check.detail
-    assert "VERIFY_SSL" in check.advice.fix
-    assert monitor.TLS_GUIDE_URL in check.advice.fix
-    assert check.advice is not None and check.advice.code == "config.insecure"
+    assert "VERIFY_SSL" in advice_of(check).fix
+    assert monitor.TLS_GUIDE_URL in advice_of(check).fix
+    assert check.advice is not None and advice_of(check).code == "config.insecure"
 
 
 @pytest.mark.parametrize("verify, concise", [(True, False), (False, True)])

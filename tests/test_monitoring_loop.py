@@ -238,3 +238,15 @@ def test_a_lasting_follower_failure_is_alerted(monkeypatch, tmp_path):
     errors = error_alerts_for(monkeypatch, tmp_path, [profile_snapshot()], 4, follower_answers=[RuntimeError("401 Unauthorized")] * 5)
 
     assert len(errors) == 1
+
+
+# Verifies a check that reported a change does not then claim nothing changed, and that the clock restarts from
+# what was printed rather than from the last banner
+def test_a_check_that_reported_a_change_does_not_claim_it_was_quiet(monkeypatch, tmp_path, capsys):
+    renamed = dict(profile_snapshot(), sp_username="Renamed Person")
+    # The first check is quiet and the second renames, so the rename lands on exactly the check whose clock is due
+    error_alerts_for(monkeypatch, tmp_path, [profile_snapshot(), profile_snapshot(), renamed], 3, check_interval=900, liveness_seconds=900)
+
+    output = capsys.readouterr().out
+    assert "has changed username to 'Renamed Person'" in output
+    assert f"* Monitoring healthy for {USER}." not in output

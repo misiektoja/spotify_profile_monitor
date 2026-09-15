@@ -905,6 +905,7 @@ def test_the_backup_carries_the_family_name_and_mode(tmp_path):
 
     backup_path = monitor.create_timestamped_backup(destination)
 
+    assert backup_path is not None
     assert re.fullmatch(r"monitor\.conf\.\d{14}\.bak", Path(backup_path).name)
     assert Path(backup_path).read_text(encoding="utf-8") == "SETTING = 1\n"
     assert stat.S_IMODE(Path(backup_path).stat().st_mode) == 0o600
@@ -919,6 +920,7 @@ def test_a_second_backup_in_the_same_second_keeps_the_first(tmp_path):
 
     second = monitor.create_timestamped_backup(destination)
 
+    assert first is not None and second is not None
     assert first != second
     assert Path(first).read_text(encoding="utf-8") == "first\n"
     assert Path(second).read_text(encoding="utf-8") == "second\n"
@@ -1038,3 +1040,50 @@ def test_every_setting_a_function_assigns_is_declared_global():
         shadowed.extend(f"{node.name} line {inner.lineno}: {target.id}" for inner in ast.walk(node) if isinstance(inner, ast.Assign) for target in inner.targets if isinstance(target, ast.Name) and target.id in module_settings and target.id not in declared)
 
     assert sorted(set(shadowed)) == []
+
+
+# Verifies a run started with discovery off keeps it off in the commands its one-shot secret helpers print, so no
+# printed command sends the reader back to a configuration the run deliberately ignored
+def test_a_printed_command_keeps_discovery_off(monkeypatch, tmp_path):
+    (tmp_path / "spotify_profile_monitor.conf").write_text("SPOTIFY_CHECK_INTERVAL = 7200\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(monitor, "CONFIG_DISCOVERY_DISABLED", True)
+    monkeypatch.setattr(monitor, "CLI_CONFIG_PATH", None)
+
+    assert monitor.find_config_file() is not None
+    assert monitor.resolved_command_config(None) == "none"
+    assert monitor.resolved_command_config("none") == "none"
+
+
+# Verifies discovery left on still names the file a command should carry
+def test_a_printed_command_names_the_discovered_config(monkeypatch, tmp_path):
+    config_path = tmp_path / "spotify_profile_monitor.conf"
+    config_path.write_text("SPOTIFY_CHECK_INTERVAL = 7200\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(monitor, "CONFIG_DISCOVERY_DISABLED", False)
+
+    assert monitor.resolved_command_config(None) == str(config_path)
+    assert monitor.resolved_command_config("/tmp/chosen.conf") == "/tmp/chosen.conf"
+
+
+# Verifies the sessions Spotipy owns follow the TLS setting, since those requests are made by the library rather
+# than by a call site that could pass verify itself
+def test_the_spotipy_sessions_follow_the_tls_setting(monkeypatch):
+    pytest.importorskip("spotipy")
+    captured = {}
+
+    class RecordingAuth:
+        def __init__(self, **keywords):
+            captured["session"] = keywords["requests_session"]
+
+        def get_access_token(self, as_dict=False):
+            return "token"
+
+    monkeypatch.setattr(monitor, "VERIFY_SSL", False)
+    monkeypatch.setattr(monitor, "SP_CACHED_OAUTH_APP_TOKEN", None)
+    monkeypatch.setattr(monitor, "SP_APP_TOKENS_FILE", "")
+    monkeypatch.setattr("spotipy.oauth2.SpotifyClientCredentials", RecordingAuth)
+
+    monitor.spotify_get_access_token_from_oauth_app("client-id", "client-secret")
+
+    assert captured["session"].verify is False

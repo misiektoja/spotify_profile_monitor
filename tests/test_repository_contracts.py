@@ -300,6 +300,17 @@ class TestRepositoryMetadata:
         lint_steps = read_yaml_asset(".github/workflows/tests.yml")["jobs"]["lint"]["steps"]
         assert any("ruff check" in step.get("run", "") for step in lint_steps)
 
+    # A type error the local gate rejects must not reach main, and the check is worthless without --pythonpath,
+    # which is what makes the runtime dependencies resolve instead of reading as missing imports
+    def test_ci_type_checks_the_module_and_the_tests(self):
+        pinned = re.search(r'typecheck = \["pyright==([^"]+)"', read_asset("pyproject.toml"))
+        assert pinned is not None
+
+        steps = read_yaml_asset(".github/workflows/tests.yml")["jobs"]["typecheck"]["steps"]
+        command = next(step["run"] for step in steps if "pyright" in step.get("run", ""))
+        assert "--pythonpath" in command
+        assert "spotify_profile_monitor.py tests" in command
+
     # An unsigned download cannot be told apart from a tampered one, so releases carry checksums and provenance
     def test_release_archives_ship_checksums_and_provenance(self):
         job = read_yaml_asset(".github/workflows/release-assets.yml")["jobs"]["build-and-upload-assets"]

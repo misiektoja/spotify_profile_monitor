@@ -12,3 +12,9 @@ def clean_secret_environment(monkeypatch):
     # otherwise leak its secrets into every later test through the exported-environment lookup at startup
     for secret in monitor.SECRET_KEYS:
         monkeypatch.delenv(secret, raising=False)
+
+
+# Returns a check's recovery advice, failing the test when the row carries none rather than reading through None
+def advice_of(check):
+    assert check.advice is not None, f"{check.label} carries no recovery advice"
+    return check.advice

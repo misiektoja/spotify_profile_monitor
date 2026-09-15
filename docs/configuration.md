@@ -320,7 +320,7 @@ Example request:
 
 Spotify Profile Monitor verifies the TLS certificate of every server it contacts: Spotify, the connectivity check endpoint, downloaded artwork, the mail server that delivers email alerts and, when enabled, the webhook service.
 
-Set `VERIFY_SSL` to `False` only on a network that intercepts TLS with its own certificate authority, such as a corporate proxy. With verification off, an intercepted connection cannot be told apart from the real service.
+`VERIFY_SSL` covers every connection the tool makes, including the mail server and the OAuth token requests the Spotipy library sends. Set it to `False` only on a network that intercepts TLS with its own certificate authority, such as a corporate proxy. With verification off, an intercepted connection cannot be told apart from the real service.
 
 ```ini
 VERIFY_SSL = True
@@ -480,7 +480,7 @@ The `--help` screen is coloured too. Group headings, option names, the values th
 
 `COLOR_THEME` overrides individual colours. It is merged over the built-in theme, so name only the parts you want to change:
 
-Generated configuration files ship this block commented out, so the built-in defaults apply and a later change to them reaches you. A configuration file written by an earlier version sets every colour explicitly and therefore keeps the old ones: delete its `COLOR_THEME` block to follow the current defaults, or edit the values you want to keep. Such a file still loads unchanged.
+Generated configuration files ship this block commented out, so the built-in defaults apply and a later change to them reaches you. Overrides you added are written back as a real block when setup rebuilds the file, so they are not lost. A configuration file written by an earlier version sets every colour explicitly and therefore keeps the old ones: delete its `COLOR_THEME` block to follow the current defaults, or edit the values you want to keep. Such a file still loads unchanged.
 
 ```ini
 COLOR_THEME = { "playlist": "bright_magenta bold", "username": "green" }

@@ -560,7 +560,7 @@ def test_browser_import_receives_the_persisted_target_decision(tmp_path, monkeyp
 def test_the_output_section_records_the_log_and_csv_choices(monkeypatch, tmp_path):
     baseline = dict(vars(monitor))
     state = monitor.WizardSetupState(tmp_path / "config.conf", tmp_path / ".env", baseline, dict(baseline), {}, "target.user", True, {"complete": False, "validated": False, "browser": None, "source": "not configured"}, [], [])
-    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: False)
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: "CSV" in question)
     monkeypatch.setattr(monitor, "_wizard_ask_text", lambda question, default="", required=False: str(tmp_path / "profile.csv"))
 
     monitor._wizard_collect_output_section(state)
@@ -569,17 +569,26 @@ def test_the_output_section_records_the_log_and_csv_choices(monkeypatch, tmp_pat
     assert state.config_values["CSV_FILE"] == str(tmp_path / "profile.csv")
 
 
-# Verifies a blank CSV answer disables CSV output rather than storing an empty path as a file name
-def test_a_blank_csv_answer_disables_csv_output(monkeypatch, tmp_path):
-    baseline = dict(vars(monitor))
+# Verifies declining CSV output clears a saved path, which pressing Enter on the path question never could
+def test_declining_csv_output_clears_a_saved_path(monkeypatch, tmp_path):
+    # Seeded like a real rerun, where the saved settings are the baseline the section resets to
+    baseline = dict(vars(monitor), CSV_FILE=str(tmp_path / "existing.csv"))
     state = monitor.WizardSetupState(tmp_path / "config.conf", tmp_path / ".env", baseline, dict(baseline), {}, "target.user", True, {"complete": False, "validated": False, "browser": None, "source": "not configured"}, [], [])
-    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", lambda question, default=True: True)
-    monkeypatch.setattr(monitor, "_wizard_ask_text", lambda question, default="", required=False: "")
+    questions = []
+
+    def answer(question, default=True):
+        questions.append((question, default))
+        return "CSV" not in question
+
+    monkeypatch.setattr(monitor, "_wizard_ask_yes_no", answer)
+    monkeypatch.setattr(monitor, "_wizard_ask_text", lambda question, default="", required=False: pytest.fail("the path was asked for after CSV output was declined"))
 
     monitor._wizard_collect_output_section(state)
 
     assert state.config_values["DISABLE_LOGGING"] is False
     assert state.config_values["CSV_FILE"] == ""
+    # The saved path makes the question default to keeping it, so declining is a deliberate answer
+    assert ("Write a CSV file of the changes?", True) in questions
 
 
 # Verifies the two escape wordings, so a blank answer and a rejected one are never asked the same way
@@ -1338,17 +1347,20 @@ def test_the_wizard_reload_credits_the_dotenv_file(monkeypatch, tmp_path):
     assert monitor.SECRET_SOURCES["SP_DC_COOKIE"] == "dotenv file"
 
 
-# Verifies a secret exported before startup keeps the environment as its source, since the export still wins
-def test_the_wizard_reload_leaves_an_exported_secret_to_the_environment(monkeypatch, tmp_path):
+# Verifies an exported secret is the value Doctor checks, not only the source it credits, since startup loads the
+# dotenv file without overriding the environment and would otherwise be checked against a value it never reads
+def test_the_wizard_reload_checks_the_exported_secret(monkeypatch, tmp_path):
     config_path = tmp_path / "spotify_profile_monitor.conf"
     config_path.write_text("SP_DC_COOKIE = 'your_sp_dc_cookie_value'\n", encoding="utf-8")
     env_path = tmp_path / ".env"
     env_path.write_text("SP_DC_COOKIE=a-saved-cookie-value\n", encoding="utf-8")
     monkeypatch.setattr(monitor, "SECRET_SOURCES", {})
+    monkeypatch.setenv("SP_DC_COOKIE", "an-exported-cookie-value")
     monkeypatch.setattr(monitor, "EXPORTED_SECRET_KEYS", frozenset({"SP_DC_COOKIE"}))
 
     assert monitor._wizard_load_effective_setup(config_path, env_path)
 
+    assert monitor.SP_DC_COOKIE == "an-exported-cookie-value"
     assert monitor.SECRET_SOURCES["SP_DC_COOKIE"] == "environment"
 
 
@@ -1471,3 +1483,36 @@ def test_refusing_to_replace_a_config_without_a_terminal_raises_its_own_error(tm
         monitor.confirm_config_replacement(destination, interactive=False)
 
     assert destination.read_text(encoding="utf-8") == "SMTP_PORT = 587\n"
+
+
+# Verifies a theme the user wrote survives a rewrite, since the template ships COLOR_THEME commented out and a
+# plain pass-through of those lines would silently drop every override
+def test_generated_config_keeps_an_explicit_color_theme():
+    values = dict(vars(monitor))
+    values["COLOR_THEME"] = {"help_option": "red", "username": "bright_yellow underline"}
+
+    content = monitor.generate_config_with_current_values(values)
+    namespace = {}
+    exec(compile(content, "<generated>", "exec"), {}, namespace)
+
+    assert namespace["COLOR_THEME"] == {"help_option": "red", "username": "bright_yellow underline"}
+
+
+# Verifies the built-in theme stays commented out, so a later default change still reaches a config nobody customised
+def test_generated_config_leaves_the_default_theme_commented():
+    content = monitor.generate_config_with_current_values(dict(vars(monitor), COLOR_THEME={}))
+
+    assert "\nCOLOR_THEME = {" not in content
+    assert "# COLOR_THEME = {" in content
+
+
+# Verifies the help palette reaches the help screen, which argparse prints and exits from before the config loads
+def test_the_early_output_config_carries_the_help_theme(monkeypatch, tmp_path):
+    config_path = tmp_path / "spotify_profile_monitor.conf"
+    config_path.write_text('COLOR_THEME = {"help_option": "red"}\n', encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(monitor, "COLOR_THEME", {})
+
+    monitor.apply_early_output_config()
+
+    assert monitor.COLOR_THEME == {"help_option": "red"}

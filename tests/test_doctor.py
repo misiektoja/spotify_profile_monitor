@@ -6,6 +6,7 @@ import pytest
 
 import requests
 import spotify_profile_monitor as monitor
+from conftest import advice_of
 
 
 # Provides one in-memory stream that behaves like an interactive terminal
@@ -63,7 +64,7 @@ def test_missing_colorama_is_reported_on_windows(monkeypatch):
     missing = next(check for check in checks if "colorama" in check.label)
     assert missing.status == "WARN"
     assert "Coloured output may not render in the classic Windows Command Prompt" in missing.detail
-    assert "Windows Terminal, which needs nothing extra" in missing.advice.fix
+    assert "Windows Terminal, which needs nothing extra" in advice_of(missing).fix
 
 
 # Pillow moved to an optional extra, so a missing copy must never be reported as a broken installation
@@ -74,7 +75,7 @@ def test_doctor_treats_missing_artwork_support_as_optional():
     check = next(item for item in checks if "Pillow" in item.label)
     assert check.status == "WARN"
     # The rendered command follows the entry point, so assert the part that holds either way
-    assert "-m pip install" in check.advice.fix and "Every other feature is unaffected" in check.detail
+    assert "-m pip install" in advice_of(check).fix and "Every other feature is unaffected" in check.detail
 
 
 # A user who turned artwork on needs to be told the alerts are silently text-only until Pillow is installed
@@ -132,7 +133,7 @@ def test_doctor_reports_missing_cookie(monkeypatch):
 
     assert checks[0].status == "FAIL"
     assert "SP_DC_COOKIE" in checks[0].detail
-    assert "--import-browser-cookie" in checks[0].advice.fix
+    assert "--import-browser-cookie" in advice_of(checks[0]).fix
 
 
 # Verifies successful authentication is reused for one live target check
@@ -277,8 +278,8 @@ def test_doctor_target_preserves_non_target_failure(monkeypatch):
 
     assert check.status == "FAIL"
     assert check.label == "An unexpected error occurred"
-    assert check.advice is not None and check.advice.code == "unknown"
-    assert "confirm it still exists" not in check.advice.fix
+    assert check.advice is not None and advice_of(check).code == "unknown"
+    assert "confirm it still exists" not in advice_of(check).fix
 
 
 # Verifies Doctor still gives profile-specific recovery for a real Spotify HTTP 404
@@ -292,8 +293,8 @@ def test_doctor_target_classifies_http_404_as_not_found(monkeypatch):
 
     assert check.status == "FAIL"
     assert check.label == "The Spotify target could not be loaded"
-    assert check.advice is not None and check.advice.code == "target.not_found"
-    assert "https://open.spotify.com/user/missing.user" in check.advice.fix
+    assert check.advice is not None and advice_of(check).code == "target.not_found"
+    assert "https://open.spotify.com/user/missing.user" in advice_of(check).fix
 
 
 # Verifies an authentication-mode restriction is not described as a missing Spotify profile
@@ -306,8 +307,8 @@ def test_doctor_target_classifies_authentication_mode_restriction(monkeypatch):
 
     assert check.status == "FAIL"
     assert check.label == "The selected authentication mode cannot load this profile"
-    assert check.advice is not None and check.advice.code == "auth.rejected"
-    assert "cookie or client" in check.advice.fix
+    assert check.advice is not None and advice_of(check).code == "auth.rejected"
+    assert "cookie or client" in advice_of(check).fix
 
 
 # Verifies Doctor reports the automatic timezone the shared resolver settled on rather than the literal Auto value
@@ -579,7 +580,7 @@ def test_the_python_row_names_the_minimum_supported_version():
     assert supported.detail == f"Minimum supported version: {monitor.MINIMUM_PYTHON_VERSION_TEXT}"
     assert unsupported.status == "FAIL"
     assert unsupported.detail == supported.detail
-    assert monitor.MINIMUM_PYTHON_VERSION_TEXT in unsupported.advice.fix
+    assert monitor.MINIMUM_PYTHON_VERSION_TEXT in advice_of(unsupported).fix
 
 
 # Verifies valid numeric settings take no row, since a value that is merely fine is not a finding
@@ -604,8 +605,8 @@ def test_unusable_email_settings_warn_and_name_the_same_settings(monkeypatch):
     assert check.status == "WARN"
     assert check.label == monitor.EMAIL_UNUSABLE_CHECK_LABEL
     assert check.detail == "SMTP_USER or SMTP_PASSWORD is empty or still set to its placeholder"
-    assert "Set SMTP_USER and SMTP_PASSWORD or turn the email alerts off" in check.advice.fix
-    assert monitor.SMTP_GUIDE_URL in check.advice.fix
+    assert "Set SMTP_USER and SMTP_PASSWORD or turn the email alerts off" in advice_of(check).fix
+    assert monitor.SMTP_GUIDE_URL in advice_of(check).fix
 
 
 # Verifies every doctor detail keeps to the agreed shapes: it never repeats its label, gives an instruction or joins values with a pipe
@@ -741,7 +742,7 @@ def test_the_connectivity_row_names_the_shared_endpoint(monkeypatch):
 
     assert (passing.status, passing.label, passing.detail) == ("PASS", "The connectivity endpoint is reachable", "Endpoint: https://probe.example/ping")
     assert (failing.status, failing.label, failing.detail) == ("FAIL", "The connectivity endpoint could not be reached", "Endpoint: https://probe.example/ping")
-    assert failing.advice.fix == "Check network, DNS, proxy and CHECK_INTERNET_URL settings"
+    assert advice_of(failing).fix == "Check network, DNS, proxy and CHECK_INTERNET_URL settings"
 
 
 # Verifies a report read on its own ends with the command that starts monitoring, carrying this run's files
@@ -816,7 +817,7 @@ def test_a_rate_limiting_interval_is_warned_about(monkeypatch):
     rows = [item for item in monitor.doctor_check_configuration() if item.label == "Check intervals are short"]
 
     assert [item.status for item in rows] == ["WARN"]
-    assert str(monitor.DOCTOR_MIN_SAFE_CHECK_INTERVAL) in rows[0].advice.fix
+    assert str(monitor.DOCTOR_MIN_SAFE_CHECK_INTERVAL) in advice_of(rows[0]).fix
 
 
 # The default interval is safe, so the row must stay away rather than warning about every run
@@ -861,8 +862,8 @@ def test_email_configured_but_nothing_selected_warns(monkeypatch):
     check = monitor.doctor_check_notifications()[0]
 
     assert (check.status, check.label) == ("WARN", "Email is configured but no alert types are selected")
-    assert check.advice.fix.startswith("Turn on at least one email alert in the configuration file")
-    assert monitor.SMTP_GUIDE_URL in check.advice.fix
+    assert advice_of(check).fix.startswith("Turn on at least one email alert in the configuration file")
+    assert monitor.SMTP_GUIDE_URL in advice_of(check).fix
 
 
 # Verifies webhook alert types selected while the channel is off warn, since nothing would ever be delivered
@@ -875,7 +876,7 @@ def test_webhook_alerts_selected_but_switched_off_warn(monkeypatch):
     check = monitor.doctor_check_notifications()[-1]
 
     assert (check.status, check.label) == ("WARN", "Webhook alert types are selected but webhooks are switched off")
-    assert "WEBHOOK_ENABLED" in check.advice.fix
+    assert "WEBHOOK_ENABLED" in advice_of(check).fix
 
 
 # One row shape and one advice shape across the family: the advice rides on the row and its fix carries the
@@ -919,7 +920,7 @@ def test_a_retired_setting_becomes_a_warning_row_with_an_action(monkeypatch, tmp
     row = next(check for check in received["checks"] if check.label == "Configuration file contains removed settings")
     assert row.status == "WARN"
     assert "TOTP_VER" in row.detail
-    assert row.advice.fix == monitor.recovery_fix_with_guide("Delete the listed settings from the configuration file", monitor.CONFIG_GUIDE_URL)
+    assert advice_of(row).fix == monitor.recovery_fix_with_guide("Delete the listed settings from the configuration file", monitor.CONFIG_GUIDE_URL)
 
 
 # A string such as "false" counts as on, so an on/off setting holding anything but True or False is named in one row
@@ -932,7 +933,7 @@ def test_invalid_boolean_settings_are_reported_in_one_row(monkeypatch):
     assert [item.status for item in rows] == ["FAIL"]
     assert "ERROR_NOTIFICATION must be True or False, not 'false'" in rows[0].detail
     assert "SMTP_SSL must be True or False, not 1" in rows[0].detail
-    assert rows[0].advice.code == "config.invalid"
+    assert advice_of(rows[0]).code == "config.invalid"
 
 
 # The shipped defaults are all real booleans, so a run with nothing overridden never sees the on/off row
@@ -952,4 +953,27 @@ def test_a_malformed_webhook_url_fails_under_the_family_label(monkeypatch):
     check = monitor.doctor_check_notifications()[-1]
 
     assert (check.status, check.label) == ("FAIL", "WEBHOOK_URL must contain a complete HTTPS link")
-    assert check.advice.code == "webhook.invalid"
+    assert advice_of(check).code == "webhook.invalid"
+
+
+# Verifies Doctor describes the run it was asked for, since it exits before monitoring applies the output flags
+# and would otherwise report destinations from the configuration file alone
+def test_doctor_reports_the_output_overrides_the_run_was_given(monkeypatch, tmp_path):
+    csv_path = tmp_path / "chosen.csv"
+    seen = {}
+    monkeypatch.setattr(monitor.sys, "argv", ["spotify_profile_monitor", "--doctor", "watched-user", "-b", str(csv_path), "-d", "--config-file", "none", "--env-file", "none"])
+    monkeypatch.setattr(monitor, "CSV_FILE", "")
+    monkeypatch.setattr(monitor, "DISABLE_LOGGING", False)
+
+    def capture(*args, **keywords):
+        seen["csv"] = monitor.CSV_FILE
+        seen["logging_disabled"] = monitor.DISABLE_LOGGING
+        return 0
+
+    monkeypatch.setattr(monitor, "run_doctor", capture)
+
+    with pytest.raises(SystemExit):
+        monitor.main()
+
+    assert seen["csv"] == str(csv_path)
+    assert seen["logging_disabled"] is True
