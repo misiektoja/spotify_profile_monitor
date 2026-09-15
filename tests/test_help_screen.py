@@ -1,5 +1,6 @@
 """Tests the --help screen: the shared argument group names, the task-grouped examples and the startup banner."""
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -102,7 +103,10 @@ def test_argparse_adds_no_palette_of_its_own():
 def test_the_parser_is_built_with_the_argparse_colour_switch():
     source = Path(monitor.__file__).read_text(encoding="utf-8")
 
-    assert "**argparse_color_kwargs()" in source.split("argparse.ArgumentParser(", 1)[1].split("\n\n", 1)[0]
+    construction = re.search(r"\n    parser = \w+\(\n(.*?)\n\n", source, re.S)
+
+    assert construction is not None, "the parser construction could not be found"
+    assert "**argparse_color_kwargs()" in construction.group(1)
 
 
 # Verifies both file flags advertise the `none` sentinel, since either can switch its own discovery off

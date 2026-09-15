@@ -476,6 +476,8 @@ Webhook requests do not follow redirects, so `WEBHOOK_HEADERS` credentials and a
 
 `COLORED_OUTPUT` controls whether live terminal output is coloured. It defaults to `True` and is read before the startup banner is printed, so a configured value applies to the first line of output. `--no-color` disables colour for one run. Colour also switches itself off when output is redirected or piped, when `TERM` is unset or `dumb` and when the standard [`NO_COLOR`](https://no-color.org/) environment variable is set. Log files are always written with the escape sequences stripped.
 
+The `--help` screen is coloured too. Group headings, option names, the values those options take, the example commands and the comments above them each get their own colour, so the screen can be scanned instead of read.
+
 `COLOR_THEME` overrides individual colours. It is merged over the built-in theme, so name only the parts you want to change:
 
 Generated configuration files ship this block commented out, so the built-in defaults apply and a later change to them reaches you. A configuration file written by an earlier version sets every colour explicitly and therefore keeps the old ones: delete its `COLOR_THEME` block to follow the current defaults, or edit the values you want to keep. Such a file still loads unchanged.
@@ -514,6 +516,14 @@ Parts with the same name mean the same thing in [spotify_monitor](https://github
 | `boolean_true`, `boolean_false` | `True` / `Enabled` and `False` / `Disabled` |
 | `count_up`, `count_down` | Reported changes only, such as `from 10 to 12` and the `(+2)` / `(-2)` differences. A static count is left plain |
 | `link` | URLs |
+| `help_heading` | The `--help` group headings and example task names |
+| `help_usage` | The `usage:` label |
+| `help_option` | Option names such as `--doctor` |
+| `help_metavar` | The value each option takes, such as a path or a number of seconds |
+| `help_placeholder` | Values to replace in the help examples |
+| `help_command` | The commands in the help examples |
+| `help_comment` | The `#` comment above each help example |
+| `help_default` | The `(default: ...)` notes |
 
 On Windows, install the optional `colorama` package for the best results in the classic Command Prompt. Windows Terminal needs nothing extra.
 

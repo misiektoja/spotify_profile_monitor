@@ -429,6 +429,8 @@ Cookies, tokens, passwords, authorization headers and webhook URLs are redacted 
 
 Spotify Profile Monitor colours live terminal output by default. Usernames, Spotify IDs, playlist, track and album names, dates, durations, follower and playlist counters, links and change headers each get their own colour. Error lines are highlighted end to end. Warning and signal lines mark their opening word instead, so a playlist or track named inside one keeps its own colour.
 
+The `--help` screen is coloured too. Group headings, option names, the values those options take, the example commands and the comments above them each get their own colour, so the screen can be scanned instead of read.
+
 Colour never reaches saved output: log files are written with the escape sequences stripped, so `grep`, `tail` and any log viewer see plain text.
 
 Turn it off for one run with `--no-color`, or permanently with `COLORED_OUTPUT = False` in the configuration file. The setting is read before the startup banner is printed, so a configured value applies to the very first line of output. Colour also switches itself off when it cannot be displayed safely: when output is redirected or piped, when `TERM` is unset or `dumb`, and when the standard [`NO_COLOR`](https://no-color.org/) environment variable is set. On Windows, install the optional `colorama` package for the best results in the classic Command Prompt.
