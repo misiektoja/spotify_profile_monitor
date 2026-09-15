@@ -31,6 +31,7 @@ would see.
 | File | Area under test |
 | --- | --- |
 | `test_recovery_safety.py` | Real dotenv reloads, setup backups, oversized counts and provider-error privacy |
+| `test_startup_numeric_message.py` | Real offline startup names the invalid interval without debug mode |
 | `test_smtp_error_privacy.py` | Short and escaped passwords in rejected SMTP sign-ins through commands, setup, Doctor and delivery |
 | `conftest.py` | Shared fixture: exported secrets are cleared between tests, so a dotenv one test loads cannot change what a later one resolves |
 | `test_setup_resolution_regressions.py` | Saved dotenv destinations, empty secrets, export precedence and recovery paths |

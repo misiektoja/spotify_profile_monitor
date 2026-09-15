@@ -28,6 +28,8 @@ When `--generate-config FILENAME` targets an existing file, an interactive run a
 Despite its legacy name, `TARGET_USER_URI_ID` accepts a complete Spotify profile URL, a `spotify:user:` URI or a user ID. Set it to run without a positional target. A positional target in any accepted form overrides the configured value.
 
 <a id="json-history-directory"></a>
+Startup names invalid `SPOTIFY_CHECK_INTERVAL` and `LIVENESS_CHECK_INTERVAL` values in the normal error output. These settings take numeric seconds, not duration words such as `daily`.
+
 ## JSON History Directory
 
 Set `JSON_DIR` to keep the follower, following and playlist history files outside the current working directory:

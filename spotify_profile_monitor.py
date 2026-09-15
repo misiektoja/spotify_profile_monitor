@@ -13361,7 +13361,8 @@ def main():
     # SPOTIFY_CHECK_INTERVAL is honored, not only a --check-interval override
     numeric_errors = [f"{name} must be a number, not {value!r}" for name, value in (("SPOTIFY_CHECK_INTERVAL", SPOTIFY_CHECK_INTERVAL), ("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL)) if not isinstance(value, (int, float))]
     if numeric_errors and not args.doctor:
-        print_recovery_error(context="config_invalid", detail="Invalid numeric settings: " + ", ".join(numeric_errors))
+        advice = make_recovery_advice("config.invalid", "Invalid numeric settings: " + ", ".join(numeric_errors), recovery_fix_with_guide("Set SPOTIFY_CHECK_INTERVAL and LIVENESS_CHECK_INTERVAL to numeric seconds then retry", CONFIG_GUIDE_URL), False)
+        print_recovery_advice(advice)
         sys.exit(1)
     if not numeric_errors:
         LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL > 0 else 0
