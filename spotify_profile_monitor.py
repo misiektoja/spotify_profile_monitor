@@ -308,6 +308,12 @@ PLAYLISTS_DISAPPEARED_COUNTER = 3
 # PLAYLISTS_CHANGE_COUNTER times in a row (set to 0 to disable this protection)
 PLAYLISTS_CHANGE_COUNTER = 2
 
+# A one-shot read (-i) and the monitoring startup have no next check to compare against, so an empty playlist
+# list is read again up to PLAYLISTS_EMPTY_RETRIES times, PLAYLISTS_EMPTY_RETRY_SLEEP seconds apart
+# A real removal survives every retry while a Spotify glitch usually does not (set retries to 0 to disable)
+PLAYLISTS_EMPTY_RETRIES = 2
+PLAYLISTS_EMPTY_RETRY_SLEEP = 3
+
 # Occasionally, the Spotify API glitches and returns an empty list of user followers / followings
 # To avoid false alarms, we delay notifications until this happens FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER times in a row
 FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER = 3
@@ -767,6 +773,8 @@ RECENTLY_PLAYED_ARTISTS_LIMIT = 0
 RECENTLY_PLAYED_ARTISTS_LIMIT_INFO = 0
 PLAYLISTS_DISAPPEARED_COUNTER = 0
 PLAYLISTS_CHANGE_COUNTER = 0
+PLAYLISTS_EMPTY_RETRIES = 0
+PLAYLISTS_EMPTY_RETRY_SLEEP = 0
 FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER = 0
 COLLABORATORS_CHANGE_COUNTER = 0
 HIDE_DUPLICATE_NETWORK_ERRORS = False
@@ -6183,6 +6191,7 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
         "sp_user_followings_count": None,
         "sp_user_public_playlists_count": 0,
         "sp_user_public_playlists_uris": [],
+        "sp_user_public_playlists_available": False,
         "sp_user_recently_played_artists": [],
         "sp_user_image_url": ""
     }
@@ -6213,6 +6222,11 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
 
             out["sp_user_public_playlists_uris"] = trimmed_playlists
             out["sp_user_public_playlists_count"] = len(trimmed_playlists)
+            out["sp_user_public_playlists_available"] = isinstance(raw_playlist_data_from_api, list)
+
+            # An empty list is the shape a Spotify glitch takes, so the response keys are recorded to identify it later
+            if not trimmed_playlists:
+                debug_print("Profile playlists empty", user=user_uri_id, field_present=isinstance(raw_playlist_data_from_api, list), response_keys=sorted(str(key) for key in json_response.keys()))
 
         raw_artists = json_response.get("recently_played_artists")
         artists_data = raw_artists if isinstance(raw_artists, list) else []
@@ -6253,6 +6267,7 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
                     out["sp_user_public_playlists_uris"].extend({"image_url": (p.get("images") or [{}])[0].get("url", ""), "uri": p.get("uri"), "owner_uri": p.get("owner", {}).get("uri")} for p in current_list_to_process if isinstance(p, dict) and (GET_ALL_PLAYLISTS or p.get("owner", {}).get("uri") == f"spotify:user:{user_uri_id}"))
                     url_me_playlists = spotify_next_page_url(json_response.get("next"), playlist_page_idx, "own playlists")
                 out["sp_user_public_playlists_count"] = len(out["sp_user_public_playlists_uris"])
+                out["sp_user_public_playlists_available"] = True
 
         else:
             # oauth_app or oauth_user monitoring others: try existing endpoints
@@ -6280,6 +6295,7 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
                         out["sp_user_public_playlists_uris"].extend({"image_url": (p.get("images") or [{}])[0].get("url", ""), "uri": p.get("uri"), "owner_uri": p.get("owner", {}).get("uri")} for p in current_list_to_process if isinstance(p, dict) and (GET_ALL_PLAYLISTS or p.get("owner", {}).get("uri") == f"spotify:user:{user_uri_id}"))
                         url2_pl = spotify_next_page_url(json_response.get("next"), playlist_page_idx, "user playlists")
                     out["sp_user_public_playlists_count"] = len(out["sp_user_public_playlists_uris"])
+                    out["sp_user_public_playlists_available"] = True
 
             except req.HTTPError as e:
                 if e.response is not None and e.response.status_code in {403, 404}:
@@ -6314,6 +6330,43 @@ def spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_pla
         out["sp_user_recently_played_artists"] = artists_data
 
     return out
+
+
+# Reports whether a profile snapshot carries playlists, the only shape that needs no confirmation read
+def playlist_snapshot_usable(sp_user_data) -> bool:
+    return isinstance(sp_user_data, dict) and bool(sp_user_data.get("sp_user_public_playlists_uris"))
+
+
+# Reads a profile, re-reading it when the playlist list comes back empty, because a real removal survives a second read while a Spotify glitch usually does not
+def spotify_get_user_info_confirmed(access_token, user_uri_id, get_playlists, recently_played_limit, quiet=False):
+    sp_user_data = spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_played_limit)
+
+    if not get_playlists or playlist_snapshot_usable(sp_user_data):
+        return sp_user_data
+
+    retries = max(0, int(PLAYLISTS_EMPTY_RETRIES))
+    for attempt in range(1, retries + 1):
+        if not quiet:
+            print(f"* Spotify API returned no playlists for user '{user_uri_id}', re-reading the profile ({attempt}/{retries}) ...")
+        time.sleep(max(0, int(PLAYLISTS_EMPTY_RETRY_SLEEP)))
+
+        try:
+            retried = spotify_get_user_info(access_token, user_uri_id, get_playlists, recently_played_limit)
+        except Exception as e:
+            debug_print("Playlist re-read failed", user=user_uri_id, attempt=attempt, error=sanitize_error_text(e))
+            continue
+
+        if playlist_snapshot_usable(retried):
+            if not quiet:
+                print(f"* Spotify API returned {retried['sp_user_public_playlists_count']} playlist(s) on re-read; the empty list was a glitch\n")
+            return retried
+
+        sp_user_data = retried
+
+    if retries and not quiet:
+        print(f"* Spotify API still reports no playlists for user '{user_uri_id}' after {retries} re-read(s); treating the empty list as real\n")
+
+    return sp_user_data
 
 
 # Returns followings for user with specified URI
@@ -7508,7 +7561,7 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
 
     print(f"* Getting detailed info for Spotify user ID '{user_uri_id}' ...\n")
 
-    sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS, RECENTLY_PLAYED_ARTISTS_LIMIT_INFO)
+    sp_user_data = spotify_get_user_info_confirmed(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS, RECENTLY_PLAYED_ARTISTS_LIMIT_INFO)
     sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
     sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
 
@@ -7573,6 +7626,8 @@ def spotify_get_user_details(sp_accessToken, user_uri_id):
             announce_playlist_export()
             list_of_playlists, error_while_processing = spotify_process_public_playlists(sp_accessToken, playlists, True)
             spotify_print_public_playlists(list_of_playlists)
+        elif EXPORT_ALL:
+            print("\n* Nothing to export: the Spotify API reported no playlists for this profile")
 
 
 # Returns recently played artists for a user with the specified URI (-a flag)
@@ -10125,7 +10180,7 @@ def runtime_boolean_errors() -> List[str]:
 
 # Lists numeric settings that cannot be used by monitoring or Doctor
 def runtime_numeric_errors() -> List[str]:
-    numeric_values = (("SPOTIFY_CHECK_INTERVAL", SPOTIFY_CHECK_INTERVAL, 1, None), ("SPOTIFY_ERROR_INTERVAL", SPOTIFY_ERROR_INTERVAL, 0, None), ("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL, 0, None), ("PLAYLISTS_LIMIT", PLAYLISTS_LIMIT, 1, None), ("RECENTLY_PLAYED_ARTISTS_LIMIT", RECENTLY_PLAYED_ARTISTS_LIMIT, 0, None), ("RECENTLY_PLAYED_ARTISTS_LIMIT_INFO", RECENTLY_PLAYED_ARTISTS_LIMIT_INFO, 0, None), ("PLAYLISTS_DISAPPEARED_COUNTER", PLAYLISTS_DISAPPEARED_COUNTER, 1, None), ("FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER", FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER, 1, None), ("COLLABORATORS_CHANGE_COUNTER", COLLABORATORS_CHANGE_COUNTER, 0, None), ("PLAYLISTS_CHANGE_COUNTER", PLAYLISTS_CHANGE_COUNTER, 0, None), ("TRUNCATE_CHARS", TRUNCATE_CHARS, 0, None), ("SMTP_PORT", SMTP_PORT, 1, 65535))
+    numeric_values = (("SPOTIFY_CHECK_INTERVAL", SPOTIFY_CHECK_INTERVAL, 1, None), ("SPOTIFY_ERROR_INTERVAL", SPOTIFY_ERROR_INTERVAL, 0, None), ("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL, 0, None), ("PLAYLISTS_LIMIT", PLAYLISTS_LIMIT, 1, None), ("RECENTLY_PLAYED_ARTISTS_LIMIT", RECENTLY_PLAYED_ARTISTS_LIMIT, 0, None), ("RECENTLY_PLAYED_ARTISTS_LIMIT_INFO", RECENTLY_PLAYED_ARTISTS_LIMIT_INFO, 0, None), ("PLAYLISTS_DISAPPEARED_COUNTER", PLAYLISTS_DISAPPEARED_COUNTER, 1, None), ("FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER", FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER, 1, None), ("COLLABORATORS_CHANGE_COUNTER", COLLABORATORS_CHANGE_COUNTER, 0, None), ("PLAYLISTS_CHANGE_COUNTER", PLAYLISTS_CHANGE_COUNTER, 0, None), ("PLAYLISTS_EMPTY_RETRIES", PLAYLISTS_EMPTY_RETRIES, 0, None), ("PLAYLISTS_EMPTY_RETRY_SLEEP", PLAYLISTS_EMPTY_RETRY_SLEEP, 0, None), ("TRUNCATE_CHARS", TRUNCATE_CHARS, 0, None), ("SMTP_PORT", SMTP_PORT, 1, 65535))
     return [f"{name}={value!r}" for name, value, minimum, maximum in numeric_values if not finite_number(value) or value < minimum or maximum is not None and value > maximum]
 
 
@@ -11869,7 +11924,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             sp_accessToken = spotify_get_access_token_from_oauth_user(SP_USER_CLIENT_ID, SP_USER_CLIENT_SECRET, SP_USER_REDIRECT_URI, SP_USER_SCOPE, init=True)
         else:
             sp_accessToken = spotify_get_access_token_from_sp_dc(SP_DC_COOKIE)
-        sp_user_data = spotify_get_user_info(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS, 0)
+        sp_user_data = spotify_get_user_info_confirmed(sp_accessToken, user_uri_id, DETECT_CHANGES_IN_PLAYLISTS, 0)
         sp_user_followers_data = spotify_get_user_followers(sp_accessToken, user_uri_id)
         sp_user_followings_data = spotify_get_user_followings(sp_accessToken, user_uri_id)
     except Exception as e:
@@ -11981,18 +12036,32 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 playlists_old = playlists_read[1]
                 playlists_mdate = datetime.fromtimestamp(int(os.path.getmtime(playlists_file)), pytz.timezone(LOCAL_TIMEZONE))
                 print(f"* Playlists ({playlists_old_count}) loaded from file '{playlists_file}' ({get_short_date_from_ts(playlists_mdate, show_weekday=False, always_show_year=True)})")
-        if not playlists_read:
-            playlists_to_save = []
-            playlists_to_save.append(playlists_count)
-            playlists_to_save.append(playlists)
-            try:
-                with open(playlists_file, 'w', encoding="utf-8") as f:
-                    json.dump(playlists_to_save, f, indent=2)
-                print(f"* Playlists ({playlists_count}) saved to file '{playlists_file}'")
-            except Exception as e:
-                print_operation_error(f"Playlist history could not be saved to '{playlists_file}'", e)
+        playlists_unavailable = not sp_user_data.get("sp_user_public_playlists_available", False)
 
-        if playlist_collection_changed(playlists, playlists_old, playlists_count, playlists_old_count):
+        if not playlists_read:
+            # A baseline written from an unusable read would record an emptied profile as the truth
+            if playlists_unavailable:
+                print(f"* Spotify API did not return a usable playlist list; no baseline was written to '{playlists_file}'")
+            else:
+                playlists_to_save = []
+                playlists_to_save.append(playlists_count)
+                playlists_to_save.append(playlists)
+                try:
+                    with open(playlists_file, 'w', encoding="utf-8") as f:
+                        json.dump(playlists_to_save, f, indent=2)
+                    print(f"* Playlists ({playlists_count}) saved to file '{playlists_file}'")
+                except Exception as e:
+                    print_operation_error(f"Playlist history could not be saved to '{playlists_file}'", e)
+
+        # The monitoring loop spreads a disappearance over PLAYLISTS_DISAPPEARED_COUNTER checks, but startup gets a
+        # single read, so an empty list here keeps the saved baseline and leaves the verdict to the loop
+        retained_baseline = playlists_old_count and (playlists_unavailable or not playlists_count)
+
+        if retained_baseline:
+            print(f"* Spotify API reports {playlists_count} playlists while '{playlists_file}' holds {playlists_old_count}; keeping the saved baseline until {PLAYLISTS_DISAPPEARED_COUNTER} checks confirm it")
+            playlists_count = playlists_old_count
+            playlists = playlists_old
+        elif playlist_collection_changed(playlists, playlists_old, playlists_count, playlists_old_count):
             spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists to profile", "Added Playlist", "Removed playlists from profile", "Removed Playlist", playlists_file, csv_file_name, False, True, sp_accessToken)
 
         print_cur_ts("Timestamp:\t\t\t")

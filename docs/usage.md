@@ -412,6 +412,10 @@ For restricted playlists, the tool cannot monitor:
 
 `PLAYLISTS_CHANGE_COUNTER` requires repeated matching nonempty playlist collections before reporting a change. Set it to `0` to accept a nonempty change immediately. `PLAYLISTS_DISAPPEARED_COUNTER` separately controls how many consecutive empty responses confirm that all playlists disappeared. A nonempty response resets the disappearance count and an empty response clears a pending nonempty change. Playlist metadata failures retain the last successful details and can trigger error alerts without bypassing either threshold.
 
+Those two thresholds need several checks to decide, which only works while monitoring is already running. A one-shot `-i` read and the first check after startup get a single response, so they confirm an empty playlist list differently: the profile is read again up to `PLAYLISTS_EMPTY_RETRIES` times (default `2`), `PLAYLISTS_EMPTY_RETRY_SLEEP` seconds apart (default `3`). A Spotify glitch usually clears on the retry while a real removal does not. Set `PLAYLISTS_EMPTY_RETRIES` to `0` to disable the extra reads.
+
+If startup still sees no playlists while the saved history file holds some, it keeps the saved history and says so, rather than recording an emptied profile. The count then follows the usual `PLAYLISTS_DISAPPEARED_COUNTER` confirmation once monitoring is running. For the same reason, a first baseline is never written from a response whose playlist field was missing altogether.
+
 ## Check Intervals
 
 If you want to customize polling interval, use `-c` flag (or `SPOTIFY_CHECK_INTERVAL` configuration option):
