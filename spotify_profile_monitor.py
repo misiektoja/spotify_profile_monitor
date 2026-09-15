@@ -917,7 +917,7 @@ PLAYLIST_INPUT_ERROR = f"Invalid Spotify playlist. Use {SPOTIFY_WEB_BASE_URL}/pl
 SPOTIFY_OBJECT_TYPES = frozenset({"user", "artist", "track", "album", "playlist"})
 
 # Stable machine-readable categories used by recovery output and Doctor checks
-RECOVERY_CODES = frozenset({"config.missing", "config.invalid", "config.insecure", "dependency.missing", "secret.missing", "secret.entry", "auth.cookie_invalid", "auth.client_invalid", "auth.oauth_invalid", "auth.rejected", "network.unavailable", "network.timeout", "spotify.rate_limited", "spotify.unavailable", "target.invalid", "target.not_found", "smtp.invalid", "smtp.authentication", "smtp.connection", "webhook.invalid", "webhook.rejected", "webhook.redirected", "webhook.rate_limited", "webhook.connection", "file.unreadable", "file.unwritable", "unknown"})
+RECOVERY_CODES = frozenset({"config.missing", "config.invalid", "config.insecure", "dependency.missing", "secret.missing", "secret.entry", "auth.cookie_invalid", "auth.client_invalid", "auth.oauth_invalid", "auth.rejected", "network.unavailable", "network.timeout", "spotify.rate_limited", "spotify.unavailable", "target.invalid", "target.not_found", "smtp.invalid", "smtp.authentication", "smtp.connection", "webhook.invalid", "webhook.rejected", "webhook.redirected", "webhook.rate_limited", "webhook.connection", "file.unreadable", "file.unwritable", "resource.exhausted", "unknown"})
 
 # Strings removed from track names for generating proper Genius search URLs
 re_search_str = r'remaster|extended|original mix|remix|original soundtrack|radio( |-)edit|\(feat\.|( \(.*version\))|( - .*version)'
@@ -2253,6 +2253,27 @@ def spotify_user_profile_url(user_id: str) -> str:
     return f"{SPOTIFY_WEB_BASE_URL}/user/{quote(user_id, safe='')}"
 
 
+# Yields the exception and each cause or context up to max_depth, to walk an exception chain
+def iter_exc_chain(error, max_depth=8):
+    current = error
+    for _ in range(max_depth):
+        if current is None:
+            return
+        yield current
+        current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
+
+
+# Reports whether any exception in the chain is the local file descriptor limit rather than a remote failure
+def is_too_many_open_files(error):
+    for current in iter_exc_chain(error):
+        if isinstance(current, OSError) and getattr(current, "errno", None) == 24:
+            return True
+        message = str(current).lower()
+        if "too many open files" in message or "errno 24" in message:
+            return True
+    return False
+
+
 # Classifies a failure into stable user-facing recovery guidance
 def classify_recovery_error(error: Any = None, context: str = "runtime", detail: Any = "", target_user_id: Optional[str] = None) -> RecoveryAdvice:
     if isinstance(error, RecoveryError):
@@ -2261,6 +2282,10 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
     # Both are matched, since a caller that adds context would otherwise hide the error text the rules read
     message = " ".join(part for part in (str(detail or ""), str(error or "")) if part).casefold()
     status = recovery_http_status(error)
+
+    # Checked ahead of every context, since a local descriptor limit is not a failure of whatever call hit it
+    if error is not None and is_too_many_open_files(error):
+        return make_recovery_advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not a Spotify problem", recovery_fix_with_guide("Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", DIAGNOSTICS_GUIDE_URL), False, safe_detail)
 
     if context == "browser_import":
         if any(term in message for term in ("network", "connectivity", "timeout", "timed out", "name resolution", "dns", "proxy", "ssl")):

@@ -321,6 +321,22 @@ def test_the_outage_reporter_keeps_repeating_without_a_liveness_banner():
     assert [reporter.failed(advice, 0) for _ in range(2)] == ["repeat", "repeat"]
 
 
+# Verifies a local file descriptor limit is reported as itself rather than as a failure of the call that hit it
+def test_a_file_descriptor_limit_is_not_reported_as_a_service_failure():
+    try:
+        try:
+            raise OSError(24, "Too many open files")
+        except OSError as inner:
+            raise RuntimeError("the Spotify request failed") from inner
+    except RuntimeError as error:
+        advice = monitor.classify_recovery_error(error)
+
+    assert advice.code == "resource.exhausted"
+    assert advice.retryable is False
+    assert "not a Spotify problem" in advice.summary
+    assert "ulimit -n 4096" in advice.fix
+
+
 # Verifies an operation failure names the step that failed in front of the classified cause and still carries a fix
 def test_an_operation_failure_names_the_step_and_the_cause(monkeypatch, capsys):
     monkeypatch.setattr(monitor, "COLOR_ENABLED", False)
