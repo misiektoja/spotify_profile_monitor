@@ -3,8 +3,6 @@
 import json
 from unittest.mock import Mock
 
-import pytest
-
 import spotify_profile_monitor as monitor
 
 PLAYLIST = {"uri": "spotify:playlist:aaaaaaaaaaaaaaaaaaaaaa", "owner_uri": "spotify:user:watched"}
