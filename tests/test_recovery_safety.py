@@ -159,7 +159,9 @@ def test_provider_response_does_not_leak_secret_prefix(monitor, monkeypatch, cap
     if monitor.__name__ == "lol_monitor":
         monkeypatch.setattr(monitor, "WEBHOOK_SESSION", requests.Session())
     if monitor.__name__ == "xbox_monitor":
-        import httpx
+        # HTTPX is an Xbox Monitor runtime dependency, so this branch is unreachable here and the
+        # package is absent from this project's environments
+        import httpx  # pyright: ignore[reportMissingImports]
 
         # Supplies the same provider failure through Xbox Monitor's real HTTPX transport
         def httpx_send(transport, request):

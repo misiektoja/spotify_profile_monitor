@@ -49,7 +49,9 @@ def delivery(monkeypatch):
 
     monkeypatch.setattr(HTTPAdapter, "send", respond)
     if monitor.__name__ == "xbox_monitor":
-        import httpx
+        # HTTPX is an Xbox Monitor runtime dependency, so this branch is unreachable here and the
+        # package is absent from this project's environments
+        import httpx  # pyright: ignore[reportMissingImports]
 
         # Returns a response through the real HTTPX client and transport
         def httpx_respond(transport, request):
