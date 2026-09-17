@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 3.9 (TBD)
+# Changes in 3.9 (18 Sep 2026)
 
 Version **3.9** restores **OAuth playlist reads** and preserves **follower history** when Spotify data is unavailable. It adds **private SMTP password entry**, improves the **`--setup` wizard** and Doctor reports and makes diagnostics and outage alerts quieter. Configuration updates, credentials and notification delivery are better protected.
 
