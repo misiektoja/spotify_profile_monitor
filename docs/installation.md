@@ -1,8 +1,8 @@
 # Installation
 
-Spotify Profile Monitor runs as a local Python program. Choose the PyPI package for the shortest command or the manual script if you prefer to download and run one file.
+Choose one installation method.
 
-If you are new to Python or unsure whether Python is ready on your machine, follow [New to Python: check and install](#new-to-python-install-everything) first.
+PyPI is usually the easiest local option. If you are new to Python or unsure whether Python is ready, follow [New to Python: check and install](#new-to-python-check-and-install).
 
 <a id="requirements"></a>
 ## Requirements
@@ -22,7 +22,7 @@ Tested on:
 It should work on other versions of macOS, Linux, Unix and Windows as well.
 
 
-<a id="new-to-python-install-everything"></a>
+<a id="new-to-python-check-and-install"></a>
 ## New to Python: check and install
 
 Use this section if you are new to Python or do not know what is already installed. The platform sections only prepare Python and `pip`. Everyone then uses the same Spotify Profile Monitor installation and setup commands. Spotify Profile Monitor requires Python 3.9 or newer and is currently tested through Python 3.14.
@@ -44,7 +44,7 @@ Check Python and `pip`:
     python --version
     pip --version
 
-If both commands work and Python reports version 3.9 or newer, skip to [Install Spotify Profile Monitor](#install-spotify-profile-monitor-after-python-check).
+If both commands work and Python reports version 3.9 or newer, skip to [Install Spotify Profile Monitor](#install-spotify-profile-monitor).
 
 If either command fails:
 
@@ -72,7 +72,7 @@ Check Python and `pip`:
     python3 --version
     pip --version
 
-If both commands work and Python reports version 3.9 or newer, skip to [Install Spotify Profile Monitor](#install-spotify-profile-monitor-after-python-check).
+If both commands work and Python reports version 3.9 or newer, skip to [Install Spotify Profile Monitor](#install-spotify-profile-monitor).
 
 If either command fails:
 
@@ -98,7 +98,7 @@ Open Terminal then check Python and `pip`:
     python3 --version
     pip --version
 
-If both commands work and Python reports version 3.9 or newer, skip to [Install Spotify Profile Monitor](#install-spotify-profile-monitor-after-python-check).
+If both commands work and Python reports version 3.9 or newer, skip to [Install Spotify Profile Monitor](#install-spotify-profile-monitor).
 
 If either command fails, install the missing packages:
 
@@ -114,7 +114,7 @@ Check both commands again:
 
 If Python reports a version older than 3.9, follow your distribution's instructions to install a supported Python version before continuing. For another Linux distribution, install Python 3.9 or newer plus `pip` through its package manager.
 
-<a id="install-spotify-profile-monitor-after-python-check"></a>
+<a id="install-spotify-profile-monitor"></a>
 ### Install Spotify Profile Monitor
 
 Every operating system uses the same command:
@@ -153,44 +153,92 @@ The setup wizard can import a signed-in browser session, save the target and con
 Later pages use the short PyPI command. If you chose the manual script, keep the options after `spotify_profile_monitor` and replace the command itself with the one in the table. The setup wizard and `--help` also print commands for the detected installation.
 
 <a id="install-from-pypi"></a>
-## Install from PyPI
+### Install from PyPI
 
 ```sh
 pip install spotify_profile_monitor
+spotify_profile_monitor --version
 ```
 
-To import Spotify login from Chrome, Brave or Chromium on macOS or Linux install the browser extra:
+Optional extras include the base package. Choose the extra you need instead of running the plain install first.
+
+Firefox cookie import needs no extra dependency. To import from Chrome, Brave or Chromium on macOS or Linux install the browser extra:
 
 ```sh
 pip install "spotify_profile_monitor[browser]"
 ```
 
-Firefox import is built in and needs no extra package.
+This installs Spotify Profile Monitor and the optional `pycookiecheat` dependency.
 
-To attach playlist, album or profile artwork to email and ntfy notifications, install the artwork extra:
+Artwork in email and ntfy alerts is optional. Install the artwork extra to attach profile pictures and playlist or album covers to those notifications:
 
 ```sh
 pip install "spotify_profile_monitor[notification-images]"
 ```
 
-Without it the tool runs normally and the affected alerts stay text-only. Python 3.9 installs the last Pillow release that supports it. The [setup wizard](setup-and-first-run.md#setup-wizard) can also install this extra for you when you enable artwork.
+This installs Spotify Profile Monitor and the optional Pillow dependency. Python 3.10 and newer get the current Pillow, while Python 3.9 gets the last release that still supports it. Without it the tool runs normally and the affected alerts stay text-only. The [setup wizard](setup-and-first-run.md#run-the-setup-wizard) can also install this extra for you when you enable artwork.
 
-<a id="manual-installation"></a>
-## Manual Installation
+Extras can be installed together:
 
-Download the *[spotify_profile_monitor.py](https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/spotify_profile_monitor.py)* file to the desired location.
+```sh
+pip install "spotify_profile_monitor[browser,notification-images]"
+```
 
-Install dependencies via pip:
+<a id="install-the-manual-script"></a>
+### Install the Manual Script
+
+Download the script and dependency list into the same directory:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/spotify_profile_monitor.py
+curl -fsSLO https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/requirements.txt
+```
+
+You can also download [spotify_profile_monitor.py](https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/spotify_profile_monitor.py) and [requirements.txt](https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/requirements.txt) in a browser or use the files from a cloned repository.
+
+Install the core dependencies:
+
+```sh
+pip install -r requirements.txt
+```
+
+You can install the core dependencies directly if you downloaded only the script:
 
 ```sh
 pip install requests python-dateutil urllib3 pyotp pytz tzlocal python-dotenv spotipy wcwidth pathvalidate
 ```
 
-Alternatively, from the downloaded *[requirements.txt](https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/requirements.txt)*:
+For optional Chrome, Brave or Chromium import on macOS or Linux install `pycookiecheat`:
 
 ```sh
-pip install -r requirements.txt
+pip install "pycookiecheat>=0.8"
 ```
+
+For optional artwork in email and ntfy alerts install `Pillow`:
+
+```sh
+pip install "Pillow>=12.0.0"
+```
+
+On Python 3.9 install the last release that supports it instead:
+
+```sh
+pip install "Pillow>=11.3.0,<12"
+```
+
+On the classic Windows Command Prompt, install `colorama` for better coloured output:
+
+```sh
+pip install colorama
+```
+
+Verify the script:
+
+```sh
+python3 spotify_profile_monitor.py --version
+```
+
+Use `python spotify_profile_monitor.py --version` on Windows.
 
 
 <a id="next-step"></a>
@@ -201,10 +249,40 @@ Continue to [Setup & First Run](setup-and-first-run.md). It walks through the se
 <a id="upgrading"></a>
 ## Upgrading
 
-To upgrade to the latest version when installed from PyPI:
+Upgrading does not remove your configuration, `.env` secrets, logs, CSV files or saved history. Keep those files in the same working directory or another persistent location.
+
+### Upgrade a PyPI Installation
 
 ```sh
-pip install spotify_profile_monitor -U
+pip install --upgrade spotify_profile_monitor
+spotify_profile_monitor --version
 ```
 
-If you installed manually, download the newest *[spotify_profile_monitor.py](https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/spotify_profile_monitor.py)* file to replace your existing installation.
+Retain any optional extras you use during the upgrade:
+
+```sh
+pip install --upgrade "spotify_profile_monitor[browser,notification-images]"
+```
+
+### Upgrade a Manual Installation
+
+Replace [spotify_profile_monitor.py](https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/spotify_profile_monitor.py) and [requirements.txt](https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/requirements.txt) with the newest copies. You can download them in a browser, use the files from an updated clone or run:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/spotify_profile_monitor.py
+curl -fsSLO https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/requirements.txt
+pip install --upgrade -r requirements.txt
+python3 spotify_profile_monitor.py --version
+```
+
+Refresh the dependencies even when `requirements.txt` appears unchanged because a new release may add or change a required library.
+
+Use `python spotify_profile_monitor.py --version` on Windows. If you modified the script itself, save your changes before replacing it and reapply them to the new version.
+
+### Check Upgrade
+
+After any upgrade run the doctor command:
+
+```sh
+spotify_profile_monitor --doctor
+```

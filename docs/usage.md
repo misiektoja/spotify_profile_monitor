@@ -1,6 +1,6 @@
 # Usage
 
-<a id="command-format"></a>
+<a id="command-format-by-installation-method"></a>
 ## Command Format by Installation Method
 
 Most examples on this page use the PyPI command `spotify_profile_monitor`. If you chose the manual script, replace only that command with the prefix in this table. Keep the targets and options that follow it.
@@ -11,7 +11,7 @@ Most examples on this page use the PyPI command `spotify_profile_monitor`. If yo
 | Manual script on macOS or Linux | `python3 spotify_profile_monitor.py` |
 | Manual script on Windows | `python spotify_profile_monitor.py` |
 
-For example, `spotify_profile_monitor --doctor TARGET` becomes `python3 spotify_profile_monitor.py --doctor TARGET` with the manual script.
+For example, `spotify_profile_monitor --doctor <spotify_target>` becomes `python3 spotify_profile_monitor.py --doctor <spotify_target>` with the manual script.
 
 Activate the tool's virtual environment before running these commands. For a downloaded script, run them from the directory containing `spotify_profile_monitor.py`.
 
@@ -50,10 +50,6 @@ spotify_profile_monitor <spotify_target> -u "your_sp_dc_cookie_value" -r "your_s
 
 The tool falls back to the web-player playlist backend automatically when those credentials are absent or restricted.
 
-By default, the tool looks for a configuration file named `spotify_profile_monitor.conf` in:
- - current directory
- - home directory (`~`)
- - script directory
 
  If you generated a configuration file as described in [Configuration](configuration.md#configuration-file), but saved it under a different name or in a different directory, you can specify its location using the `--config-file` flag:
 
@@ -119,6 +115,40 @@ The tool also saves the list of followings, followers and playlists to these fil
 Thanks to this we can detect changes after the tool is restarted. By default these files use the current working directory. Set [`JSON_DIR`](configuration.md#json-history-directory) to read and write all three in another directory.
 
 The tool also saves the user profile picture to `spotify_profile_<user_id/file_suffix>_pic*.jpeg` files.
+
+<a id="terminal-output"></a>
+## Terminal Output
+
+Use `--help` for examples grouped by task and matched to your installation.
+
+Monitoring mode prints the settings that are actually in effect before the first check.
+
+Optional features appear once you switch them on.
+
+Use `--verbose` or `--debug` for the full startup summary, including output paths, notification settings, secret sources and runtime information.
+
+Use `--truncate N` or `TRUNCATE_CHARS` to limit screen line width. Set it to `999` to detect the terminal width automatically. Truncation does not change log files and is ignored when logging is disabled with `-d`.
+
+The tool clears the terminal when monitoring starts. Set `CLEAR_SCREEN` to `False` to keep whatever is already on the screen.
+
+The screen is never cleared when output is redirected to a file or a pipe, in debug mode, or for a command that prints a result and exits, such as `--doctor`, `--help` and the test senders.
+
+Two settings add detail to what a run prints. `VERBOSE_MODE` adds the decisions the run made and `DEBUG_MODE` adds timestamped technical traces. Both are off by default, both are independent of each other and both have a flag that wins over the file, `--verbose` and `--debug`. `DELIVERY_CONFIRMATIONS` is on by default and controls whether verbose mode confirms each delivered email and webhook alert. See [Verbose and Debug Output](troubleshooting.md#verbose-and-debug-output).
+
+<a id="coloured-terminal-output"></a>
+### Coloured Terminal Output
+
+Spotify Profile Monitor colours live terminal output and help by default. Saved log files stay plain text.
+
+Turn colour off for one run with `--no-color` or permanently with `COLORED_OUTPUT = False`. Colour is also disabled for redirected output, `NO_COLOR` or an unsupported terminal. See [Terminal Colours](configuration.md#terminal-colours) for details and Windows support.
+
+Override individual colours with `COLOR_THEME`. It is merged over the built-in theme, so you only name the parts you want to change:
+
+```ini
+COLOR_THEME = { "playlist": "bright_magenta bold", "username": "green" }
+```
+
+See [Terminal Colours](configuration.md#terminal-colours) for every theme key and the accepted colour and style names.
 
 <a id="listing-mode"></a>
 ## Listing Mode
@@ -311,6 +341,7 @@ The file will be automatically created if it does not exist.
 
 Spotify-supplied text (playlist names, track names, artist names, collaborator names and descriptions) that starts with `=`, `+`, `-`, `@`, a tab or a carriage return is written with a leading apostrophe, so opening the export in a spreadsheet cannot evaluate it as a formula. The same applies to the per-playlist files produced by `--export-all-playlists`. Timestamps and numeric values are unaffected.
 
+<a id="unavailable-followers-and-followings"></a>
 ## Unavailable Followers and Followings
 
 Missing follower or following data is shown as `n/a`. It does not replace saved history or trigger removal alerts, including after a restart. The first available snapshot establishes a baseline if no history exists.
@@ -389,7 +420,7 @@ If certain playlists are blacklisted, there will be an appropriate message. For 
 'Unwind and let the afternoon unfold.'
 ```
 
-<a id="restricted-playlists-spotify-api-404"></a>
+<a id="restricted-playlists-spotify-api-403404"></a>
 ## Restricted Playlists (Spotify API 403/404)
 
 Some playlists may appear on profile pages but return `403` or `404` from the public Web API. Version 3.5 automatically retries them through the Spotify web-player backend.
@@ -407,8 +438,8 @@ For restricted playlists, the tool cannot monitor:
 - description changes
 - creation/last update timestamps derived from track history
 
-<a id="check-intervals"></a>
-## Playlist change confirmation
+<a id="playlist-change-confirmation"></a>
+## Playlist Change Confirmation
 
 `PLAYLISTS_CHANGE_COUNTER` requires repeated matching nonempty playlist collections before reporting a change. Set it to `0` to accept a nonempty change immediately. `PLAYLISTS_DISAPPEARED_COUNTER` separately controls how many consecutive empty responses confirm that all playlists disappeared. A nonempty response resets the disappearance count and an empty response clears a pending nonempty change. Playlist metadata failures retain the last successful details and can trigger error alerts without bypassing either threshold.
 
@@ -416,9 +447,10 @@ Those two thresholds need several checks to decide, which only works while monit
 
 If startup still sees no playlists while the saved history file holds some, it keeps the saved history and says so, rather than recording an emptied profile. The count then follows the usual `PLAYLISTS_DISAPPEARED_COUNTER` confirmation once monitoring is running. For the same reason, a first baseline is never written from a response whose playlist field was missing altogether.
 
+<a id="check-intervals"></a>
 ## Check Intervals
 
-If you want to customize polling interval, use `-c` flag (or `SPOTIFY_CHECK_INTERVAL` configuration option):
+If you want to customize the polling interval, use the `-c` flag (or the `SPOTIFY_CHECK_INTERVAL` configuration option):
 
 ```sh
 spotify_profile_monitor <spotify_target> -c 900
@@ -426,43 +458,19 @@ spotify_profile_monitor <spotify_target> -c 900
 
 An interval below 30 seconds invites the Spotify rate limiter, which stops the tool seeing anything. `--doctor` warns when the configured interval is that short.
 
-<a id="terminal-output-modes"></a>
-## Terminal Output Modes
+<a id="liveness-reminder"></a>
+### Liveness Reminder
 
-Normal mode keeps startup output compact and always shows monitoring changes, warnings and errors. Verbose mode adds the complete startup summary plus infrequent operational transitions:
+While nothing changes, the tool prints one reminder that it is still running:
 
-```sh
-spotify_profile_monitor <spotify_target> --verbose
+```
+* Monitoring healthy for <spotify_target>. No profile or playlist change since the last check
+Liveness check, timestamp:	Mon 08 Sep 2026, 09:15:05
 ```
 
-Debug mode retains the complete summary and adds sanitized HTTP flow plus internal troubleshooting detail:
+Set `LIVENESS_CHECK_INTERVAL` to change it (default: 86400, i.e. 24 hours), or to 0 to switch it off.
 
-```sh
-spotify_profile_monitor <spotify_target> --debug
-```
-
-Recoverable failures use a short `Error`, `To fix` and relevant guide format. Repeated monitoring failures keep the short error visible but suppress unchanged recovery instructions until the operation succeeds or the failure category changes. Raw exception detail is shown only in debug mode.
-
-Cookies, tokens, passwords, authorization headers and webhook URLs are redacted from verbose and debug output.
-
-<a id="coloured-terminal-output"></a>
-### Coloured Terminal Output
-
-Spotify Profile Monitor colours live terminal output by default. Usernames, Spotify IDs, playlist, track and album names, dates, durations, follower and playlist counters, links and change headers each get their own colour. Error lines are highlighted end to end. Warning and signal lines mark their opening word instead, so a playlist or track named inside one keeps its own colour.
-
-The `--help` screen is coloured too. Group headings, option names, the values those options take, the example commands and the comments above them each get their own colour, so the screen can be scanned instead of read.
-
-Colour never reaches saved output: log files are written with the escape sequences stripped, so `grep`, `tail` and any log viewer see plain text.
-
-Turn it off for one run with `--no-color`, or permanently with `COLORED_OUTPUT = False` in the configuration file. The setting is read before the startup banner is printed, so a configured value applies to the very first line of output. Colour also switches itself off when it cannot be displayed safely: when output is redirected or piped, when `TERM` is unset or `dumb`, and when the standard [`NO_COLOR`](https://no-color.org/) environment variable is set. On Windows, install the optional `colorama` package for the best results in the classic Command Prompt.
-
-Override individual colours with `COLOR_THEME`. It is merged over the built-in theme, so you only name the parts you want to change:
-
-```ini
-COLOR_THEME = { "playlist": "bright_magenta bold", "username": "green" }
-```
-
-See [Terminal Colours](configuration.md#terminal-colours) for every theme key and the accepted colour and style names.
+Anything the tool prints about the target restarts the countdown, so a busy run stays quiet.
 
 <a id="signal-controls-macoslinuxunix"></a>
 ## Signal Controls (macOS/Linux/Unix)

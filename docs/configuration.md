@@ -1,13 +1,15 @@
 # Configuration
 
-Examples on this page use the PyPI command `spotify_profile_monitor`. Manual script users should keep the shown options and use the matching prefix under [Command Format by Installation Method](usage.md#command-format).
+Examples on this page use the PyPI command `spotify_profile_monitor`. Manual script users should keep the shown options and use the matching prefix under [Command Format by Installation Method](usage.md#command-format-by-installation-method).
 
 <a id="configuration-file"></a>
 ## Configuration File
 
-Most settings can be configured via command-line arguments.
+You can pass most settings as command-line options or save them in a configuration file for later runs.
 
-If you want to have it stored persistently, generate a default config template and save it to a file named `spotify_profile_monitor.conf`:
+The easiest way to create this file is `spotify_profile_monitor --setup`.
+
+To edit every available setting yourself, generate a default configuration file:
 
 ```sh
 # On macOS, Linux or Windows Command Prompt (cmd.exe)
@@ -17,33 +19,73 @@ spotify_profile_monitor --generate-config > spotify_profile_monitor.conf
 spotify_profile_monitor --generate-config spotify_profile_monitor.conf
 ```
 
-> **IMPORTANT**: On **Windows PowerShell**, using redirection (`>`) can cause the file to be encoded in UTF-16, which will lead to "null bytes" errors when running the tool. It is highly recommended to provide the filename directly as an argument to `--generate-config` to ensure UTF-8 encoding.
+> **Windows PowerShell:** Pass the filename directly to `--generate-config`. PowerShell redirection can write UTF-16, which the tool rejects with a "null bytes" error.
 
-Edit the `spotify_profile_monitor.conf` file and change any desired configuration options (detailed comments are provided for each).
+When the named file already exists, `--generate-config` asks before replacing it and keeps a timestamped `.bak` backup next to it. Add `--force` to replace it without the question.
 
-Use documented `NAME = value` assignments with literal values: numbers, quoted strings, `True`, `False`, `None` or lists, tuples and dictionaries containing those values. Expressions, imports, function calls and references to other settings are not supported. For example, use `SPOTIFY_CHECK_INTERVAL = 1800` instead of `30 * 60`. An invalid configuration stops startup and reports the file and line to correct.
+The file contains a short explanation above each setting.
 
-`--generate-config FILENAME` asks before replacing an existing file and saves a timestamped backup beside it. Noninteractive replacement requires `--force`. Setup also asks before replacement and keeps a backup.
+A configuration file is read as data, not executed. The tool accepts only `SETTING = value` lines where the name is one of the documented settings and the value is a plain literal such as a string, number, `True`, `False`, `None`, a list or a dictionary. Comments and blank lines are fine.
 
-Despite its legacy name, `TARGET_USER_URI_ID` accepts a complete Spotify profile URL, a `spotify:user:` URI or a user ID. Set it to run without a positional target. A positional target in any accepted form overrides the configured value.
+Imports, function calls, expressions and unknown settings are rejected with the setting and line number to correct.
 
-<a id="json-history-directory"></a>
-Startup names invalid `SPOTIFY_CHECK_INTERVAL` and `LIVENESS_CHECK_INTERVAL` values in the normal error output. These settings take numeric seconds, not duration words such as `daily`.
+If the same setting appears in more than one place, the item later in this list wins:
 
-## JSON History Directory
+1. Built-in defaults
+2. The discovered or explicitly selected configuration file
+3. Values from the selected `.env` file
+4. Secret environment variables
+5. Command-line options
 
-Set `JSON_DIR` to keep the follower, following and playlist history files outside the current working directory:
+By default the tool looks for a configuration file named `spotify_profile_monitor.conf` in the current directory, the home directory (`~`) and the script directory. Use `--config-file` to name another location, or `--config-file none` to disable automatic config discovery for one run.
 
-```ini
-JSON_DIR = "~/spotify-profile-monitor/json"
+<a id="monitored-target"></a>
+## Monitored Target
+
+The Spotify target is a positional argument. It is required to start monitoring:
+
+```sh
+spotify_profile_monitor <spotify_target>
 ```
 
-The directory is created when monitoring starts. The three `spotify_profile_<user_id/file_suffix>_*.json` history files are read from and written directly inside it. Leave `JSON_DIR = ""` to preserve the earlier behavior and use the current working directory.
+The target can be a complete profile URL, a `spotify:user:` URI or a user ID.
 
-Config values cannot refer to another setting or use an f-string, so paths for logs, CSV exports, OAuth files and other destinations must each be written as complete quoted strings.
+To stop repeating it, save it in the configuration file:
+
+```ini
+TARGET_USER_URI_ID = "spotify_user_id"
+```
+
+`TARGET_USER_URI_ID` accepts the same forms as the command line. Then `spotify_profile_monitor` alone starts monitoring that user. A positional argument still wins, so you can watch someone else for one run without editing the file:
+
+```sh
+spotify_profile_monitor other_user_id
+```
+
+<a id="how-to-find-a-friends-spotify-profile-url"></a>
+## How to Find a Friend's Spotify Profile URL
+
+The easiest way is via the Spotify desktop or mobile client:
+- go to your friend's profile
+- click the **three dots** (•••) or press the **Share** button
+- copy the link to the profile
+
+You'll get a URL like `https://open.spotify.com/user/USER_ID?si=tracking_id`.
+
+Pass that profile URL directly to the tool. You do not need to extract the ID. Spotify user URIs such as `spotify:user:USER_ID` and standalone user IDs are also accepted.
+
+Alternatively you can use the built-in username search (`-s`) to find a Spotify user ID:
+
+```sh
+spotify_profile_monitor -s "user name"
+```
+
+It lists matching users with their Spotify user IDs and profile URLs. Any listed profile URL or ID can then be used as the monitoring target.
+
+Before using this feature make sure you followed the instructions [here](#spotify-sha256-optional).
 
 <a id="spotify-access-token-source"></a>
-## Spotify access token source
+## Spotify Access Token Source
 
 The tool supports four methods for obtaining a Spotify access token.
 
@@ -98,10 +140,61 @@ If no method is specified, the tool defaults to the `cookie` method.
 
 This is the default method used to obtain a Spotify access token.
 
+Import a browser login instead of extracting the cookie by hand. Firefox import works on macOS, Linux and Windows without an optional package.
+
+Before importing, open [Spotify Web Player](https://open.spotify.com/) in the browser you want to use and sign in to the Spotify account you want to monitor with. Then return to the terminal and run the import command.
+
+<a id="which-browsers-are-supported"></a>
+#### Which browsers are supported
+
+The `--browser` flag accepts these values:
+
+| `--browser` | Application it reads | Platforms |
+| --- | --- | --- |
+| `firefox` (default) | Mozilla Firefox | macOS, Linux, Windows |
+| `chrome` | Google Chrome | macOS, Linux |
+| `brave` | Brave | macOS, Linux |
+| `chromium` | The standalone open-source Chromium browser | macOS, Linux |
+
+**About `chromium`:** Chromium is a separate browser application from Google Chrome. It has its own profiles and cookies. Choose `chromium` only if that is the browser you use. Choose `chrome` for Google Chrome.
+
+**Not currently supported:** Microsoft Edge, Opera, Vivaldi, Arc and other Chromium-based browsers. Each application stores its cookies separately. The [`pycookiecheat`](https://github.com/n8henrie/pycookiecheat) library used by Spotify Profile Monitor supports only the browsers in the table. To import a login, use one of those supported browsers.
+
+On Windows, Chrome 127 and newer prevent external programs from reading these cookies through app-bound encryption. Use Firefox import instead.
+
+```sh
+spotify_profile_monitor --import-browser-cookie --browser firefox
+```
+
+On Linux, Firefox profiles installed natively, through Snap or through Flatpak are discovered automatically. On every platform, the importer reads `profiles.ini` and normal profile directories. If one usable profile exists it is selected automatically. If several profiles exist an interactive terminal shows a numbered choice. For scripts or other noninteractive runs select one by its friendly name or directory basename:
+
+```sh
+spotify_profile_monitor --import-browser-cookie --browser firefox --browser-profile "default-release"
+```
+
+For a custom Firefox layout, the advanced `--cookie-file PATH` option points directly to a `cookies.sqlite` database. It overrides automatic profile selection:
+
+```sh
+spotify_profile_monitor --import-browser-cookie --browser firefox --cookie-file /path/to/cookies.sqlite
+```
+
+By default, import writes only `SP_DC_COOKIE` to `.env` in the current directory. Use `--env-file PATH` to choose another `.env` file. Import does not change a file found only in a parent directory. `--env-file none` is invalid because the imported cookie must be saved.
+
+Import validates the login before saving and asks before replacing a saved cookie. For noninteractive replacement, pass `--force`. This still validates the cookie and preserves unrelated `.env` settings.
+
+Chrome, Brave and Chromium import is available on macOS and Linux through the optional browser extra:
+
+```sh
+pip install "spotify_profile_monitor[browser]"
+spotify_profile_monitor --import-browser-cookie --browser chrome
+```
+
+Select a Chromium browser profile by its directory name, such as `Default` or `Profile 1`. Friendly names are also accepted.
+
 <a id="manual-cookie-extraction"></a>
 #### Manual cookie extraction
 
-Treat `sp_dc` like a password. Anyone who has it may be able to use your Spotify login session.
+Use manual extraction when browser import is unavailable. Treat `sp_dc` like a password because it represents a Spotify login session.
 
 Follow these steps:
 
@@ -257,28 +350,6 @@ The tool takes care of refreshing the access token so it should remain valid ind
 
 If you store the `SP_USER_CLIENT_ID` and `SP_USER_CLIENT_SECRET` in a dotenv file you can update their values and send a `SIGHUP` signal to reload the file with the new secret values without restarting the tool. More info in [Storing Secrets](#storing-secrets) and [Signal Controls (macOS/Linux/Unix)](usage.md#signal-controls-macoslinuxunix).
 
-<a id="how-to-find-a-friends-spotify-profile-url"></a>
-## How to Find a Friend's Spotify Profile URL
-
-The easiest way is via the Spotify desktop or mobile client:
-- go to your friend's profile
-- click the **three dots** (•••) or press the **Share** button
-- copy the link to the profile
-
-You'll get a URL like `https://open.spotify.com/user/USER_ID?si=tracking_id`.
-
-Pass that profile URL directly to the tool. You do not need to extract the ID. Spotify user URIs such as `spotify:user:USER_ID` and standalone user IDs are also accepted.
-
-Alternatively you can use the built-in username search (`-s`) to find a Spotify user ID:
-
-```sh
-spotify_profile_monitor -s "user name"
-```
-
-It lists matching users with their Spotify user IDs and profile URLs. Any listed profile URL or ID can then be used as the monitoring target.
-
-Before using this feature make sure you followed the instructions [here](#spotify-sha256-optional).
-
 <a id="spotify-sha256-optional"></a>
 ## Spotify sha256 (optional)
 
@@ -300,19 +371,6 @@ Example request:
    - Add it to [.env file](#storing-secrets) (`SP_SHA256=...`) for persistent use
    - Fallback: hard-code it in the code or config file
 
-<a id="tls-verification"></a>
-## TLS Verification
-
-Spotify Profile Monitor verifies the TLS certificate of every server it contacts: Spotify, the connectivity check endpoint, downloaded artwork, the mail server that delivers email alerts and, when enabled, the webhook service.
-
-`VERIFY_SSL` covers every connection the tool makes, including the mail server and the OAuth token requests the Spotipy library sends. Set it to `False` only on a network that intercepts TLS with its own certificate authority, such as a corporate proxy. With verification off, an intercepted connection cannot be told apart from the real service.
-
-```ini
-VERIFY_SSL = True
-```
-
-The startup summary shows `TLS verification` and [`--doctor`](troubleshooting.md#doctor-preflight) reports a warning while it is off.
-
 <a id="time-zone"></a>
 ## Time Zone
 
@@ -328,18 +386,12 @@ You can get the list of all time zones supported by pytz like this:
 python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
 ```
 
-Path settings are validated before startup opens files. A monitoring run stops and names the setting to correct. `--doctor`, `--setup` and the `--set-...` commands report the same setting and continue on the built-in value, so it can still be repaired. Token-cache and captured-login paths follow the same validation. Command-line path overrides still take precedence. `TRUNCATE_CHARS` must be an integer zero or greater. Use `0` to keep full lines or `999` to detect terminal width. A `--truncate` override also applies to Doctor.
-
 <a id="smtp-settings"></a>
 ## SMTP Settings
 
-Private password entry preserves leading and trailing spaces. The exact value checked with the mail server is saved.
+Email notifications need SMTP server details for the sending account. Add them to `spotify_profile_monitor.conf` or use the setup wizard. Setup checks the login without sending an email. To replace only the password, run `spotify_profile_monitor --set-smtp-password`. Password entry is hidden and preserves spaces.
 
-Private entry preserves literal `${...}` text in saved passwords and other secrets. Assignments that need this protection carry a `# monitor:literal` comment. Keep that comment when editing the value. Unmarked assignments retain their existing interpolation behavior. The marker is read by this monitor. Other dotenv readers or shells may still interpolate the value.
-
-If you want to use email notifications functionality, configure SMTP settings in the `spotify_profile_monitor.conf` file.
-
-Verify your SMTP settings by using `--send-test-email` flag (the tool will try to send a test email notification):
+Send one test message to verify the settings:
 
 ```sh
 spotify_profile_monitor --send-test-email
@@ -348,33 +400,11 @@ spotify_profile_monitor --send-test-email
 <a id="webhook-settings"></a>
 ## Webhook Settings
 
-Discord templates must produce a JSON object. Dictionary templates and JSON strings are supported, including legacy strings with doubled object braces. Unsupported placeholders are reported before delivery. Alert text is kept literal and mentions are disabled. Reloaded settings apply to the next delivery.
-
 Spotify Profile Monitor can send profile, follower and error alerts through Discord or the native [ntfy publish API](https://docs.ntfy.sh/publish/). Webhook delivery works with or without email.
 
 `WEBHOOK_PROVIDER` selects the request format. It defaults to `"discord"`. Standard Discord and public `ntfy.sh` URLs automatically select the matching format if this configured value is stale. While `WEBHOOK_PROVIDER` is left at its default, that detection is silent and `--verbose` reports it. A warning appears only when your configuration file sets a provider the URL disagrees with. Self-hosted ntfy and compatible endpoints still use the configured provider. Use `--webhook-provider discord` or `--webhook-provider ntfy` for an explicit one-run override.
 
-### Discord
-
-To create a private Discord webhook URL:
-
-1. Open the Discord server and choose the channel that should receive alerts.
-2. Click **Edit Channel** then open **Integrations** > **Webhooks**.
-3. Click **New Webhook** then choose a name and click **Copy Webhook URL**.
-4. Save the URL through the hidden prompt:
-
-```sh
-spotify_profile_monitor --set-webhook-url
-```
-
-The command saves only `WEBHOOK_URL` in `.env` without putting the private value in shell history. Treat this URL like a password because anyone who has it can post through it.
-
-Keep the default request format in `spotify_profile_monitor.conf`:
-
-```ini
-WEBHOOK_PROVIDER = "discord"
-```
-
+<a id="ntfy"></a>
 ### ntfy
 
 Choose a hard-to-guess topic. Public `ntfy.sh` URLs are recognized automatically. Set the provider to `"ntfy"` for a self-hosted ntfy server:
@@ -423,6 +453,29 @@ WEBHOOK_HEADERS = {
 
 Header values support the same placeholders as the Discord template (`{title}`, `{description}`, `{version}`, `{image_url}`, `{color}`, `{timestamp}` and so on) and work with both providers. Headers are validated before and after placeholder expansion so formatted values cannot add invalid names, non-string values or line breaks.
 
+<a id="discord"></a>
+### Discord
+
+To create a private Discord webhook URL:
+
+1. Open the Discord server and choose the channel that should receive alerts.
+2. Click **Edit Channel** then open **Integrations** > **Webhooks**.
+3. Click **New Webhook** then choose a name and click **Copy Webhook URL**.
+4. Save the URL through the hidden prompt:
+
+```sh
+spotify_profile_monitor --set-webhook-url
+```
+
+The command saves only `WEBHOOK_URL` in `.env` without putting the private value in shell history. Treat this URL like a password because anyone who has it can post through it.
+
+Keep the default request format in `spotify_profile_monitor.conf`:
+
+```ini
+WEBHOOK_PROVIDER = "discord"
+```
+
+<a id="advanced-discord-format-customization"></a>
 ### Advanced Discord-format customization
 
 The settings in this section apply only when `WEBHOOK_PROVIDER` is `"discord"`. The ntfy provider ignores them.
@@ -436,7 +489,7 @@ WEBHOOK_AVATAR_URL = "https://example.com/path/avatar.png"
 
 `WEBHOOK_TEMPLATE` controls the Discord-format request body. Supported placeholders are `title`, `description`, `version`, `image_url`, `fields`, `fields_str`, `color`, `timestamp`, `username` and `avatar_url`.
 
-Use a dictionary or a JSON string encoding an object. Lists and non-JSON strings are rejected before delivery. All payloads replace `allowed_mentions` with `{"parse": []}` so alert text cannot trigger Discord mentions.
+Discord templates must produce a JSON object. Use a dictionary or a JSON string encoding an object, including legacy strings with doubled object braces. Lists, non-JSON strings and unsupported placeholders are rejected before delivery. Alert text is kept literal and all payloads replace `allowed_mentions` with `{"parse": []}` so alert text cannot trigger Discord mentions. Reloaded settings apply to the next delivery.
 
 `WEBHOOK_TRANSFORMS` applies string methods to shared placeholder values before the template and headers are rendered:
 
@@ -444,6 +497,7 @@ Use a dictionary or a JSON string encoding an object. Lists and non-JSON strings
 WEBHOOK_TRANSFORMS = [
     ("title", "upper"),
     ("description", "replace", "**", ""),
+    ("description", "strip"),
 ]
 ```
 
@@ -465,6 +519,19 @@ spotify_profile_monitor --send-test-webhook
 Email and webhook delivery are independent. A failure in one channel does not stop the other channel.
 
 Webhook requests do not follow redirects, so `WEBHOOK_HEADERS` credentials and alert content can never be handed to a host you did not configure. If your destination answers with a redirect, delivery fails with a message telling you to save the final URL. Save it with `--set-webhook-url` then confirm with `--send-test-webhook`.
+
+<a id="json-history-directory"></a>
+## JSON History Directory
+
+Set `JSON_DIR` to keep the follower, following and playlist history files outside the current working directory:
+
+```ini
+JSON_DIR = "~/spotify-profile-monitor/json"
+```
+
+The directory is created when monitoring starts. The three `spotify_profile_<user_id/file_suffix>_*.json` history files are read from and written directly inside it. Leave `JSON_DIR = ""` to preserve the earlier behavior and use the current working directory.
+
+Config values cannot refer to another setting or use an f-string, so paths for logs, CSV exports, OAuth files and other destinations must each be written as complete quoted strings.
 
 <a id="terminal-colours"></a>
 ## Terminal Colours
@@ -594,10 +661,15 @@ A secret still holding its `your_...` placeholder counts as unset and is left ou
 
 Secret commands update the selected value without changing other dotenv settings. Clearing a value removes its assignment.
 
-### Reloading secrets and backup contents
+<a id="tls-verification"></a>
+## TLS Verification
 
-On macOS, Linux and Unix, `SIGHUP` reloads file-supplied secrets. Command-line values take priority, followed by nonempty environment values exported before startup, dotenv entries and configuration fallbacks. Change an argument or export and restart to replace those values. Removing a file entry uses the next available source or clears the secret. An unreadable or invalid file leaves working credentials unchanged. Empty exports are ignored. An empty dotenv entry overrides the configuration.
+Spotify Profile Monitor verifies the TLS certificate of every server it contacts: Spotify, the connectivity check endpoint, downloaded artwork, the mail server that delivers email alerts and, when enabled, the webhook service.
 
-Setup keeps the saved `DOTENV_FILE` unless you pass `--env-file PATH`. If you change files, setup asks you to review credentials again. Existing values in the new file, including empty values, stay unless you replace them. Retained credentials fill missing entries when you save. The old file stays intact.
+`VERIFY_SSL` covers every connection the tool makes, including the mail server and the OAuth token requests the Spotipy library sends. Set it to `False` only on a network that intercepts TLS with its own certificate authority, such as a corporate proxy. With verification off, an intercepted connection cannot be told apart from the real service.
 
-Setup moves retained credentials from older configuration files into the selected dotenv file unless that file already defines the same key. It leaves the original configuration in place if it cannot preserve those credentials. Setup creates a timestamped configuration backup with inline secrets removed. General `--generate-config` backups can contain inline credentials. Replaced dotenv secrets are not backed up.
+```ini
+VERIFY_SSL = True
+```
+
+The startup summary shows `TLS verification` and [`--doctor`](troubleshooting.md#doctor-preflight) reports a warning while it is off.

@@ -15,10 +15,10 @@ Powerful Spotify tool for real-time tracking of profile changes, playlist update
    <img src="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/assets/spotify_profile_monitor.png" alt="spotify_profile_monitor_screenshot" width="90%"/>
 </p>
 
-<a id="-quick-install-run"></a>
+<a id="quick-install-run"></a>
 ### 🚀 Quick Install & Run
 
-New to Python or unsure what is installed? Follow the [Python install walkthrough](installation.md#new-to-python-install-everything) first.
+New to Python or unsure what is installed? Follow the [Python install walkthrough](installation.md#new-to-python-check-and-install) first.
 
 Install from PyPI:
 
@@ -32,7 +32,7 @@ Run the setup wizard:
 spotify_profile_monitor --setup
 ```
 
-The wizard asks for the target, authentication, polling interval and optional email or webhook alerts, then offers to run Doctor and start monitoring. The polling prompt accepts seconds or `s`, `m`, `h` and `d` units and shows both seconds and a readable default.
+The wizard asks for the target, the Spotify login and optional notifications. Review the settings before saving them. See [Setup & First Run](setup-and-first-run.md) for the browser login import and the manual cookie steps.
 
 For the manual single-file method, optional extras and upgrade commands, see [Installation](installation.md).
 
@@ -65,24 +65,6 @@ For the manual single-file method, optional extras and upgrade commands, see [In
    <img src="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/assets/spotify_profile_monitor_playlist.png" alt="spotify_profile_monitor_playlist" width="90%"/>
 </p>
 
-<a id="common-commands"></a>
-## Common Commands
-
-Use [Quick Install & Run](#-quick-install-run) above for first-time setup. The table uses PyPI commands. For the manual script equivalents, see [Command Format by Installation Method](usage.md#command-format).
-
-| I want to... | Run this |
-| --- | --- |
-| Start monitoring with existing authentication | `spotify_profile_monitor TARGET`, where `TARGET` is a complete profile URL, `spotify:user:` URI or user ID |
-| Check dependencies, authentication, connectivity and one target | `spotify_profile_monitor --doctor TARGET` |
-| Import a Spotify login from a browser | Open [Spotify Web Player](https://open.spotify.com/) in the browser, sign in then run `spotify_profile_monitor --import-browser-cookie --browser firefox` |
-| Enter or replace securely a manually extracted `SP_DC_COOKIE` | Run `spotify_profile_monitor --set-sp-dc` and enter `sp_dc` at the hidden prompt |
-| Show profile details, followers, followings and playlist statistics | `spotify_profile_monitor TARGET -i` |
-| Display or export the tracks of one playlist | `spotify_profile_monitor -l PLAYLIST_URL -b tracks.csv` |
-| Find a Spotify user ID by name | `spotify_profile_monitor -s "user name"` |
-| Configure and test webhook alerts | Use the setup wizard or follow [Webhook Settings](configuration.md#webhook-settings) |
-
-For authentication, token sources, targets and notification setup, see the [full Setup & First Run guide](setup-and-first-run.md).
-
 ✨ If you want to track Spotify friends' music activity, check out another tool I developed: [spotify_monitor](https://github.com/misiektoja/spotify_monitor).
 
-🛠️ For Spotify Web Player token and secret-key utilities, see [Debugging Tools](debugging.md).
+🛠️ For Spotify Web Player token and secret-key utilities, see [Debugging Tools](debugging.md#debugging-tools).
