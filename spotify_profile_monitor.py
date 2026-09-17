@@ -9942,7 +9942,6 @@ def build_startup_summary(target: str, config_path, env_path, output_path) -> Li
     rows = [
         StartupSummaryRow("Target", str(target), concise=True),
         StartupSummaryRow("Authentication", authentication_names.get(TOKEN_SOURCE, TOKEN_SOURCE), concise=True),
-        StartupSummaryRow("Token source", TOKEN_SOURCE),
         StartupSummaryRow("Polling interval", display_time(SPOTIFY_CHECK_INTERVAL), concise=True),
         StartupSummaryRow("Error retry timer", display_time(SPOTIFY_ERROR_INTERVAL)),
         StartupSummaryRow("Notifications (email)", notification_state_email, concise=True),
