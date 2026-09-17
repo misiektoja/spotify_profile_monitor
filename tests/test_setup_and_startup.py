@@ -306,6 +306,8 @@ def test_startup_summary_has_concise_and_full_views(monkeypatch, capsys):
     assert str(Path("state/json").resolve()) in complete
     assert "* Error retry timer:" in complete
     assert "* More details:" not in complete
+    # The authentication row already names the mode, so no row repeats the raw token source
+    assert "Token source" not in complete
 
 
 # Verifies the complete view alone reports the install method and names the origin of every loaded secret
