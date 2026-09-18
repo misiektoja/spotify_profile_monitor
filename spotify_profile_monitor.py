@@ -4107,6 +4107,8 @@ def reload_secrets_signal_handler(sig, frame):
                 if secret_key == "WEBHOOK_URL":
                     webhook_url_changed = True
                 record_secret_source(secret_key, dotenv_reload_source(secret_key), val)
+                # The line names the setting and where it came from, never its value
+                # codeql[py/clear-text-logging-sensitive-data]
                 print(f"* Reloaded {secret_key} from {env_path}{suffix}")
 
     if TOKEN_SOURCE == 'client':
@@ -9625,6 +9627,8 @@ def _wizard_print_summary_rows(rows) -> None:
 # Prints one labelled setup or recovery command
 def _wizard_print_command(label: str, command: str, suffix: str = "") -> None:
     print(label)
+    # The next-step commands name flags and paths, never a secret value
+    # codeql[py/clear-text-logging-sensitive-data]
     print(f"    {colorize('section', command)}{colorize('info', suffix) if suffix else ''}\n")
 
 
@@ -11692,6 +11696,8 @@ def _wizard_print_saved_files(write_status: dict, dotenv_status: Optional[dict])
     if write_status["backup_path"]:
         print(f"  Backup:        {write_status['backup_path']}")
     if dotenv_status:
+        # The row prints the dotenv file path, not what the file holds
+        # codeql[py/clear-text-logging-sensitive-data]
         print(f"  {'Secrets:':<15}{dotenv_status['path']}")
 
 
@@ -14173,6 +14179,8 @@ def main():
                         if VERBOSE_MODE:
                             print(" - Refresh Token:\t", REFRESH_TOKEN, "\n")
                         else:
+                            # The masked form is the default and the full token is shown only when the user asks with --verbose
+                            # codeql[py/clear-text-logging-sensitive-data]
                             print(" - Refresh Token:\t", mask_secret(REFRESH_TOKEN), "(re-run with --verbose to show)\n")
                         sys.exit(0)
             else:
