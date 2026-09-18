@@ -17,9 +17,9 @@ def profile_snapshot():
 
 
 # Runs the loop until stop_after sleeps have passed and returns the error alerts it handed to the channels
-def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answers=(), check_interval=1800, liveness_seconds=None, delivery_results=(), playlist_checks=False, playlist_answers=(), collection_events=None, initial_followers=(), following_answers=()):
+def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answers=(), check_interval=1800, liveness_seconds=None, delivery_results=(), playlist_checks=False, playlist_answers=(), collection_events=None, initial_followers=(), following_answers=(), sleep_log=None):
     calls = []
-    sleeps = []
+    sleeps = sleep_log if sleep_log is not None else []
     now = [1_800_000_000.0]
     remaining = list(answers)
     remaining_followers = list(follower_answers)
@@ -67,8 +67,13 @@ def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answer
     def scripted_followings(*_arguments, **_keywords):
         return remaining_followings.pop(0) if remaining_followings else {"sp_user_followings": []}
 
+    # Prints the same delivery lines the real dispatcher prints, so a report that leaves one outside itself is visible
     def record_delivery(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, **_keywords):
         calls.append({"type": notification_type, "subject": subject, "body": body, "body_html": body_html, "email": email_enabled, "webhook": webhook_enabled})
+        if email_enabled:
+            print(f"Sending email notification to {monitor.RECEIVER_EMAIL}")
+        if webhook_enabled:
+            print("Sending webhook notification via Discord")
         delivered = deliveries.pop(0) if deliveries else True
         return bool(email_enabled) and delivered, bool(webhook_enabled) and delivered
 
@@ -84,6 +89,7 @@ def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answer
     monkeypatch.setattr(monitor, "SPOTIFY_ERROR_INTERVAL", 300)
     monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", liveness_seconds if liveness_seconds is not None else 100 * check_interval)
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "watcher@example.invalid")
     monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", True)
     monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", True)
     monkeypatch.setattr(monitor, "DETECT_CHANGES_IN_PLAYLISTS", playlist_checks)
@@ -274,3 +280,58 @@ def test_a_check_that_reported_a_change_does_not_claim_it_was_quiet(monkeypatch,
     output = capsys.readouterr().out
     assert "has changed username to 'Renamed Person'" in output
     assert f"* Monitoring healthy for {USER}." not in output
+
+
+# Returns every delivery line that no timestamp closes before the next separator, which would leave it dangling
+def unclosed_delivery_lines(output):
+    lines = output.splitlines()
+    dangling = []
+    for number, line in enumerate(lines):
+        if not line.startswith("Sending "):
+            continue
+        rest = lines[number + 1:]
+        separator = next((index for index, later in enumerate(rest) if later.startswith("─")), len(rest))
+        if not any(later.startswith(("Timestamp:", "Liveness check, timestamp:")) for later in rest[:separator]):
+            dangling.append(line)
+    return dangling
+
+
+# Verifies the alert a failing check sends is part of that check's report rather than a line after the separator,
+# so the console still says when the alert went out
+def test_an_alert_stays_inside_the_report_of_the_check_that_sent_it(monkeypatch, tmp_path, capsys):
+    error_alerts_for(monkeypatch, tmp_path, [profile_snapshot(), RuntimeError("401 Unauthorized")], 2)
+
+    output = capsys.readouterr().out
+    assert "Sending email notification to " in output
+    assert unclosed_delivery_lines(output) == []
+
+
+# Verifies the hourly reminder waits for the alert it carries before closing, since both land on the same check
+# when the alert delay and the reminder interval come due together
+def test_the_degraded_reminder_closes_after_the_alert_it_carries(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(monitor, "OUTAGE_REMINDER_SECONDS", 900)
+    monkeypatch.setattr(monitor, "ERROR_ALERT_AFTER_SECONDS", 900)
+    error_alerts_for(monkeypatch, tmp_path, [profile_snapshot(), *[RuntimeError("503 Server Error")] * 6], 5)
+
+    lines = capsys.readouterr().out.splitlines()
+    reminder = next(number for number, line in enumerate(lines) if line.startswith(f"* Monitoring degraded for {USER}."))
+    assert lines[reminder + 1].startswith("Sending email notification to ")
+    assert lines[reminder + 3].startswith("Liveness check, timestamp:")
+    assert unclosed_delivery_lines("\n".join(lines)) == []
+
+
+# Verifies a rate limited profile poll comes back on its own short backoff rather than on the error interval,
+# since the limit clears on a timer of Spotify's own
+def test_a_rate_limited_profile_poll_retries_on_the_backoff(monkeypatch, tmp_path):
+    sleeps = []
+    error_alerts_for(monkeypatch, tmp_path, [profile_snapshot(), *[RuntimeError("429 Too Many Requests")] * 6], 5, check_interval=10800, sleep_log=sleeps)
+
+    assert sleeps == [10800, 60, 120, 240, 480]
+
+
+# Verifies any other failing profile poll keeps the configured error interval
+def test_another_failing_profile_poll_keeps_the_error_interval(monkeypatch, tmp_path):
+    sleeps = []
+    error_alerts_for(monkeypatch, tmp_path, [profile_snapshot(), *[RuntimeError("503 Server Error")] * 6], 4, check_interval=10800, sleep_log=sleeps)
+
+    assert sleeps == [10800, 300, 300, 300]

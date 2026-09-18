@@ -79,3 +79,46 @@ def test_playlist_recovery_resets_alert_delivery(monkeypatch, tmp_path, capsys):
     errors = error_alerts_for(monkeypatch, tmp_path, [playlist_profile(A)] * 7, 6, check_interval=300, playlist_checks=True, playlist_answers=[healthy, failure, failure, healthy, failure, failure])
     assert len(errors) == 2
     assert "Monitoring recovered" in capsys.readouterr().out
+
+
+# A rate limited sweep comes back on the short backoff rather than after a full poll interval, which on a long
+# interval would leave the run blind for hours over a limit that clears in minutes
+def test_a_rate_limited_sweep_retries_on_the_backoff_not_the_poll_interval(monkeypatch, tmp_path):
+    sleeps = []
+    error_alerts_for(monkeypatch, tmp_path, [playlist_profile(A)] * 8, 5, check_interval=10800, playlist_checks=True, playlist_answers=[RuntimeError("429 Too Many Requests")] * 20, sleep_log=sleeps)
+
+    assert sleeps == [10800, 60, 120, 240, 480]
+
+
+# Any other sweep that could not finish comes back on the configured error interval
+def test_a_failing_sweep_retries_on_the_error_interval(monkeypatch, tmp_path):
+    sleeps = []
+    error_alerts_for(monkeypatch, tmp_path, [playlist_profile(A)] * 8, 4, check_interval=10800, playlist_checks=True, playlist_answers=[RuntimeError("503 Server Error")] * 20, sleep_log=sleeps)
+
+    assert sleeps == [10800, 300, 300, 300]
+
+
+# A sweep that failed for a reason nothing here can retry away keeps the poll interval, since asking again sooner
+# would only repeat it
+def test_a_sweep_that_cannot_be_retried_keeps_the_poll_interval(monkeypatch, tmp_path):
+    sleeps = []
+    error_alerts_for(monkeypatch, tmp_path, [playlist_profile(A)] * 8, 3, check_interval=10800, playlist_checks=True, playlist_answers=[RuntimeError("404 Not Found")] * 20, sleep_log=sleeps)
+
+    assert sleeps == [10800, 10800, 10800]
+
+
+# A complete sweep returns the run to the poll interval, so one rate limited check does not shorten the run for good
+def test_a_sweep_that_finishes_returns_to_the_poll_interval(monkeypatch, tmp_path):
+    healthy = {"sp_playlist_name": "Playlist", "sp_playlist_owner": "Owner", "sp_playlist_owner_uri": "spotify:user:owner", "sp_playlist_description": "", "sp_playlist_tracks": [], "sp_playlist_tracks_count": 0, "sp_playlist_tracks_count_before_filtering": 0, "sp_playlist_followers_count": 1}
+    sleeps = []
+    error_alerts_for(monkeypatch, tmp_path, [playlist_profile(A)] * 8, 4, check_interval=10800, playlist_checks=True, playlist_answers=[healthy, RuntimeError("429 Too Many Requests"), healthy, healthy], sleep_log=sleeps)
+
+    # The startup snapshot takes the first answer, so the rate limited check is the first one of the loop
+    assert sleeps == [10800, 60, 10800, 10800]
+
+
+# The report of a rate limited sweep names the wait the run actually takes rather than the poll interval
+def test_the_sweep_report_names_the_wait_the_run_takes(monkeypatch, tmp_path, capsys):
+    error_alerts_for(monkeypatch, tmp_path, [playlist_profile(A)] * 8, 2, check_interval=10800, playlist_checks=True, playlist_answers=[RuntimeError("429 Too Many Requests")] * 20)
+
+    assert "* Error while processing playlists: Spotify is rate limiting requests (retrying in 1 minute)" in capsys.readouterr().out

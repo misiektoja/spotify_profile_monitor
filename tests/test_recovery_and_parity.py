@@ -297,6 +297,36 @@ def test_the_outage_reporter_reports_once_then_on_the_cadence(monkeypatch):
     assert reporter.recovered() is None
 
 
+# Verifies a rate limit is retried sooner than any other failure and backs off while it lasts, and that the wait
+# never grows past the poll interval the run was asked for
+def test_a_rate_limit_is_retried_sooner_and_backs_off(monkeypatch):
+    monkeypatch.setattr(monitor, "SPOTIFY_ERROR_INTERVAL", 300)
+    monkeypatch.setattr(monitor, "SPOTIFY_CHECK_INTERVAL", 10800)
+    limited = monitor.classify_recovery_error(RuntimeError("429 Too Many Requests"), "playlist")
+    unavailable = monitor.classify_recovery_error(RuntimeError("503 Server Error"), "playlist")
+
+    assert [monitor.failure_retry_seconds(limited, failures) for failures in range(1, 9)] == [60, 120, 240, 480, 960, 1800, 1800, 1800]
+    assert [monitor.failure_retry_seconds(unavailable, failures) for failures in (1, 5)] == [300, 300]
+
+    monkeypatch.setattr(monitor, "SPOTIFY_CHECK_INTERVAL", 300)
+    assert monitor.failure_retry_seconds(limited, 6) == 300
+
+
+# Verifies a poll interval shorter than the first rate limit wait is not a reason to keep asking during a limit
+def test_a_short_poll_interval_still_waits_out_the_first_rate_limit(monkeypatch):
+    monkeypatch.setattr(monitor, "SPOTIFY_CHECK_INTERVAL", 30)
+    limited = monitor.classify_recovery_error(RuntimeError("429 Too Many Requests"), "playlist")
+
+    assert monitor.failure_retry_seconds(limited, 1) == 60
+
+
+# Verifies a zero error interval still yields a wait, so a failing check cannot turn the run into a busy loop
+def test_a_zero_error_interval_still_waits(monkeypatch):
+    monkeypatch.setattr(monitor, "SPOTIFY_ERROR_INTERVAL", 0)
+
+    assert monitor.failure_retry_seconds(monitor.classify_recovery_error(RuntimeError("503 Server Error"), "playlist"), 1) == 1
+
+
 # Verifies a category change mid-outage keeps the outage start, so the alert delay and the reminder still elapse
 def test_an_outage_that_changes_category_keeps_its_start(monkeypatch):
     clock = [1000000.0]
@@ -991,7 +1021,9 @@ def test_the_loop_tracks_the_error_alert_through_the_state():
     source = inspect.getsource(monitor)
     assert source.count("error_alert = ErrorAlertState()") == 1
     assert source.count("error_alert.reset()") >= 1
-    assert source.count("dispatch_error_alert(error_alert,") >= 3
+    # Every failing path reports through the one helper that also alerts, so none of them can close its report early
+    assert source.count("error_alert, context=") + source.count("error_alert, retry_note=") >= 4
+    assert source.count("dispatch_error_alert(") == 2
     assert not re.search(r"^\s*error_(email|webhook)_sent = ", source, re.MULTILINE)
 
 
