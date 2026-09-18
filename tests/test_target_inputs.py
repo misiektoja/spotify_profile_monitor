@@ -110,3 +110,11 @@ def test_target_free_command_ignores_invalid_configured_target():
     assert result.returncode == 0, result.stderr
     assert "SET_SP_DC" in result.stdout
     assert "Invalid Spotify target" not in result.stdout
+
+
+# The one-shot secret commands run without a target, so the missing-target gate cannot exit before the prompt
+def test_set_smtp_password_runs_without_a_target():
+    result = run_cli(["--set-smtp-password", "--config-file", "none", "--env-file", "none"])
+
+    assert "No Spotify target was provided" not in result.stdout
+    assert "--set-smtp-password" in result.stdout

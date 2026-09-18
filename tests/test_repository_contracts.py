@@ -15,11 +15,32 @@ yaml = pytest.importorskip("yaml")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW_DIRECTORY = PROJECT_ROOT / ".github" / "workflows"
+PROJECT_URL = "https://github.com/misiektoja/spotify_profile_monitor"
+REPOSITORY_MARKDOWN = ("README.md", "SUPPORT.md", "CONTRIBUTING.md", "SECURITY.md", "CODE_OF_CONDUCT.md", "THIRD_PARTY_NOTICES.md", ".github/pull_request_template.md")
+ISSUE_TEMPLATES = (".github/ISSUE_TEMPLATE/config.yml", ".github/ISSUE_TEMPLATE/bug_report.yml", ".github/ISSUE_TEMPLATE/feature_request.yml")
 
 
 # Reads one repository file as text
 def read_asset(relative_path: str) -> str:
     return (PROJECT_ROOT / relative_path).read_text(encoding="utf-8")
+
+
+# Returns the anchors one Markdown page defines, from its headings and from explicit anchor tags
+def page_anchors(path: Path) -> set:
+    text = path.read_text(encoding="utf-8")
+    anchors = set(re.findall(r'<a id="([^"]+)"></a>', text))
+    for line in text.splitlines():
+        if not line.startswith("#"):
+            continue
+        title = line.lstrip("#").strip()
+        anchors.add("".join(character for character in title.casefold().replace(" ", "-") if character.isalnum() or character in "-_"))
+    return anchors
+
+
+# Returns every local link target in one repository document, including README anchors written as absolute project links
+def repository_link_targets(text: str) -> list:
+    targets = re.findall(r"\]\((?!https?:|mailto:)([^)]+)\)", text)
+    return list(targets) + [f"README.md#{anchor}" for anchor in re.findall(rf"{re.escape(PROJECT_URL)}/?#([^\s)\"']+)", text)]
 
 
 # Reads one repository file as parsed YAML
@@ -34,6 +55,24 @@ class TestGovernanceDocuments:
             asset = PROJECT_ROOT / relative_path
             assert asset.is_file(), relative_path
             assert asset.stat().st_size > 200, relative_path
+
+    # A section that moved to the documentation site leaves dead links behind, and nothing outside docs/ checks them
+    def test_no_repository_document_links_at_a_missing_local_target(self):
+        broken = []
+        for relative_path in REPOSITORY_MARKDOWN + ISSUE_TEMPLATES:
+            path = PROJECT_ROOT / relative_path
+            if not path.exists():
+                continue
+            for target in repository_link_targets(path.read_text(encoding="utf-8")):
+                page_part, _, anchor = target.partition("#")
+                target_page = path if not page_part else (PROJECT_ROOT / page_part)
+                if page_part and not target_page.exists():
+                    broken.append(f"{relative_path} -> {target}")
+                    continue
+                if anchor and anchor not in page_anchors(target_page):
+                    broken.append(f"{relative_path} -> {target}")
+
+        assert not broken, f"repository documents linking at missing targets: {broken}"
 
     # A CODEOWNERS entry is what actually requests review on every change
     def test_codeowners_covers_every_path(self):
@@ -51,14 +90,27 @@ class TestGovernanceDocuments:
         for concept in ("pip install -e", "python -m pytest", "RELEASE_NOTES.md", "SECURITY.md", "GPL-3.0-or-later", "dev"):
             assert concept in contributing, concept
 
-    # Every declared runtime dependency must carry a license attribution
-    def test_third_party_notices_list_every_runtime_dependency(self):
-        notices = read_asset("THIRD_PARTY_NOTICES.md")
+    # Every declared dependency must carry a license attribution, including the ones only an extra installs
+    def test_third_party_notices_cover_every_declared_dependency(self):
         pyproject = read_asset("pyproject.toml")
-        declared = re.search(r"^dependencies = \[(.*?)^\]", pyproject, re.S | re.M)
-        assert declared is not None
-        for requirement in re.findall(r'"([A-Za-z0-9_.-]+)', declared.group(1)):
-            assert requirement.lower() in notices.lower(), requirement
+        notices = read_asset("THIRD_PARTY_NOTICES.md").casefold()
+        runtime = re.search(r"^dependencies = \[(.*?)^\]", pyproject, re.S | re.M)
+        extras = re.search(r"^\[project\.optional-dependencies\](.*?)^\[", pyproject, re.S | re.M)
+        assert runtime is not None and extras is not None
+        declared = {re.split(r"[<>=!;\[ ]", entry.strip(), maxsplit=1)[0] for entry in re.findall(r'"([^"]+)"', runtime.group(1) + extras.group(1))}
+        # Build backends are covered as a group rather than named one by one
+        declared -= {"build", "setuptools", "wheel"}
+
+        for requirement in sorted(declared):
+            assert requirement.casefold() in notices, requirement
+
+    # A guide that lists the test files goes stale the moment one is added and nothing else notices
+    def test_the_test_suite_guide_lists_every_test_file(self):
+        listed = set(re.findall(r"^\| `([^`]+)` \|", (PROJECT_ROOT / "tests" / "README.md").read_text(encoding="utf-8"), re.M))
+        present = {path.name for path in (PROJECT_ROOT / "tests").glob("test_*.py")} | {path.name for path in (PROJECT_ROOT / "tests").glob("conftest.py")}
+
+        assert present - listed == set(), f"test files missing from tests/README.md: {sorted(present - listed)}"
+        assert {name for name in listed if name.endswith(".py")} - present == set(), f"tests/README.md names files that do not exist: {sorted({name for name in listed if name.endswith('.py')} - present)}"
 
 
 class TestIssueTemplates:
@@ -84,11 +136,20 @@ class TestIssueTemplates:
     def test_bug_report_warns_before_collecting_output(self):
         bug_report = read_asset(".github/ISSUE_TEMPLATE/bug_report.yml")
         assert "SECURITY.md" in bug_report
+        # The instruction itself has to survive a rewording, not just the secrets it names
+        assert "Never paste" in bug_report
         for secret in ("sp_dc", "refresh token", "webhook URL"):
             assert secret in bug_report, secret
 
 
 class TestWorkflowSupplyChain:
+    # A job named after the documentation build is not the build, so the step CI runs has to be checked
+    def test_the_documentation_build_is_a_ci_gate(self):
+        commands = [match.strip() for match in re.findall(r"^\s*run:\s*(.+)$", read_asset(".github/workflows/tests.yml"), flags=re.MULTILINE)]
+
+        assert any("mkdocs build --strict" in command for command in commands), "CI does not build the documentation site"
+        assert any("docs/requirements.txt" in command for command in commands), "CI does not install the documentation dependencies"
+
     # Every third-party action is pinned to a commit, so a moved tag cannot change what runs with our secrets
     def test_actions_are_pinned_to_commit_shas(self):
         unpinned = []
@@ -182,6 +243,9 @@ class TestRepositoryMetadata:
         assert settings["*.toml"]["indent_size"] == "2"
         # Two trailing spaces are a Markdown line break, so they must stay exempt from trimming
         assert settings["*.md"]["trim_trailing_whitespace"] == "false"
+        # LICENSE is verbatim upstream text, so an editor must leave its ending and its spacing alone
+        assert settings["LICENSE"]["insert_final_newline"] == "unset"
+        assert settings["LICENSE"]["trim_trailing_whitespace"] == "unset"
 
     # An editor setting only warns on the machine that has it, so the tracked files are checked directly
     def test_tracked_text_files_obey_the_declared_whitespace_rules(self):
@@ -189,10 +253,14 @@ class TestRepositoryMetadata:
         if listing.returncode != 0:
             pytest.skip("not a git checkout")
 
+        # The binary types are declared once in .gitattributes, so this list cannot drift away from that one
+        binary_suffixes = {suffix.casefold() for suffix in re.findall(r"^\*(\.[A-Za-z0-9]+)\s+binary\b", read_asset(".gitattributes"), re.M)}
+        assert binary_suffixes
+
         offenders = []
         for name in listing.stdout.split():
             asset = PROJECT_ROOT / name
-            if not asset.is_file() or asset.suffix.casefold() in {".png", ".jpg", ".gif"}:
+            if not asset.is_file() or asset.suffix.casefold() in binary_suffixes:
                 continue
             content = asset.read_bytes()
             if b"\r\n" in content:
@@ -231,6 +299,17 @@ class TestRepositoryMetadata:
 
         lint_steps = read_yaml_asset(".github/workflows/tests.yml")["jobs"]["lint"]["steps"]
         assert any("ruff check" in step.get("run", "") for step in lint_steps)
+
+    # A type error the local gate rejects must not reach main, and the check is worthless without --pythonpath,
+    # which is what makes the runtime dependencies resolve instead of reading as missing imports
+    def test_ci_type_checks_the_module_and_the_tests(self):
+        pinned = re.search(r'typecheck = \["pyright==([^"]+)"', read_asset("pyproject.toml"))
+        assert pinned is not None
+
+        steps = read_yaml_asset(".github/workflows/tests.yml")["jobs"]["typecheck"]["steps"]
+        command = next(step["run"] for step in steps if "pyright" in step.get("run", ""))
+        assert "--pythonpath" in command
+        assert "spotify_profile_monitor.py tests" in command
 
     # An unsigned download cannot be told apart from a tampered one, so releases carry checksums and provenance
     def test_release_archives_ship_checksums_and_provenance(self):
@@ -278,3 +357,14 @@ class TestVersionConsistency:
 
         assert newest is not None
         assert newest.group(1) == monitor.VERSION
+
+
+# Verifies the minimum supported Python version is declared once and matches the packaging metadata
+def test_the_minimum_python_version_is_declared_once():
+    pyproject = read_asset("pyproject.toml")
+
+    assert monitor.MINIMUM_PYTHON_VERSION_TEXT == ".".join(str(part) for part in monitor.MINIMUM_PYTHON_VERSION)
+    assert f'requires-python = ">={monitor.MINIMUM_PYTHON_VERSION_TEXT}"' in pyproject
+    assert f"Programming Language :: Python :: {monitor.MINIMUM_PYTHON_VERSION_TEXT}" in pyproject
+    classifiers = re.findall(r"Programming Language :: Python :: (\d+\.\d+)", pyproject)
+    assert min(tuple(int(part) for part in version.split(".")) for version in classifiers) == monitor.MINIMUM_PYTHON_VERSION

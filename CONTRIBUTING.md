@@ -30,15 +30,18 @@ pip install -e '.[test,browser]'
 
 ```sh
 python -m ruff check spotify_profile_monitor.py tests
+python -m pyright --pythonpath "$(which python)" spotify_profile_monitor.py tests
 python -m pytest
 mkdocs build --strict
 ```
 
-The linter comes from a pinned extra so a new ruff release cannot fail your build on a rule that did not exist yet:
+The linter and the type checker come from pinned extras so a new release of either cannot fail your build on a rule that did not exist yet:
 
 ```sh
-pip install -e '.[lint]'
+pip install -e '.[lint]' -e '.[typecheck]'
 ```
+
+Pyright needs `--pythonpath` pointing at the interpreter that has the runtime dependencies. Without it every third-party import reads as missing and the run says nothing about the code.
 
 It selects defect rules only (pyflakes and bugbear). Formatting and import order are deliberately not enforced, so keep following the surrounding code.
 

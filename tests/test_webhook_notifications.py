@@ -129,11 +129,16 @@ def test_webhook_provider_display_name(provider, expected):
 
 
 # Verifies SIGHUP adopts rotated client credentials, clears auth caches and redetects ntfy
-def test_sighup_reload_clears_auth_caches_and_updates_webhook_provider(monkeypatch):
+def test_sighup_reload_clears_auth_caches_and_updates_webhook_provider(monkeypatch, tmp_path):
     if not hasattr(monitor.signal, "SIGHUP"):
         pytest.skip("SIGHUP is unavailable on Windows")
     replacements = {"REFRESH_TOKEN": "new-refresh-token", "WEBHOOK_URL": "https://ntfy.sh/new-private-topic"}
-    monkeypatch.setattr(monitor, "DOTENV_FILE", "test.env")
+    dotenv_path = tmp_path / "test.env"
+    dotenv_path.write_text("".join(key + "=" + repr(value) + "\n" for key, value in replacements.items()), encoding="utf-8")
+    monkeypatch.setattr(monitor, "DOTENV_FILE", str(dotenv_path))
+    monkeypatch.setattr(monitor, "DOTENV_RELOAD_STATE", {})
+    for key in replacements:
+        monkeypatch.setenv(key, "")
     monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
     monkeypatch.setattr(monitor, "TOKEN_SOURCE", "client")
     monkeypatch.setattr(monitor, "LOGIN_REQUEST_BODY_FILE", "")
@@ -148,8 +153,7 @@ def test_sighup_reload_clears_auth_caches_and_updates_webhook_provider(monkeypat
     monkeypatch.setattr(monitor, "SP_CACHED_OAUTH_APP_TOKEN", "cached-oauth")
     monkeypatch.setattr(monitor, "SP_CACHED_CLIENT_TOKEN", "cached-client-token")
     monkeypatch.setattr(monitor, "SP_CLIENT_TOKEN_EXPIRES_AT", 999)
-    with patch("dotenv.load_dotenv"), patch.object(monitor.os, "getenv", side_effect=replacements.get):
-        monitor.reload_secrets_signal_handler(monitor.signal.SIGHUP, None)
+    monitor.reload_secrets_signal_handler(monitor.signal.SIGHUP, None)
     assert monitor.REFRESH_TOKEN == "new-refresh-token"
     assert monitor.WEBHOOK_PROVIDER == "ntfy"
     assert monitor.SP_CACHED_ACCESS_TOKEN is None
@@ -230,15 +234,14 @@ def test_advanced_webhook_customization(monkeypatch):
     assert request.kwargs["headers"]["X-Webhook-Version"] == monitor.VERSION
 
 
-# Verifies a string webhook template is delivered as a raw request body
-def test_string_webhook_template_uses_raw_body(monkeypatch):
+# Rejects a non-JSON Discord payload before attempting delivery
+def test_non_json_webhook_template_is_refused(monkeypatch):
     configure_webhook(monkeypatch)
     monkeypatch.setattr(monitor, "WEBHOOK_TEMPLATE", "{title}: {description}")
     webhook_post = Mock(return_value=FakeResponse())
     monkeypatch.setattr(monitor.WEBHOOK_SESSION, "post", webhook_post)
-    assert monitor.send_webhook("Title", "Body", "profile") == 0
-    assert webhook_post.call_args.kwargs["data"] == "Title: Body"
-    assert "json" not in webhook_post.call_args.kwargs
+    assert monitor.send_webhook("Title", "Body", "profile") == 1
+    webhook_post.assert_not_called()
 
 
 # Verifies formatted headers are validated again before network delivery
@@ -458,7 +461,7 @@ def test_notification_channels_are_independent(monkeypatch):
     webhook = Mock(return_value=0)
     monkeypatch.setattr(monitor, "send_email", email)
     monkeypatch.setattr(monitor, "send_webhook", webhook)
-    assert monitor.send_notification_channels("profile", "Title", "Body", email_enabled=True) == (True, True)
+    assert monitor.send_notification_channels("profile", "Title", "Body", email_enabled=True) == (False, True)
     email.assert_called_once()
     webhook.assert_called_once()
 
@@ -600,6 +603,7 @@ def test_webhook_cli_overrides(monkeypatch):
 # Verifies a known ntfy URL corrects a stale configured provider and sends native text
 def test_runtime_provider_detection_corrects_config_mismatch(monkeypatch, capsys):
     configure_webhook(monkeypatch)
+    monkeypatch.setattr(monitor, "CONFIGURED_SETTING_NAMES", {"WEBHOOK_PROVIDER"})
     args = argparse.Namespace(webhook_provider=None, webhook_url="https://ntfy.sh/private-topic", webhook_enabled=None, webhook_profile=None, webhook_followers_followings=None, webhook_errors=None)
     monitor.apply_webhook_cli_overrides(args, argparse.ArgumentParser())
     assert monitor.WEBHOOK_PROVIDER == "ntfy"
@@ -712,3 +716,76 @@ def test_webhook_delivery_refuses_a_destination_that_stopped_validating(monkeypa
     with pytest.raises(monitor.req.exceptions.InvalidURL):
         monitor.post_webhook_request(json={"content": "body"})
     webhook_post.assert_not_called()
+
+
+# Verifies a webhook receipt names its provider
+def test_a_delivered_webhook_is_reported_in_verbose(monkeypatch, capsys):
+    configure_webhook(monkeypatch)
+    monkeypatch.setattr(monitor, "VERBOSE_MODE", True)
+    monkeypatch.setattr(monitor, "DEBUG_MODE", False)
+    monkeypatch.setattr(monitor.WEBHOOK_SESSION, "post", Mock(return_value=FakeResponse()))
+
+    assert monitor.send_webhook("Profile picture changed", "Body", "profile") == 0
+
+    assert "* Webhook sent through Discord" in capsys.readouterr().out
+
+
+# Verifies an email receipt names its recipient
+def test_a_delivered_email_is_reported_in_verbose(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(monitor, "SMTP_PORT", 587)
+    monkeypatch.setattr(monitor, "SMTP_USER", "sender")
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "not-a-real-password")
+    monkeypatch.setattr(monitor, "SENDER_EMAIL", "sender@example.com")
+    monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "receiver@example.com")
+    monkeypatch.setattr(monitor, "VERBOSE_MODE", True)
+    monkeypatch.setattr(monitor, "DEBUG_MODE", False)
+    monkeypatch.setattr(monitor.smtplib, "SMTP", Mock(return_value=Mock()))
+
+    assert monitor.send_email("Profile picture changed", "Body", "", False) == 0
+
+    assert "* Email sent to receiver@example.com" in capsys.readouterr().out
+
+
+# Verifies DELIVERY_CONFIRMATIONS drops both delivery lines without turning the rest of verbose mode off
+def test_delivery_confirmations_can_be_turned_off(monkeypatch, capsys):
+    configure_webhook(monkeypatch)
+    monkeypatch.setattr(monitor, "SMTP_HOST", "smtp.example.com")
+    monkeypatch.setattr(monitor, "SMTP_PORT", 587)
+    monkeypatch.setattr(monitor, "SMTP_USER", "sender")
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "not-a-real-password")
+    monkeypatch.setattr(monitor, "SENDER_EMAIL", "sender@example.com")
+    monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "receiver@example.com")
+    monkeypatch.setattr(monitor, "VERBOSE_MODE", True)
+    monkeypatch.setattr(monitor, "DEBUG_MODE", False)
+    monkeypatch.setattr(monitor, "DELIVERY_CONFIRMATIONS", False)
+    monkeypatch.setattr(monitor.WEBHOOK_SESSION, "post", Mock(return_value=FakeResponse()))
+    monkeypatch.setattr(monitor.smtplib, "SMTP", Mock(return_value=Mock()))
+
+    assert monitor.send_webhook("Profile picture changed", "Body", "profile") == 0
+    assert monitor.send_email("Profile picture changed", "Body", "", False) == 0
+
+    output = capsys.readouterr().out
+    assert "Webhook sent through" not in output
+    assert "Email sent to" not in output
+
+
+# Verifies a link whose text repeats its destination reaches Discord bare, because a masked link there prints as plain text
+def test_self_labeled_links_stay_bare_in_discord_markdown():
+    profile_url = "https://open.spotify.com/user/misiektoja"
+    markdown = monitor.html_body_to_discord_markdown(f"Profile: <a href=\"{profile_url}\">{profile_url}</a><br>")
+    assert markdown == f"Profile: {profile_url}"
+
+
+# Verifies a link with its own text keeps the masked form Discord renders as a hyperlink
+def test_labeled_links_keep_the_masked_discord_form():
+    body_html = "- <b><a href=\"https://open.spotify.com/playlist/1\">Road Trip</a></b><br>"
+    assert monitor.html_body_to_discord_markdown(body_html) == "- **[Road Trip](https://open.spotify.com/playlist/1)**"
+
+
+# Verifies an image link becomes its alt text or a bare URL instead of an empty masked link
+def test_image_links_never_produce_an_empty_discord_label():
+    with_alt = "<a href=\"https://open.spotify.com/playlist/1\"><img src=\"https://i.scdn.co/image/a.jpg\" alt=\"Cover\"></a>"
+    without_alt = "<a href=\"https://open.spotify.com/playlist/1\"><img src=\"https://i.scdn.co/image/a.jpg\"></a>"
+    assert monitor.html_body_to_discord_markdown(with_alt) == "[Cover](https://open.spotify.com/playlist/1)"
+    assert monitor.html_body_to_discord_markdown(without_alt) == "https://open.spotify.com/playlist/1"

@@ -2,6 +2,34 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.9 (18 Sep 2026)
+
+Version **3.9** restores **OAuth playlist reads** and preserves **follower history** when Spotify data is unavailable. It adds **private SMTP password entry**, improves the **`--setup` wizard** and Doctor reports and makes diagnostics and outage alerts quieter. Configuration updates, credentials and notification delivery are better protected.
+
+**Features and improvements**:
+
+- **IMPROVE:** **OAuth user playlists** - Owned and collaborative playlists use the current endpoint while retaining older response support. Restricted playlists use the web-player fallback without disabling OAuth for other playlists. Access is checked again after five minutes
+- **NEW:** **Private SMTP password setup** - `--set-smtp-password` takes a hidden password and checks it with the mail server before saving. Guided setup also checks email credentials without sending a message
+- **NEW:** **Output choices in setup** - Choose whether to write a log and where to save CSV output, then review or edit those choices before saving
+- **IMPROVE:** **Discord alerts match the email** - Discord now receives the same emphasis as the HTML email, with bold values and clickable links instead of plain text. ntfy keeps the plain body, since it would show the markers literally
+- **IMPROVE:** **Setup preserves your progress** - The `--setup` wizard lets you skip unavailable answers and reuses saved settings. Changing destinations preserves retained credentials and keeps them out of configuration backups. Monitoring is offered after Doctor passes
+- **IMPROVE:** **More useful Doctor reports** - Reports validate settings, credentials, output destinations and alert choices. They warn about polling below 30 seconds and include approved delivery tests in the verdict. Invalid settings are reported without stopping the remaining checks
+- **IMPROVE:** **Quieter diagnostics and notifications** - `--verbose` reports operational changes and `--debug` adds technical traces with secrets redacted. Subjects omit program-name prefixes. Set `DELIVERY_CONFIRMATIONS = False` to hide delivery confirmations while keeping verbose diagnostics
+- **IMPROVE:** **Clearer errors and recovery** - Persistent failures produce periodic reminders and recovery notices. Temporary failures, including playlist processing errors, trigger alerts after five minutes. Expired credentials alert immediately. A complete successful check resets the outage
+- **IMPROVE:** **Colours and screen width** - Existing colour overrides still apply. Remove the old `COLOR_THEME` block to follow updated defaults. `--truncate N` limits screen width while logs retain full lines. It works without `wcwidth`, which improves Unicode width measurements. Copy the updated `grc/conf.monitor_logs` to `~/.grc/` to use the live terminal colours in saved logs
+- **IMPROVE:** **Faster playlist exports with readable names** - **`--export-all-playlists`** no longer downloads every playlist a second time. It writes each file from the tracks the profile scan already fetched, roughly halving the Spotify requests the export costs, and the destination is now printed before the scan starts instead of after it. Names keep their separators as a dash, so `Techno / House` becomes `Techno - House` rather than two words run together, and they are sanitized for every platform, so an export stays readable after you copy it to another OS or to a FAT or exFAT volume. Emoji are kept. A **progress bar** shows how far the export has got. Files written by earlier runs keep their old names
+- **IMPROVE:** **Consistent TLS verification** - `VERIFY_SSL` covers mail-server certificate checks and Spotify OAuth token requests. Startup and Doctor warn when verification is disabled
+
+**Bug fixes**:
+
+- **BUGFIX:** **Protected follower and playlist history** - Unavailable follower or following data appears as `n/a` and preserves saved history across restarts. A Spotify glitch that returns **no playlists** no longer wipes the saved playlist history at startup: the profile is read again (`PLAYLISTS_EMPTY_RETRIES`, default `2`) and, if it still comes back empty, the saved history is kept and the count is left to the usual `PLAYLISTS_DISAPPEARED_COUNTER` confirmation once monitoring runs
+- **BUGFIX:** **Consistent secret priority** - Exported secrets work without a dotenv file. Command-line credentials and nonempty startup exports retain priority after `SIGHUP`. Change those values and restart to replace them. Reloads apply changed or removed file-owned secrets
+- **BUGFIX:** **Reliable setup and saved credentials** - Secret updates preserve multiline dotenv values and clear declined notification settings. Recovery commands retain the target and selected files. Cancelling setup or delivery tests correctly reports whether settings were saved
+- **BUGFIX:** **Safer notification delivery** - Webhook retries keep their original destination and credentials. Discord templates cannot enable mentions and invalid templates are rejected before delivery. Error messages redact credentials, including SMTP rejection replies. Emails accepted by the mail server no longer become false failures if closing the connection fails, avoiding duplicate retries
+- **BUGFIX:** **Reliable settings and terminal output** - Invalid timing and web-player settings name what to fix. Liveness reminders follow elapsed time in every output mode. Corrected colour and truncation handling keeps external text readable
+
+Smaller fixes and development changes are listed in the [full change history](https://github.com/misiektoja/spotify_profile_monitor/compare/v3.8.2...v3.9).
+
 # Changes in 3.8.2 (28 Aug 2026)
 
 Version **3.8.2** keeps **configuration upgrade notes visible** after startup redraws, makes explicit **`--verbose` and `--debug` flags override config defaults**, shows the effective **`JSON_DIR`** path, stops settings, diagnostics and fallback notices from being coloured as errors and makes **Doctor verify real legacy playlist access** instead of token issuance alone.

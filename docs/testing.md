@@ -24,7 +24,16 @@ pip install -e '.[lint]'
 python -m ruff check spotify_profile_monitor.py tests
 ```
 
-GitHub Actions runs the linter, then the same suite on Python 3.9 through 3.14, plus a Windows job for the platform-sensitive behaviors: ANSI codepage text writes, reserved characters in artwork filenames, export path handling and the POSIX-only watchdog. See the [test workflow](https://github.com/misiektoja/spotify_profile_monitor/blob/main/.github/workflows/tests.yml).
+A pinned [Pyright](https://microsoft.github.io/pyright/) type check runs too. Name the interpreter that has the runtime dependencies, or every third-party import is reported as missing:
+
+```sh
+pip install -e '.[typecheck]'
+python -m pyright --pythonpath "$(which python)" spotify_profile_monitor.py tests
+```
+
+The type-check extra also pulls in the `browser` and `notification-images` extras. The guarded `pycookiecheat` and Pillow imports resolve that way, so the code paths behind them are checked rather than reported as missing imports.
+
+GitHub Actions runs the linter and the type check, then the same suite on Python 3.9 through 3.14, plus a Windows job for the platform-sensitive behaviors: ANSI codepage text writes, reserved characters in artwork filenames, export path handling and the POSIX-only watchdog. See the [test workflow](https://github.com/misiektoja/spotify_profile_monitor/blob/main/.github/workflows/tests.yml).
 
 The same suite gates every release. [Publishing to PyPI](https://github.com/misiektoja/spotify_profile_monitor/blob/main/.github/workflows/publish.yml) runs it first and stops if anything fails, so a release cannot ship ahead of a passing test run.
 
@@ -84,5 +93,5 @@ mkdocs build --strict
 
 - Keep everything offline. If a code path needs network access, stub it with `monkeypatch` rather than skipping the test.
 - Restore module-level globals you change. Tests share one imported module, so a leaked global affects whatever runs next.
-- Put disposable artifacts under `local/`, never in the repository root or the system temp directory.
+- Write disposable artifacts to pytest's `tmp_path` or to the gitignored `local/` directory the existing tests use. Do not leave them in the repository root.
 - Never use a real cookie, Protobuf login file, OAuth client secret, SMTP password or webhook URL.

@@ -6,7 +6,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        The [README](https://github.com/misiektoja/spotify_profile_monitor#table-of-contents) describes what is already supported, including token sources, notification channels, playlist export and output formats. Check the [configuration section](https://github.com/misiektoja/spotify_profile_monitor#configuration) before asking for a setting that may already exist.
+        The [documentation](https://misiektoja.github.io/spotify_profile_monitor/) describes what is already supported, including token sources, notification channels, playlist export and output formats. Check the [configuration page](https://misiektoja.github.io/spotify_profile_monitor/configuration/) before asking for a setting that may already exist.
 
   - type: textarea
     id: problem

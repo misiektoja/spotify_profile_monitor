@@ -15,10 +15,10 @@ Powerful Spotify tool for real-time tracking of profile changes, playlist update
    <img src="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/assets/spotify_profile_monitor.png" alt="spotify_profile_monitor_screenshot" width="90%"/>
 </p>
 
-<a id="-quick-install-run"></a>
+<a id="quick-install-run"></a>
 ### 🚀 Quick Install & Run
 
-New to Python or unsure what is installed? Follow the [Python install walkthrough](https://misiektoja.github.io/spotify_profile_monitor/installation/#new-to-python-install-everything) first.
+New to Python or unsure what is installed? Follow the [Python install walkthrough](https://misiektoja.github.io/spotify_profile_monitor/installation/#new-to-python-check-and-install) first.
 
 Install from PyPI:
 
@@ -32,7 +32,7 @@ Run the setup wizard:
 spotify_profile_monitor --setup
 ```
 
-The wizard asks for the target, authentication, polling interval and optional email or webhook alerts, then offers to run Doctor and start monitoring.
+The wizard asks for the target, the Spotify login and optional notifications. Review the settings before saving them. See [Setup & First Run](https://misiektoja.github.io/spotify_profile_monitor/setup-and-first-run/) for the browser login import and the manual cookie steps.
 
 For the manual single-file method, optional extras and upgrade commands, see [Installation](https://misiektoja.github.io/spotify_profile_monitor/installation/).
 
@@ -72,34 +72,52 @@ For the manual single-file method, optional extras and upgrade commands, see [In
 <a id="common-commands"></a>
 ## Common Commands
 
-Use [Quick Install & Run](#-quick-install-run) above for first-time setup. The table uses PyPI commands. For the manual script equivalents, see [Command Format by Installation Method](https://misiektoja.github.io/spotify_profile_monitor/usage/#command-format).
+Use [Quick Install & Run](#-quick-install--run) above for first-time setup. The table uses PyPI commands. For the manual script equivalents, see [Run Individual Commands](https://misiektoja.github.io/spotify_profile_monitor/setup-and-first-run/#run-individual-commands).
+
+Replace the target placeholders with a complete Spotify profile URL, a `spotify:user:` URI or a user ID.
 
 | I want to... | Run this |
 | --- | --- |
-| Start monitoring with existing authentication | `spotify_profile_monitor TARGET`, where `TARGET` is a complete profile URL, `spotify:user:` URI or user ID |
-| Check dependencies, authentication, connectivity and one target | `spotify_profile_monitor --doctor TARGET` |
+| Configure the target, credentials and alerts | `spotify_profile_monitor --setup` |
+| Start monitoring with existing authentication | `spotify_profile_monitor <spotify_target>` |
+| Check authentication, connectivity and one target | `spotify_profile_monitor --doctor <spotify_target>` |
 | Import a Spotify login from a browser | Open [Spotify Web Player](https://open.spotify.com/) in the browser, sign in then run `spotify_profile_monitor --import-browser-cookie --browser firefox` |
 | Enter or replace securely a manually extracted `SP_DC_COOKIE` | Run `spotify_profile_monitor --set-sp-dc` and enter `sp_dc` at the hidden prompt |
-| Show profile details, followers, followings and playlist statistics | `spotify_profile_monitor TARGET -i` |
-| Display or export the tracks of one playlist | `spotify_profile_monitor -l PLAYLIST_URL -b tracks.csv` |
-| Find a Spotify user ID by name | `spotify_profile_monitor -s "user name"` |
 | Configure and test webhook alerts | Use the setup wizard or follow [Webhook Settings](https://misiektoja.github.io/spotify_profile_monitor/configuration/#webhook-settings) |
+| Save an SMTP password for email alerts | `spotify_profile_monitor --set-smtp-password` |
+| Send a test email | `spotify_profile_monitor --send-test-email` |
+| Save a new webhook URL | `spotify_profile_monitor --set-webhook-url` |
+| Send a test webhook | `spotify_profile_monitor --send-test-webhook` |
+| Show profile details, followers, followings and playlist statistics | `spotify_profile_monitor <spotify_target> -i` |
+| Display or export the tracks of one playlist | `spotify_profile_monitor -l <playlist_url> -b tracks.csv` |
+| Find a Spotify user ID by name | `spotify_profile_monitor -s "user name"` |
 | List every supported command-line flag | `spotify_profile_monitor --help` |
 
-The tool runs until interrupted (`Ctrl+C`). Use `tmux` or `screen` for persistence, and run multiple copies to monitor several users.
+Running the tool with no arguments offers the wizard if you have not saved a target. If a target is already saved, it starts monitoring that target.
+
+The tool runs until interrupted (`Ctrl+C`). Use `tmux` or `screen` for persistence and run multiple copies to monitor several targets.
+
+For authentication, token sources, saved targets and notification setup, see the [full Setup & First Run guide](https://misiektoja.github.io/spotify_profile_monitor/setup-and-first-run/).
+
+For browser profiles, manual cookie extraction, email and webhook setup, see [Configuration](https://misiektoja.github.io/spotify_profile_monitor/configuration/). For notification choices, listing commands and output files, see [Usage](https://misiektoja.github.io/spotify_profile_monitor/usage/).
+
+If a run fails, start with [Doctor Preflight](https://misiektoja.github.io/spotify_profile_monitor/troubleshooting/#doctor-preflight).
 
 <a id="documentation"></a>
 ## Documentation
 
 Full documentation is available at **[misiektoja.github.io/spotify_profile_monitor](https://misiektoja.github.io/spotify_profile_monitor/)**:
 
-- [Installation](https://misiektoja.github.io/spotify_profile_monitor/installation/) - requirements, PyPI, manual script and upgrades
-- [Setup & First Run](https://misiektoja.github.io/spotify_profile_monitor/setup-and-first-run/) - setup wizard, browser cookie import and first run
-- [Configuration](https://misiektoja.github.io/spotify_profile_monitor/configuration/) - config file, token sources, targets, time zone, SMTP, webhooks and secrets
-- [Usage](https://misiektoja.github.io/spotify_profile_monitor/usage/) - monitoring, listing, notifications, CSV export, blacklisting, intervals and signals
-- [Troubleshooting](https://misiektoja.github.io/spotify_profile_monitor/troubleshooting/) - the `--doctor` self-check, logging levels and common problems
-- [Debugging Tools](https://misiektoja.github.io/spotify_profile_monitor/debugging/) - TOTP token testing and secret key extraction
-- [Testing](https://misiektoja.github.io/spotify_profile_monitor/testing/) - the offline suite, CI jobs and supply chain checks
+| Page | What it covers |
+| --- | --- |
+| [Installation](https://misiektoja.github.io/spotify_profile_monitor/installation/) | Python walkthrough, PyPI or manual installation, upgrades |
+| [Setup & First Run](https://misiektoja.github.io/spotify_profile_monitor/setup-and-first-run/) | Setup wizard, browser cookie import, the first monitoring run |
+| [Configuration](https://misiektoja.github.io/spotify_profile_monitor/configuration/) | Config file, token sources, targets, time zone, SMTP, webhooks, storing secrets, check intervals |
+| [Usage](https://misiektoja.github.io/spotify_profile_monitor/usage/) | Monitoring mode, listing mode, notifications, CSV export, blacklisting, signals, terminal output |
+| [Troubleshooting](https://misiektoja.github.io/spotify_profile_monitor/troubleshooting/) | `--doctor` preflight checks, what to do when something fails, `--verbose` and `--debug` output |
+| [Debugging Tools](https://misiektoja.github.io/spotify_profile_monitor/debugging/) | TOTP token testing and secret key extraction |
+| [Testing](https://misiektoja.github.io/spotify_profile_monitor/testing/) | Running the offline suite, the linter and the docs build |
+| [About](https://misiektoja.github.io/spotify_profile_monitor/about/) | Change log, contributing, security, license, support |
 
 <a id="change-log"></a>
 ## Change Log
@@ -129,5 +147,7 @@ Licensed under GPLv3. See [LICENSE](https://github.com/misiektoja/spotify_profil
 
 <a id="support"></a>
 ## Support
+
+Questions, bug reports and vulnerability reports each have a place, listed in [SUPPORT.md](https://github.com/misiektoja/spotify_profile_monitor/blob/main/SUPPORT.md).
 
 If the project is useful to you, you can support its development through [GitHub Sponsors](https://github.com/sponsors/misiektoja) or [Buy Me a Coffee](https://buymeacoffee.com/misiektoja).
