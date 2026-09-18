@@ -458,6 +458,10 @@ spotify_profile_monitor <spotify_target> -c 900
 
 An interval below 30 seconds invites the Spotify rate limiter, which stops the tool seeing anything. `--doctor` warns when the configured interval is that short.
 
+A check that could not finish does not wait out the full interval. It comes back after the error interval instead, set with the `-m` flag or the `SPOTIFY_ERROR_INTERVAL` configuration option (default: 300, i.e. 5 minutes), so a long polling interval does not leave the tool blind for hours over a failure that clears in minutes.
+
+Rate limiting is the exception. Spotify clears it on a timer of its own and it is easy to hit while sweeping a profile with many playlists, so a rate limited check is retried after 1 minute, then 2, 4, 8, 16 and 30 minutes while the limit lasts, never waiting longer than the polling interval. A complete check returns the tool to the polling interval. A failure the tool cannot retry away, such as a target that no longer exists, keeps the polling interval, since asking again sooner would only repeat it.
+
 <a id="liveness-reminder"></a>
 ### Liveness Reminder
 
