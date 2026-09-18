@@ -451,9 +451,10 @@
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
+    <nav class="md-nav" aria-label="Choose an Installation Method">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
   <a href="#install-from-pypi" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -463,15 +464,20 @@
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#manual-installation" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#install-the-manual-script" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Manual Installation
+        Install the Manual Script
       
     </span>
   </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -494,6 +500,45 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Upgrading">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#upgrade-a-pypi-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrade a PyPI Installation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#upgrade-a-manual-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrade a Manual Installation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#check-upgrade" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Check Upgrade
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -823,9 +868,10 @@
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
+    <nav class="md-nav" aria-label="Choose an Installation Method">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
   <a href="#install-from-pypi" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -835,15 +881,20 @@
   </a>
   
 </li>
-      
-        <li class="md-nav__item">
-  <a href="#manual-installation" class="md-nav__link">
+        
+          <li class="md-nav__item">
+  <a href="#install-the-manual-script" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Manual Installation
+        Install the Manual Script
       
     </span>
   </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -866,6 +917,45 @@
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Upgrading">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#upgrade-a-pypi-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrade a PyPI Installation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#upgrade-a-manual-installation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Upgrade a Manual Installation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#check-upgrade" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Check Upgrade
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -895,8 +985,8 @@
 
 
 <h1 id="installation">Installation<a class="headerlink" href="#installation" title="Permanent link">&para;</a></h1>
-<p>Spotify Profile Monitor runs as a local Python program. Choose the PyPI package for the shortest command or the manual script if you prefer to download and run one file.</p>
-<p>If you are new to Python or unsure whether Python is ready on your machine, follow <a href="#new-to-python-install-everything">New to Python: check and install</a> first.</p>
+<p>Choose one installation method.</p>
+<p>PyPI is usually the easiest local option. If you are new to Python or unsure whether Python is ready, follow <a href="#new-to-python-check-and-install">New to Python: check and install</a>.</p>
 <p><a id="requirements"></a></p>
 <h2 id="requirements">Requirements<a class="headerlink" href="#requirements" title="Permanent link">&para;</a></h2>
 <ul>
@@ -904,7 +994,7 @@
 <li>Libraries: <code>requests</code>, <code>python-dateutil</code>, <code>urllib3</code>, <code>pyotp</code>, <code>pytz</code>, <code>tzlocal</code>, <code>python-dotenv</code>, <a href="https://github.com/spotipy-dev/spotipy">Spotipy</a>, <code>wcwidth</code>, <code>pathvalidate</code></li>
 <li>Optional for Chrome, Brave or Chromium cookie import: <a href="https://github.com/n8henrie/pycookiecheat">pycookiecheat</a></li>
 <li>Optional for email and ntfy artwork attachments: <a href="https://github.com/python-pillow/Pillow">Pillow</a></li>
-<li>Optional for better coloured output in the classic Windows Command Prompt: <a href="https://github.com/tartley/colorama">colorama</a></li>
+<li>Optional for better coloured output in the classic Windows Command Prompt: <a href="https://github.com/tartley/colorama">colorama</a>. <code>--doctor</code> reports it as missing only on Windows, where it makes a difference</li>
 </ul>
 <p>Tested on:</p>
 <ul>
@@ -913,7 +1003,7 @@
 <li><strong>Windows</strong>: 11, 10</li>
 </ul>
 <p>It should work on other versions of macOS, Linux, Unix and Windows as well.</p>
-<p><a id="new-to-python-install-everything"></a></p>
+<p><a id="new-to-python-check-and-install"></a></p>
 <h2 id="new-to-python-check-and-install">New to Python: check and install<a class="headerlink" href="#new-to-python-check-and-install" title="Permanent link">&para;</a></h2>
 <p>Use this section if you are new to Python or do not know what is already installed. The platform sections only prepare Python and <code>pip</code>. Everyone then uses the same Spotify Profile Monitor installation and setup commands. Spotify Profile Monitor requires Python 3.9 or newer and is currently tested through Python 3.14.</p>
 <h3 id="check-whether-spotify-profile-monitor-is-already-installed">Check whether Spotify Profile Monitor is already installed<a class="headerlink" href="#check-whether-spotify-profile-monitor-is-already-installed" title="Permanent link">&para;</a></h3>
@@ -927,7 +1017,7 @@
 <div class="highlight"><pre><span></span><code>python --version
 pip --version
 </code></pre></div>
-<p>If both commands work and Python reports version 3.9 or newer, skip to <a href="#install-spotify-profile-monitor-after-python-check">Install Spotify Profile Monitor</a>.</p>
+<p>If both commands work and Python reports version 3.9 or newer, skip to <a href="#install-spotify-profile-monitor">Install Spotify Profile Monitor</a>.</p>
 <p>If either command fails:</p>
 <ol>
 <li>
@@ -954,7 +1044,7 @@ pip --version
 <div class="highlight"><pre><span></span><code>python3 --version
 pip --version
 </code></pre></div>
-<p>If both commands work and Python reports version 3.9 or newer, skip to <a href="#install-spotify-profile-monitor-after-python-check">Install Spotify Profile Monitor</a>.</p>
+<p>If both commands work and Python reports version 3.9 or newer, skip to <a href="#install-spotify-profile-monitor">Install Spotify Profile Monitor</a>.</p>
 <p>If either command fails:</p>
 <ol>
 <li>
@@ -982,7 +1072,7 @@ pip --version
 <div class="highlight"><pre><span></span><code>python3 --version
 pip --version
 </code></pre></div>
-<p>If both commands work and Python reports version 3.9 or newer, skip to <a href="#install-spotify-profile-monitor-after-python-check">Install Spotify Profile Monitor</a>.</p>
+<p>If both commands work and Python reports version 3.9 or newer, skip to <a href="#install-spotify-profile-monitor">Install Spotify Profile Monitor</a>.</p>
 <p>If either command fails, install the missing packages:</p>
 <div class="highlight"><pre><span></span><code>sudo apt update
 sudo apt install python3 python3-pip
@@ -993,7 +1083,7 @@ sudo apt install python3 python3-pip
 pip --version
 </code></pre></div>
 <p>If Python reports a version older than 3.9, follow your distribution's instructions to install a supported Python version before continuing. For another Linux distribution, install Python 3.9 or newer plus <code>pip</code> through its package manager.</p>
-<p><a id="install-spotify-profile-monitor-after-python-check"></a></p>
+<p><a id="install-spotify-profile-monitor"></a></p>
 <h3 id="install-spotify-profile-monitor">Install Spotify Profile Monitor<a class="headerlink" href="#install-spotify-profile-monitor" title="Permanent link">&para;</a></h3>
 <p>Every operating system uses the same command:</p>
 <div class="highlight"><pre><span></span><code>pip install spotify_profile_monitor
@@ -1038,35 +1128,77 @@ pipx install spotify_profile_monitor
 </table>
 <p>Later pages use the short PyPI command. If you chose the manual script, keep the options after <code>spotify_profile_monitor</code> and replace the command itself with the one in the table. The setup wizard and <code>--help</code> also print commands for the detected installation.</p>
 <p><a id="install-from-pypi"></a></p>
-<h2 id="install-from-pypi">Install from PyPI<a class="headerlink" href="#install-from-pypi" title="Permanent link">&para;</a></h2>
+<h3 id="install-from-pypi">Install from PyPI<a class="headerlink" href="#install-from-pypi" title="Permanent link">&para;</a></h3>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span>spotify_profile_monitor
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>spotify_profile_monitor<span class="w"> </span>--version
 </code></pre></div>
-<p>To import Spotify login from Chrome, Brave or Chromium on macOS or Linux install the browser extra:</p>
+<p>Optional extras include the base package. Choose the extra you need instead of running the plain install first.</p>
+<p>Firefox cookie import needs no extra dependency. To import from Chrome, Brave or Chromium on macOS or Linux install the browser extra:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"spotify_profile_monitor[browser]"</span>
 </code></pre></div>
-<p>Firefox import is built in and needs no extra package.</p>
-<p>To attach playlist, album or profile artwork to email and ntfy notifications, install the artwork extra:</p>
+<p>This installs Spotify Profile Monitor and the optional <code>pycookiecheat</code> dependency.</p>
+<p>Artwork in email and ntfy alerts is optional. Install the artwork extra to attach profile pictures and playlist or album covers to those notifications:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"spotify_profile_monitor[notification-images]"</span>
 </code></pre></div>
-<p>Without it the tool runs normally and the affected alerts stay text-only. Python 3.9 installs the last Pillow release that supports it. The <a href="../setup-and-first-run/#setup-wizard">setup wizard</a> can also install this extra for you when you enable artwork.</p>
-<p><a id="manual-installation"></a></p>
-<h2 id="manual-installation">Manual Installation<a class="headerlink" href="#manual-installation" title="Permanent link">&para;</a></h2>
-<p>Download the <em><a href="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/spotify_profile_monitor.py">spotify_profile_monitor.py</a></em> file to the desired location.</p>
-<p>Install dependencies via pip:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>pip<span class="w"> </span>install<span class="w"> </span>requests<span class="w"> </span>python-dateutil<span class="w"> </span>urllib3<span class="w"> </span>pyotp<span class="w"> </span>pytz<span class="w"> </span>tzlocal<span class="w"> </span>python-dotenv<span class="w"> </span>spotipy<span class="w"> </span>wcwidth<span class="w"> </span>pathvalidate
+<p>This installs Spotify Profile Monitor and the optional Pillow dependency. Python 3.10 and newer get the current Pillow, while Python 3.9 gets the last release that still supports it. Without it the tool runs normally and the affected alerts stay text-only. The <a href="../setup-and-first-run/#run-the-setup-wizard">setup wizard</a> can also install this extra for you when you enable artwork.</p>
+<p>Extras can be installed together:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"spotify_profile_monitor[browser,notification-images]"</span>
 </code></pre></div>
-<p>Alternatively, from the downloaded <em><a href="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/requirements.txt">requirements.txt</a></em>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
+<p><a id="install-the-manual-script"></a></p>
+<h3 id="install-the-manual-script">Install the Manual Script<a class="headerlink" href="#install-the-manual-script" title="Permanent link">&para;</a></h3>
+<p>Download the script and dependency list into the same directory:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/spotify_profile_monitor.py
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/requirements.txt
 </code></pre></div>
+<p>You can also download <a href="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/spotify_profile_monitor.py">spotify_profile_monitor.py</a> and <a href="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/requirements.txt">requirements.txt</a> in a browser or use the files from a cloned repository.</p>
+<p>Install the core dependencies:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>requirements.txt
+</code></pre></div>
+<p>You can install the core dependencies directly if you downloaded only the script:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pip<span class="w"> </span>install<span class="w"> </span>requests<span class="w"> </span>python-dateutil<span class="w"> </span>urllib3<span class="w"> </span>pyotp<span class="w"> </span>pytz<span class="w"> </span>tzlocal<span class="w"> </span>python-dotenv<span class="w"> </span>spotipy<span class="w"> </span>wcwidth<span class="w"> </span>pathvalidate
+</code></pre></div>
+<p>For optional Chrome, Brave or Chromium import on macOS or Linux install <code>pycookiecheat</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"pycookiecheat&gt;=0.8"</span>
+</code></pre></div>
+<p>For optional artwork in email and ntfy alerts install <code>Pillow</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"Pillow&gt;=12.0.0"</span>
+</code></pre></div>
+<p>On Python 3.9 install the last release that supports it instead:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>pip<span class="w"> </span>install<span class="w"> </span><span class="s2">"Pillow&gt;=11.3.0,&lt;12"</span>
+</code></pre></div>
+<p>On the classic Windows Command Prompt, install <code>colorama</code> for better coloured output:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>pip<span class="w"> </span>install<span class="w"> </span>colorama
+</code></pre></div>
+<p>Verify the script:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>python3<span class="w"> </span>spotify_profile_monitor.py<span class="w"> </span>--version
+</code></pre></div>
+<p>Use <code>python spotify_profile_monitor.py --version</code> on Windows.</p>
 <p><a id="next-step"></a></p>
 <h2 id="next-step">Next Step<a class="headerlink" href="#next-step" title="Permanent link">&para;</a></h2>
 <p>Continue to <a href="../setup-and-first-run/">Setup &amp; First Run</a>. It walks through the setup wizard, browser cookie import and the first monitoring run.</p>
 <p><a id="upgrading"></a></p>
 <h2 id="upgrading">Upgrading<a class="headerlink" href="#upgrading" title="Permanent link">&para;</a></h2>
-<p>To upgrade to the latest version when installed from PyPI:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>pip<span class="w"> </span>install<span class="w"> </span>spotify_profile_monitor<span class="w"> </span>-U
+<p>Upgrading does not remove your configuration, <code>.env</code> secrets, logs, CSV files or saved history. Keep those files in the same working directory or another persistent location.</p>
+<h3 id="upgrade-a-pypi-installation">Upgrade a PyPI Installation<a class="headerlink" href="#upgrade-a-pypi-installation" title="Permanent link">&para;</a></h3>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>spotify_profile_monitor
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>spotify_profile_monitor<span class="w"> </span>--version
 </code></pre></div>
-<p>If you installed manually, download the newest <em><a href="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/spotify_profile_monitor.py">spotify_profile_monitor.py</a></em> file to replace your existing installation.</p>
+<p>Retain any optional extras you use during the upgrade:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span><span class="s2">"spotify_profile_monitor[browser,notification-images]"</span>
+</code></pre></div>
+<h3 id="upgrade-a-manual-installation">Upgrade a Manual Installation<a class="headerlink" href="#upgrade-a-manual-installation" title="Permanent link">&para;</a></h3>
+<p>Replace <a href="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/spotify_profile_monitor.py">spotify_profile_monitor.py</a> and <a href="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/requirements.txt">requirements.txt</a> with the newest copies. You can download them in a browser, use the files from an updated clone or run:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/spotify_profile_monitor.py
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a>curl<span class="w"> </span>-fsSLO<span class="w"> </span>https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/requirements.txt
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a>pip<span class="w"> </span>install<span class="w"> </span>--upgrade<span class="w"> </span>-r<span class="w"> </span>requirements.txt
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a>python3<span class="w"> </span>spotify_profile_monitor.py<span class="w"> </span>--version
+</code></pre></div>
+<p>Refresh the dependencies even when <code>requirements.txt</code> appears unchanged because a new release may add or change a required library.</p>
+<p>Use <code>python spotify_profile_monitor.py --version</code> on Windows. If you modified the script itself, save your changes before replacing it and reapply them to the new version.</p>
+<h3 id="check-upgrade">Check Upgrade<a class="headerlink" href="#check-upgrade" title="Permanent link">&para;</a></h3>
+<p>After any upgrade run the doctor command:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>spotify_profile_monitor<span class="w"> </span>--doctor
+</code></pre></div>
 
 
 

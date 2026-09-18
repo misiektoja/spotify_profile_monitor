@@ -452,6 +452,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#terminal-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Terminal Output
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Terminal Output">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#coloured-terminal-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coloured Terminal Output
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#listing-mode" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -489,6 +517,17 @@
     <span class="md-ellipsis">
       
         CSV Export
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unavailable-followers-and-followings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unavailable Followers and Followings
       
     </span>
   </a>
@@ -557,6 +596,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#playlist-change-confirmation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Playlist Change Confirmation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#check-intervals" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -565,25 +615,14 @@
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#terminal-output-modes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Terminal Output Modes
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Terminal Output Modes">
+    <nav class="md-nav" aria-label="Check Intervals">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#coloured-terminal-output" class="md-nav__link">
+  <a href="#liveness-reminder" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Coloured Terminal Output
+        Liveness Reminder
       
     </span>
   </a>
@@ -782,6 +821,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#terminal-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Terminal Output
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Terminal Output">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#coloured-terminal-output" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Coloured Terminal Output
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#listing-mode" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -819,6 +886,17 @@
     <span class="md-ellipsis">
       
         CSV Export
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unavailable-followers-and-followings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Unavailable Followers and Followings
       
     </span>
   </a>
@@ -887,6 +965,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#playlist-change-confirmation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Playlist Change Confirmation
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#check-intervals" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -895,25 +984,14 @@
     </span>
   </a>
   
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#terminal-output-modes" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Terminal Output Modes
-      
-    </span>
-  </a>
-  
-    <nav class="md-nav" aria-label="Terminal Output Modes">
+    <nav class="md-nav" aria-label="Check Intervals">
       <ul class="md-nav__list">
         
           <li class="md-nav__item">
-  <a href="#coloured-terminal-output" class="md-nav__link">
+  <a href="#liveness-reminder" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Coloured Terminal Output
+        Liveness Reminder
       
     </span>
   </a>
@@ -973,7 +1051,7 @@
 
 
 <h1 id="usage">Usage<a class="headerlink" href="#usage" title="Permanent link">&para;</a></h1>
-<p><a id="command-format"></a></p>
+<p><a id="command-format-by-installation-method"></a></p>
 <h2 id="command-format-by-installation-method">Command Format by Installation Method<a class="headerlink" href="#command-format-by-installation-method" title="Permanent link">&para;</a></h2>
 <p>Most examples on this page use the PyPI command <code>spotify_profile_monitor</code>. If you chose the manual script, replace only that command with the prefix in this table. Keep the targets and options that follow it.</p>
 <table>
@@ -998,7 +1076,8 @@
 </tr>
 </tbody>
 </table>
-<p>For example, <code>spotify_profile_monitor --doctor TARGET</code> becomes <code>python3 spotify_profile_monitor.py --doctor TARGET</code> with the manual script.</p>
+<p>For example, <code>spotify_profile_monitor --doctor &lt;spotify_target&gt;</code> becomes <code>python3 spotify_profile_monitor.py --doctor &lt;spotify_target&gt;</code> with the manual script.</p>
+<p>Activate the tool's virtual environment before running these commands. For a downloaded script, run them from the directory containing <code>spotify_profile_monitor.py</code>.</p>
 <p>Throughout this page <code>&lt;spotify_target&gt;</code> means any accepted target form: a complete Spotify profile URL, a <code>spotify:user:</code> URI or a bare user ID.</p>
 <p>See <a href="../installation/">Installation</a> for setup, optional dependencies and upgrade commands.</p>
 <p><a id="monitoring-mode"></a></p>
@@ -1018,13 +1097,10 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-u<span class="w"> </span><span class="s2">"your_sp_dc_cookie_value"</span><span class="w"> </span>-r<span class="w"> </span><span class="s2">"your_spotify_app_client_id:your_spotify_app_client_secret"</span>
 </code></pre></div>
 <p>The tool falls back to the web-player playlist backend automatically when those credentials are absent or restricted.</p>
-<p>By default, the tool looks for a configuration file named <code>spotify_profile_monitor.conf</code> in:
- - current directory
- - home directory (<code>~</code>)
- - script directory</p>
 <p>If you generated a configuration file as described in <a href="../configuration/#configuration-file">Configuration</a>, but saved it under a different name or in a different directory, you can specify its location using the <code>--config-file</code> flag:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>--config-file<span class="w"> </span>/path/spotify_profile_monitor_new.conf
 </code></pre></div>
+<p><code>--config-file none</code> switches automatic config discovery off for one run. The startup summary reports <code>Discovery disabled</code> when it is in effect.</p>
 <p>By default, only public playlists owned by the user are fetched. To change this behavior:
 - set <code>GET_ALL_PLAYLISTS</code> to <code>True</code>
 - or use the <code>-k</code> flag</p>
@@ -1050,7 +1126,7 @@
 <p>The tool runs until interrupted (<code>Ctrl+C</code>). Use <code>tmux</code> or <code>screen</code> for persistence.</p>
 <p>You can monitor multiple Spotify users by running multiple copies of the script.</p>
 <p>The tool normalizes every accepted target form to a Spotify user ID for output filenames. It saves its log as <code>spotify_profile_monitor_&lt;user_id/file_suffix&gt;.log</code>. The log file name can be changed via <code>SP_LOGFILE</code> and its suffix via <code>FILE_SUFFIX</code> / <code>-y</code>. Logging can be disabled with <code>DISABLE_LOGGING</code> / <code>-d</code>.</p>
-<p>The terminal shows a concise startup summary by default. The complete non-secret summary is still written to the log. Use <code>--verbose</code> to show that complete summary in the terminal plus occasional events such as token refreshes or metadata backend changes. The complete view includes the effective JSON history directory path alongside the other output destinations, including the current working directory path when <code>JSON_DIR</code> is empty. Use <code>--debug</code> for sanitized request flow and internal state details.</p>
+<p>The terminal shows a concise startup summary by default. The complete non-secret summary is still written to the log. Use <code>--verbose</code> to show that complete summary in the terminal plus occasional events such as metadata backend changes. The complete view includes the effective JSON history directory path alongside the other output destinations, including the current working directory path when <code>JSON_DIR</code> is empty. It also names the detected install method and which secrets came from the dotenv file, the environment or the configuration file, by name only. Use <code>--debug</code> for sanitized request flow and internal state details.</p>
 <p>Set <code>ASCII_LOG_SEPARATORS</code> to <code>"Auto"</code> (default) to use ASCII separator-only lines on Windows, <code>"On"</code> to use them on every operating system or <code>"Off"</code> to preserve Unicode separators in logs everywhere. Terminal separators stay Unicode. Log files and all other logged text remain UTF-8.</p>
 <p>The tool also saves the list of followings, followers and playlists to these files:</p>
 <ul>
@@ -1060,11 +1136,29 @@
 </ul>
 <p>Thanks to this we can detect changes after the tool is restarted. By default these files use the current working directory. Set <a href="../configuration/#json-history-directory"><code>JSON_DIR</code></a> to read and write all three in another directory.</p>
 <p>The tool also saves the user profile picture to <code>spotify_profile_&lt;user_id/file_suffix&gt;_pic*.jpeg</code> files.</p>
+<p><a id="terminal-output"></a></p>
+<h2 id="terminal-output">Terminal Output<a class="headerlink" href="#terminal-output" title="Permanent link">&para;</a></h2>
+<p>Use <code>--help</code> for examples grouped by task and matched to your installation.</p>
+<p>Monitoring mode prints the settings that are actually in effect before the first check.</p>
+<p>Optional features appear once you switch them on.</p>
+<p>Use <code>--verbose</code> or <code>--debug</code> for the full startup summary, including output paths, notification settings, secret sources and runtime information.</p>
+<p>Use <code>--truncate N</code> or <code>TRUNCATE_CHARS</code> to limit screen line width. Set it to <code>999</code> to detect the terminal width automatically. Truncation does not change log files and is ignored when logging is disabled with <code>-d</code>.</p>
+<p>The tool clears the terminal when monitoring starts. Set <code>CLEAR_SCREEN</code> to <code>False</code> to keep whatever is already on the screen.</p>
+<p>The screen is never cleared when output is redirected to a file or a pipe, in debug mode or for a command that prints a result and exits, such as <code>--doctor</code>, <code>--help</code> and the test senders.</p>
+<p>Two settings add detail to what a run prints. <code>VERBOSE_MODE</code> adds the decisions the run made and <code>DEBUG_MODE</code> adds timestamped technical traces. Both are off by default, both are independent of each other and both have a flag that wins over the file, <code>--verbose</code> and <code>--debug</code>. <code>DELIVERY_CONFIRMATIONS</code> is on by default and controls whether verbose mode confirms each delivered email and webhook alert. See <a href="../troubleshooting/#verbose-and-debug-output">Verbose and Debug Output</a>.</p>
+<p><a id="coloured-terminal-output"></a></p>
+<h3 id="coloured-terminal-output">Coloured Terminal Output<a class="headerlink" href="#coloured-terminal-output" title="Permanent link">&para;</a></h3>
+<p>Spotify Profile Monitor colours live terminal output and help by default. Saved log files stay plain text.</p>
+<p>Turn colour off for one run with <code>--no-color</code> or permanently with <code>COLORED_OUTPUT = False</code>. Colour is also disabled for redirected output, <code>NO_COLOR</code> or an unsupported terminal. See <a href="../configuration/#terminal-colours">Terminal Colours</a> for details and Windows support.</p>
+<p>Override individual colours with <code>COLOR_THEME</code>. It is merged over the built-in theme, so you only name the parts you want to change:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="na">COLOR_THEME = { "playlist"</span><span class="o">:</span><span class="w"> </span><span class="s">"bright_magenta bold"</span><span class="na">, "username"</span><span class="o">:</span><span class="w"> </span><span class="s">"green"</span><span class="w"> </span><span class="na">}</span>
+</code></pre></div>
+<p>See <a href="../configuration/#terminal-colours">Terminal Colours</a> for every theme key and the accepted colour and style names.</p>
 <p><a id="listing-mode"></a></p>
 <h2 id="listing-mode">Listing Mode<a class="headerlink" href="#listing-mode" title="Permanent link">&para;</a></h2>
 <p>There is also another mode of the tool which displays various requested information.</p>
 <p>If you want to display details for a specific Spotify playlist URL (i.e. its name, description, number of tracks, likes, overall duration, creation and last update date, list of tracks with information on when they were added), then use the <code>-l</code> flag:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>spotify_profile_monitor<span class="w"> </span>-l<span class="w"> </span><span class="s2">"https://open.spotify.com/playlist/playlist_uri_id"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>spotify_profile_monitor<span class="w"> </span>-l<span class="w"> </span><span class="s2">"https://open.spotify.com/playlist/playlist_uri_id"</span>
 </code></pre></div>
 <p>The <code>-l</code> flag accepts a playlist URL, a <code>spotify:playlist:playlist_uri_id</code> URI or the bare playlist ID. A value in none of these forms is reported as an invalid playlist instead of being sent to Spotify.</p>
 <p align="center">
@@ -1072,66 +1166,70 @@
 </p>
 
 <p>If you want to not only display, but also save the list of tracks for a specific Spotify playlist to a CSV file, use the <code>-l</code> flag with <code>-b</code> indicating the CSV file:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>spotify_profile_monitor<span class="w"> </span>-l<span class="w"> </span><span class="s2">"https://open.spotify.com/playlist/playlist_uri_id"</span><span class="w"> </span>-b<span class="w"> </span>spotify_playlist_tracks.csv
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>spotify_profile_monitor<span class="w"> </span>-l<span class="w"> </span><span class="s2">"https://open.spotify.com/playlist/playlist_uri_id"</span><span class="w"> </span>-b<span class="w"> </span>spotify_playlist_tracks.csv
 </code></pre></div>
 <p>If you want to display similar information for <strong>Liked Songs</strong> playlist for the user owning the Spotify access token, use the <code>-x</code> flag (can also be used with <code>-b</code>):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>spotify_profile_monitor<span class="w"> </span>-x
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>spotify_profile_monitor<span class="w"> </span>-x
 </code></pre></div>
 <p>If you want to export tracks from <code>-l</code> or <code>-x</code> for direct import into <a href="https://github.com/misiektoja/spotify_monitor">spotify_monitor</a>, use the <code>-o</code> flag to ensure appropriate formatting (optionally with <code>-b</code> to specify the text file where the tracks will be exported):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>spotify_profile_monitor<span class="w"> </span>-o<span class="w"> </span>-x<span class="w"> </span>-b<span class="w"> </span>spotify_liked_tracks.txt
-<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>spotify_profile_monitor<span class="w"> </span>-o<span class="w"> </span>-l<span class="w"> </span><span class="s2">"https://open.spotify.com/playlist/playlist_uri_id"</span><span class="w"> </span>-b<span class="w"> </span>spotify_playlist_tracks.txt
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>spotify_profile_monitor<span class="w"> </span>-o<span class="w"> </span>-x<span class="w"> </span>-b<span class="w"> </span>spotify_liked_tracks.txt
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>spotify_profile_monitor<span class="w"> </span>-o<span class="w"> </span>-l<span class="w"> </span><span class="s2">"https://open.spotify.com/playlist/playlist_uri_id"</span><span class="w"> </span>-b<span class="w"> </span>spotify_playlist_tracks.txt
 </code></pre></div>
 <p>To display profile details for any accepted Spotify target, including its normalized user ID, followers, followings, recently played artists and playlist statistics, use <code>-i</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-i
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-i
 </code></pre></div>
 <p align="center">
    <img src="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/assets/spotify_profile_monitor_user_details.png" alt="spotify_profile_monitor_user_details" width="80%"/>
 </p>
 
 <p>By default, only public playlists owned by the user are fetched. You can change this behavior with <code>-k</code> flag. It is helpful in the case of playlists created by another user added to another user profile:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-i<span class="w"> </span>-k
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-i<span class="w"> </span>-k
 </code></pre></div>
 <p>If you want to additionally export each of the user's playlists into a separate .CSV file (named after the playlist and sanitized), use the <code>--export-all-playlists</code> flag (requires <code>pathvalidate</code> library):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-i<span class="w"> </span>--export-all-playlists
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-i<span class="w"> </span>--export-all-playlists
 </code></pre></div>
 <p>Each file is written into a dedicated <code>spotify_profile_&lt;user_id/file_suffix&gt;_playlists_export</code> directory created in the current working directory, using the sanitized playlist name. Exports can no longer land beside your other files, so your <code>-b</code> output and anything else in the working directory are untouched.</p>
+<p>File names are sanitized for every platform, not only the one running the export, so the directory stays readable after you copy it to another OS or to a FAT or exFAT volume. Separators (<code>/</code>, <code>\</code>, <code>|</code> and <code>:</code>) become a dash and keep the spacing the playlist name had, so <code>Techno / House</code> becomes <code>Techno - House</code> and <code>techno/electronica</code> becomes <code>techno-electronica</code>. The remaining characters Windows rejects (<code>*</code>, <code>?</code>, <code>"</code>, <code>&lt;</code> and <code>&gt;</code>) are dropped, leftover double spaces are collapsed and emoji are kept.</p>
+<p>The destination is printed before the profile scan starts, so you can see where files will go without waiting for the scan to finish. Exports are written afterwards, from the tracks the scan already downloaded, so <code>--export-all-playlists</code> costs no extra Spotify requests. A progress bar shows how far the export has got. It is drawn only in an interactive terminal, so redirected output and log files are unaffected.</p>
+<p><code>CSV_FILE_FORMAT_EXPORT</code> and <code>CLEAN_OUTPUT</code> apply to these files the same way they apply to <code>-l</code>.</p>
 <p>An existing export file is never appended to. If the file is already present from an earlier run, that playlist is skipped with a message. Pass <code>--force</code> to replace existing exports:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-i<span class="w"> </span>--export-all-playlists<span class="w"> </span>--force
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-i<span class="w"> </span>--export-all-playlists<span class="w"> </span>--force
 </code></pre></div>
 <p>When two playlists sanitize to the same filename, the second one gets the playlist ID appended so both are exported in full.</p>
 <p>To skip public playlist processing while displaying details for a Spotify target, use <code>-q</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-i<span class="w"> </span>-q
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-i<span class="w"> </span>-q
 </code></pre></div>
 <p>If you only want to display the list of followings and followers for the user (<code>-f</code> flag):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-f
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-f
 </code></pre></div>
 <p>If you want to display a list of recently played artists (this feature only works if the user has it enabled in their settings), use the <code>-a</code> flag:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-a
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-a
 </code></pre></div>
 <p>To search the Spotify catalog for users with a specific name and obtain their Spotify user ID plus profile URL, use <code>-s</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>spotify_profile_monitor<span class="w"> </span>-s<span class="w"> </span><span class="s2">"user name"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>spotify_profile_monitor<span class="w"> </span>-s<span class="w"> </span><span class="s2">"user name"</span>
 </code></pre></div>
 <p><a id="email-notifications"></a></p>
 <h2 id="email-notifications">Email Notifications<a class="headerlink" href="#email-notifications" title="Permanent link">&para;</a></h2>
 <p>To enable email notifications for all user profile changes (including playlists):
 - set <code>PROFILE_NOTIFICATION</code> to <code>True</code>
 - or use the <code>-p</code> flag</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-p
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-p
 </code></pre></div>
 <p>To disable sending an email about new followers/followings (these are sent by default when the <code>-p</code> flag is enabled):
 - set <code>FOLLOWERS_FOLLOWINGS_NOTIFICATION</code> to <code>False</code>
 - or use the <code>-g</code> flag</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-p<span class="w"> </span>-g
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-p<span class="w"> </span>-g
 </code></pre></div>
 <p>To disable sending an email on errors (enabled by default):
 - set <code>ERROR_NOTIFICATION</code> to <code>False</code>
 - or use the <code>-e</code> flag</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-e
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-e
 </code></pre></div>
+<p>Email and webhook error alerts are sent after <strong>5 minutes</strong> of a continuing failure. Problems that need your action, such as an expired <code>sp_dc</code> cookie, alert immediately. Each channel gets one alert until a full check succeeds, including the follower poll. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour.</p>
 <p>Make sure you defined your SMTP settings earlier (see <a href="../configuration/#smtp-settings">SMTP settings</a>).</p>
 <p>Playlist change emails include inline artwork when Spotify provides it. Track-change alerts prefer playlist artwork when both playlist and album images are available, then fall back to album artwork when the playlist has no image. Artwork is accepted only from Spotify HTTPS CDN hosts and is resized to fit within 320 x 320 pixels. Download or image preparation failures do not block the email. Dedicated profile-picture events continue to attach the saved profile picture.</p>
 <p>Playlist and album artwork are disabled by default and need the optional artwork extra (<code>pip install "spotify_profile_monitor[notification-images]"</code>). To include them in email notifications:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="na">EMAIL_IMAGES</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="na">EMAIL_IMAGES</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
 </code></pre></div>
 <p>This setting does not control dedicated profile-picture events. Profile-picture detection, downloads and email attachments remain enabled by default through <code>DETECT_CHANGED_PROFILE_PIC = True</code>. Set that option to <code>False</code> or use <code>-j</code> to disable the profile-picture feature.</p>
 <p>Example email:</p>
@@ -1169,24 +1267,29 @@
 </tbody>
 </table>
 <p>Enable the master switch and the profile event setting in <code>spotify_profile_monitor.conf</code>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="na">WEBHOOK_ENABLED</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
-<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a><span class="na">WEBHOOK_PROVIDER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"discord"</span>
-<a id="__codelineno-25-3" name="__codelineno-25-3" href="#__codelineno-25-3"></a><span class="na">WEBHOOK_PROFILE_NOTIFICATION</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
-<a id="__codelineno-25-4" name="__codelineno-25-4" href="#__codelineno-25-4"></a><span class="na">WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
-<a id="__codelineno-25-5" name="__codelineno-25-5" href="#__codelineno-25-5"></a><span class="na">WEBHOOK_ERROR_NOTIFICATION</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="na">WEBHOOK_ENABLED</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
+<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a><span class="na">WEBHOOK_PROVIDER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"discord"</span>
+<a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a><span class="na">WEBHOOK_PROFILE_NOTIFICATION</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
+<a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a><span class="na">WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
+<a id="__codelineno-26-5" name="__codelineno-26-5" href="#__codelineno-26-5"></a><span class="na">WEBHOOK_ERROR_NOTIFICATION</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
 </code></pre></div>
+<p>A <code>WEBHOOK_URL</code> left unset, or left at its <code>your_webhook_url</code> placeholder, switches webhook alerts off at startup instead of failing at the first alert. <code>--verbose</code> reports why.</p>
 <p>You can also enable profile webhooks for one run:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>--webhook-profile
+<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>--webhook-profile
 </code></pre></div>
 <p>Use <code>--webhook</code> or <code>--no-webhook</code> to turn all configured webhook alerts on or off for one run. Standard Discord and public <code>ntfy.sh</code> URLs automatically correct a stale configured provider. Use <code>--webhook-provider {discord,ntfy}</code> as an explicit override for self-hosted ntfy or compatible endpoints.</p>
 <p>The recommended way to save the private destination is <code>--set-webhook-url</code>. Use <code>--webhook-url URL</code> only when shell history or process visibility is acceptable. See <a href="../configuration/#webhook-settings">Webhook Settings</a> for Discord setup, ntfy artwork and advanced payload customization.</p>
 <p><a id="csv-export"></a></p>
 <h2 id="csv-export">CSV Export<a class="headerlink" href="#csv-export" title="Permanent link">&para;</a></h2>
 <p>If you want to save all profile changes (including playlists) to a CSV file, set <code>CSV_FILE</code> or use <code>-b</code> flag:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-b<span class="w"> </span>spotify_profile_changes_spotify_user.csv
+<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-b<span class="w"> </span>spotify_profile_changes_spotify_user.csv
 </code></pre></div>
 <p>The file will be automatically created if it does not exist.</p>
 <p>Spotify-supplied text (playlist names, track names, artist names, collaborator names and descriptions) that starts with <code>=</code>, <code>+</code>, <code>-</code>, <code>@</code>, a tab or a carriage return is written with a leading apostrophe, so opening the export in a spreadsheet cannot evaluate it as a formula. The same applies to the per-playlist files produced by <code>--export-all-playlists</code>. Timestamps and numeric values are unaffected.</p>
+<p><a id="unavailable-followers-and-followings"></a></p>
+<h2 id="unavailable-followers-and-followings">Unavailable Followers and Followings<a class="headerlink" href="#unavailable-followers-and-followings" title="Permanent link">&para;</a></h2>
+<p>Missing follower or following data is shown as <code>n/a</code>. It does not replace saved history or trigger removal alerts, including after a restart. The first available snapshot establishes a baseline if no history exists.</p>
+<p>An explicit zero count or a valid empty list still uses <code>FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER</code> to confirm a disappearance during monitoring. Missing responses interrupt that confirmation streak.</p>
 <p><a id="detection-of-changed-profile-pictures"></a></p>
 <h2 id="detection-of-changed-profile-pictures">Detection of Changed Profile Pictures<a class="headerlink" href="#detection-of-changed-profile-pictures" title="Permanent link">&para;</a></h2>
 <p>The tool can detect when a monitored user changes their profile picture. Notifications appear in the console and (if the <code>-p</code> flag is enabled) via email.</p>
@@ -1215,27 +1318,27 @@
 <p>By default, all Spotify-owned playlists are skipped from processing, i.e. the tool won't fetch or report changed tracks and the number of likes for them. This is because they are typically dynamically generated with a high volume of changes in terms of likes and sometimes tracks as well. You can change this behavior by setting <code>IGNORE_SPOTIFY_PLAYLISTS</code> to <code>False</code>.</p>
 <p>On top of that, you can also use the <code>PLAYLISTS_TO_SKIP_FILE</code> / <code>-t</code> flag which allows you to indicate a file with additional playlists to be blacklisted.</p>
 <p>The file may include lines referencing playlist URIs and URLs, as well as the playlist owner's name, URI and URL. Below is an example of an <code>ignored_playlists</code> file with acceptable entries:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>PLAYLIST_ID
-<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>spotify:playlist:PLAYLIST_ID
-<a id="__codelineno-28-3" name="__codelineno-28-3" href="#__codelineno-28-3"></a>https://open.spotify.com/playlist/PLAYLIST_ID
-<a id="__codelineno-28-4" name="__codelineno-28-4" href="#__codelineno-28-4"></a>https://open.spotify.com/playlist/PLAYLIST_ID?si<span class="o">=</span><span class="m">1</span>
-<a id="__codelineno-28-5" name="__codelineno-28-5" href="#__codelineno-28-5"></a>Some<span class="w"> </span>User<span class="w"> </span>Name
-<a id="__codelineno-28-6" name="__codelineno-28-6" href="#__codelineno-28-6"></a>USER_ID
-<a id="__codelineno-28-7" name="__codelineno-28-7" href="#__codelineno-28-7"></a>spotify:user:USER_ID
-<a id="__codelineno-28-8" name="__codelineno-28-8" href="#__codelineno-28-8"></a>https://open.spotify.com/user/USER_ID?si<span class="o">=</span><span class="m">1</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>PLAYLIST_ID
+<a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a>spotify:playlist:PLAYLIST_ID
+<a id="__codelineno-29-3" name="__codelineno-29-3" href="#__codelineno-29-3"></a>https://open.spotify.com/playlist/PLAYLIST_ID
+<a id="__codelineno-29-4" name="__codelineno-29-4" href="#__codelineno-29-4"></a>https://open.spotify.com/playlist/PLAYLIST_ID?si<span class="o">=</span><span class="m">1</span>
+<a id="__codelineno-29-5" name="__codelineno-29-5" href="#__codelineno-29-5"></a>Some<span class="w"> </span>User<span class="w"> </span>Name
+<a id="__codelineno-29-6" name="__codelineno-29-6" href="#__codelineno-29-6"></a>USER_ID
+<a id="__codelineno-29-7" name="__codelineno-29-7" href="#__codelineno-29-7"></a>spotify:user:USER_ID
+<a id="__codelineno-29-8" name="__codelineno-29-8" href="#__codelineno-29-8"></a>https://open.spotify.com/user/USER_ID?si<span class="o">=</span><span class="m">1</span>
 </code></pre></div>
 <p>You can comment out specific lines with # if needed.</p>
 <p>Entries are matched case sensitively, because Spotify identifiers are case sensitive and two IDs differing only in case are different playlists. Copy each ID, name or URL exactly as Spotify shows it.</p>
 <p>If certain playlists are blacklisted, there will be an appropriate message. For example:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>- 'Afternoon Acoustic' [ IGNORED ]
-<a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a>[ https://open.spotify.com/playlist/37i9dQZF1DX4E3UdUs7fUx?si=1 ]
-<a id="__codelineno-29-3" name="__codelineno-29-3" href="#__codelineno-29-3"></a>[ songs: 100, likes: 2164491, collaborators: 0 ]
-<a id="__codelineno-29-4" name="__codelineno-29-4" href="#__codelineno-29-4"></a>[ owner: Spotify ]
-<a id="__codelineno-29-5" name="__codelineno-29-5" href="#__codelineno-29-5"></a>[ date: Fri 23 Aug 2024, 17:05:15 - 7 months, 10 hours, 27 minutes ago ]
-<a id="__codelineno-29-6" name="__codelineno-29-6" href="#__codelineno-29-6"></a>[ update: Fri 23 Aug 2024, 17:05:15 - 7 months, 10 hours, 27 minutes ago ]
-<a id="__codelineno-29-7" name="__codelineno-29-7" href="#__codelineno-29-7"></a>'Unwind and let the afternoon unfold.'
+<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>- 'Afternoon Acoustic' [ IGNORED ]
+<a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a>[ https://open.spotify.com/playlist/37i9dQZF1DX4E3UdUs7fUx?si=1 ]
+<a id="__codelineno-30-3" name="__codelineno-30-3" href="#__codelineno-30-3"></a>[ songs: 100, likes: 2164491, collaborators: 0 ]
+<a id="__codelineno-30-4" name="__codelineno-30-4" href="#__codelineno-30-4"></a>[ owner: Spotify ]
+<a id="__codelineno-30-5" name="__codelineno-30-5" href="#__codelineno-30-5"></a>[ date: Fri 23 Aug 2024, 17:05:15 - 7 months, 10 hours, 27 minutes ago ]
+<a id="__codelineno-30-6" name="__codelineno-30-6" href="#__codelineno-30-6"></a>[ update: Fri 23 Aug 2024, 17:05:15 - 7 months, 10 hours, 27 minutes ago ]
+<a id="__codelineno-30-7" name="__codelineno-30-7" href="#__codelineno-30-7"></a>'Unwind and let the afternoon unfold.'
 </code></pre></div>
-<p><a id="restricted-playlists-spotify-api-404"></a></p>
+<p><a id="restricted-playlists-spotify-api-403404"></a></p>
 <h2 id="restricted-playlists-spotify-api-403404">Restricted Playlists (Spotify API 403/404)<a class="headerlink" href="#restricted-playlists-spotify-api-403404" title="Permanent link">&para;</a></h2>
 <p>Some playlists may appear on profile pages but return <code>403</code> or <code>404</code> from the public Web API. Version 3.5 automatically retries them through the Spotify web-player backend.</p>
 <p>The tool marks a playlist as <code>[ RESTRICTED ]</code> and uses profile-view metadata only when both the Web API and web-player backend cannot retrieve it.</p>
@@ -1248,30 +1351,25 @@
 - collaborators
 - description changes
 - creation/last update timestamps derived from track history</p>
+<p><a id="playlist-change-confirmation"></a></p>
+<h2 id="playlist-change-confirmation">Playlist Change Confirmation<a class="headerlink" href="#playlist-change-confirmation" title="Permanent link">&para;</a></h2>
+<p><code>PLAYLISTS_CHANGE_COUNTER</code> requires repeated matching nonempty playlist collections before reporting a change. Set it to <code>0</code> to accept a nonempty change immediately. <code>PLAYLISTS_DISAPPEARED_COUNTER</code> separately controls how many consecutive empty responses confirm that all playlists disappeared. A nonempty response resets the disappearance count and an empty response clears a pending nonempty change. Playlist metadata failures retain the last successful details and can trigger error alerts without bypassing either threshold.</p>
+<p>Those two thresholds need several checks to decide, which only works while monitoring is already running. A one-shot <code>-i</code> read and the first check after startup get a single response, so they confirm an empty playlist list differently: the profile is read again up to <code>PLAYLISTS_EMPTY_RETRIES</code> times (default <code>2</code>), <code>PLAYLISTS_EMPTY_RETRY_SLEEP</code> seconds apart (default <code>3</code>). A Spotify glitch usually clears on the retry while a real removal does not. Set <code>PLAYLISTS_EMPTY_RETRIES</code> to <code>0</code> to disable the extra reads.</p>
+<p>If startup still sees no playlists while the saved history file holds some, it keeps the saved history and says so, rather than recording an emptied profile. The count then follows the usual <code>PLAYLISTS_DISAPPEARED_COUNTER</code> confirmation once monitoring is running. For the same reason, a first baseline is never written from a response whose playlist field was missing altogether.</p>
 <p><a id="check-intervals"></a></p>
 <h2 id="check-intervals">Check Intervals<a class="headerlink" href="#check-intervals" title="Permanent link">&para;</a></h2>
-<p>If you want to customize polling interval, use <code>-c</code> flag (or <code>SPOTIFY_CHECK_INTERVAL</code> configuration option):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-c<span class="w"> </span><span class="m">900</span>
+<p>If you want to customize the polling interval, use the <code>-c</code> flag (or the <code>SPOTIFY_CHECK_INTERVAL</code> configuration option):</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-c<span class="w"> </span><span class="m">900</span>
 </code></pre></div>
-<p><a id="terminal-output-modes"></a></p>
-<h2 id="terminal-output-modes">Terminal Output Modes<a class="headerlink" href="#terminal-output-modes" title="Permanent link">&para;</a></h2>
-<p>Normal mode keeps startup output compact and always shows monitoring changes, warnings and errors. Verbose mode adds the complete startup summary plus infrequent operational transitions:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>--verbose
+<p>An interval below 30 seconds invites the Spotify rate limiter, which stops the tool seeing anything. <code>--doctor</code> warns when the configured interval is that short.</p>
+<p><a id="liveness-reminder"></a></p>
+<h3 id="liveness-reminder">Liveness Reminder<a class="headerlink" href="#liveness-reminder" title="Permanent link">&para;</a></h3>
+<p>While nothing changes, the tool prints one reminder that it is still running:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>* Monitoring healthy for &lt;spotify_target&gt;. No profile or playlist change since the last check
+<a id="__codelineno-32-2" name="__codelineno-32-2" href="#__codelineno-32-2"></a>Liveness check, timestamp:  Mon 08 Sep 2026, 09:15:05
 </code></pre></div>
-<p>Debug mode retains the complete summary and adds sanitized HTTP flow plus internal troubleshooting detail:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>--debug
-</code></pre></div>
-<p>Recoverable failures use a short <code>Error</code>, <code>To fix</code> and relevant guide format. Repeated monitoring failures keep the short error visible but suppress unchanged recovery instructions until the operation succeeds or the failure category changes. Raw exception detail is shown only in debug mode.</p>
-<p>Cookies, tokens, passwords, authorization headers and webhook URLs are redacted from verbose and debug output.</p>
-<p><a id="coloured-terminal-output"></a></p>
-<h3 id="coloured-terminal-output">Coloured Terminal Output<a class="headerlink" href="#coloured-terminal-output" title="Permanent link">&para;</a></h3>
-<p>Spotify Profile Monitor colours live terminal output by default. Usernames, Spotify IDs, playlist, track and album names, dates, durations, follower and playlist counters, links and change headers each get their own colour, and errors, warnings and received signals are highlighted as a whole line.</p>
-<p>Colour never reaches saved output: log files are written with the escape sequences stripped, so <code>grep</code>, <code>tail</code> and any log viewer see plain text.</p>
-<p>Turn it off for one run with <code>--no-color</code>, or permanently with <code>COLORED_OUTPUT = False</code> in the configuration file. The setting is read before the startup banner is printed, so a configured value applies to the very first line of output. Colour also switches itself off when it cannot be displayed safely: when output is redirected or piped, when <code>TERM</code> is unset or <code>dumb</code>, and when the standard <a href="https://no-color.org/"><code>NO_COLOR</code></a> environment variable is set. On Windows, install the optional <code>colorama</code> package for the best results in the classic Command Prompt.</p>
-<p>Override individual colours with <code>COLOR_THEME</code>. It is merged over the built-in theme, so you only name the parts you want to change:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a><span class="na">COLOR_THEME = { "playlist"</span><span class="o">:</span><span class="w"> </span><span class="s">"bright_magenta bold"</span><span class="na">, "username"</span><span class="o">:</span><span class="w"> </span><span class="s">"green"</span><span class="w"> </span><span class="na">}</span>
-</code></pre></div>
-<p>See <a href="../configuration/#terminal-colours">Terminal Colours</a> for every theme key and the accepted colour and style names.</p>
+<p>Set <code>LIVENESS_CHECK_INTERVAL</code> to change it (default: 86400, i.e. 24 hours) or to 0 to switch it off.</p>
+<p>Anything the tool prints about the target restarts the countdown, so a busy run stays quiet.</p>
 <p><a id="signal-controls-macoslinuxunix"></a></p>
 <h2 id="signal-controls-macoslinuxunix">Signal Controls (macOS/Linux/Unix)<a class="headerlink" href="#signal-controls-macoslinuxunix" title="Permanent link">&para;</a></h2>
 <p>The tool has several signal handlers implemented which allow to change behavior of the tool without a need to restart it with new configuration options / flags.</p>
@@ -1302,21 +1400,23 @@
 </tr>
 </tbody>
 </table>
+<p><code>SIGHUP</code> keeps command-line credentials and nonempty environment values exported before startup. Change those values and restart to replace them.</p>
 <p>Send signals with <code>kill</code> or <code>pkill</code>, e.g.:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a>pkill<span class="w"> </span>-USR1<span class="w"> </span>-f<span class="w"> </span><span class="s2">"spotify_profile_monitor &lt;spotify_target&gt;"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>pkill<span class="w"> </span>-USR1<span class="w"> </span>-f<span class="w"> </span><span class="s2">"spotify_profile_monitor &lt;spotify_target&gt;"</span>
 </code></pre></div>
 <p>As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.</p>
 <p><a id="coloring-log-output-with-grc"></a></p>
 <h2 id="coloring-log-output-with-grc">Coloring Log Output with GRC<a class="headerlink" href="#coloring-log-output-with-grc" title="Permanent link">&para;</a></h2>
 <p>Spotify Profile Monitor colours live terminal output through <code>COLORED_OUTPUT</code> and <code>COLOR_THEME</code>. To colour saved log files when you view them later, you can use <a href="https://github.com/garabik/grc">GRC</a>.</p>
+<p>The bundled recipe follows the same colours as the live output. It also covers the other monitors in the family, so one copy in <code>~/.grc/</code> colours every tool's logs.</p>
 <p>Add to your GRC config (<code>~/.grc/grc.conf</code>):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a># monitoring log file
-<a id="__codelineno-35-2" name="__codelineno-35-2" href="#__codelineno-35-2"></a>.*_monitor_.*\.log
-<a id="__codelineno-35-3" name="__codelineno-35-3" href="#__codelineno-35-3"></a>conf.monitor_logs
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a># monitoring log file
+<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a>.*_monitor_.*\.log
+<a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a>conf.monitor_logs
 </code></pre></div>
 <p>Now copy the <a href="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/grc/conf.monitor_logs">conf.monitor_logs</a> to your <code>~/.grc/</code> and log files should be nicely colored when using <code>grc</code> tool.</p>
 <p>Example:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a>grc<span class="w"> </span>tail<span class="w"> </span>-F<span class="w"> </span>-n<span class="w"> </span><span class="m">100</span><span class="w"> </span>spotify_profile_monitor_&lt;user_id/file_suffix&gt;.log
+<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a>grc<span class="w"> </span>tail<span class="w"> </span>-F<span class="w"> </span>-n<span class="w"> </span><span class="m">100</span><span class="w"> </span>spotify_profile_monitor_&lt;user_id/file_suffix&gt;.log
 </code></pre></div>
 
 

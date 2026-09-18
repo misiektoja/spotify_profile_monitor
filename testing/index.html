@@ -720,7 +720,12 @@
 <div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">'.[lint]'</span>
 <a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>python<span class="w"> </span>-m<span class="w"> </span>ruff<span class="w"> </span>check<span class="w"> </span>spotify_profile_monitor.py<span class="w"> </span>tests
 </code></pre></div>
-<p>GitHub Actions runs the linter, then the same suite on Python 3.9 through 3.14, plus a Windows job for the platform-sensitive behaviors: ANSI codepage text writes, reserved characters in artwork filenames, export path handling and the POSIX-only watchdog. See the <a href="https://github.com/misiektoja/spotify_profile_monitor/blob/main/.github/workflows/tests.yml">test workflow</a>.</p>
+<p>A pinned <a href="https://microsoft.github.io/pyright/">Pyright</a> type check runs too. Name the interpreter that has the runtime dependencies, or every third-party import is reported as missing:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s1">'.[typecheck]'</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>python<span class="w"> </span>-m<span class="w"> </span>pyright<span class="w"> </span>--pythonpath<span class="w"> </span><span class="s2">"</span><span class="k">$(</span>which<span class="w"> </span>python<span class="k">)</span><span class="s2">"</span><span class="w"> </span>spotify_profile_monitor.py<span class="w"> </span>tests
+</code></pre></div>
+<p>The type-check extra also pulls in the <code>browser</code> and <code>notification-images</code> extras. The guarded <code>pycookiecheat</code> and Pillow imports resolve that way, so the code paths behind them are checked rather than reported as missing imports.</p>
+<p>GitHub Actions runs the linter and the type check, then the same suite on Python 3.9 through 3.14, plus a Windows job for the platform-sensitive behaviors: ANSI codepage text writes, reserved characters in artwork filenames, export path handling and the POSIX-only watchdog. See the <a href="https://github.com/misiektoja/spotify_profile_monitor/blob/main/.github/workflows/tests.yml">test workflow</a>.</p>
 <p>The same suite gates every release. <a href="https://github.com/misiektoja/spotify_profile_monitor/blob/main/.github/workflows/publish.yml">Publishing to PyPI</a> runs it first and stops if anything fails, so a release cannot ship ahead of a passing test run.</p>
 <h2 id="test-layers">Test Layers<a class="headerlink" href="#test-layers" title="Permanent link">&para;</a></h2>
 <p>The suite combines several test types:</p>
@@ -739,24 +744,24 @@
 <p>The pytest suite covers the workflows themselves. It fails when a third-party action is not pinned to a commit SHA, when a pin lacks its version comment or when a workflow passes an event value straight into a shell.</p>
 <h2 id="focused-test-commands">Focused Test Commands<a class="headerlink" href="#focused-test-commands" title="Permanent link">&para;</a></h2>
 <p>Run the documentation and repository contracts:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>tests/test_repository_contracts.py
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>tests/test_repository_contracts.py
 </code></pre></div>
 <p>Run Doctor and setup coverage:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>tests/test_doctor.py<span class="w"> </span>tests/test_setup_and_startup.py
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>tests/test_doctor.py<span class="w"> </span>tests/test_setup_and_startup.py
 </code></pre></div>
 <p>Run notification and output safety tests:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>tests/test_webhook_notifications.py<span class="w"> </span>tests/test_notification_escaping.py<span class="w"> </span>tests/test_untrusted_output.py
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>python<span class="w"> </span>-m<span class="w"> </span>pytest<span class="w"> </span>tests/test_webhook_notifications.py<span class="w"> </span>tests/test_notification_escaping.py<span class="w"> </span>tests/test_untrusted_output.py
 </code></pre></div>
 <h2 id="documentation-build">Documentation Build<a class="headerlink" href="#documentation-build" title="Permanent link">&para;</a></h2>
 <p>The documentation site is built with strict validation, so a broken link or a page missing from the navigation fails the build:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>docs/requirements.txt
-<a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>mkdocs<span class="w"> </span>build<span class="w"> </span>--strict
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>pip<span class="w"> </span>install<span class="w"> </span>-r<span class="w"> </span>docs/requirements.txt
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>mkdocs<span class="w"> </span>build<span class="w"> </span>--strict
 </code></pre></div>
 <h2 id="conventions">Conventions<a class="headerlink" href="#conventions" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Keep everything offline. If a code path needs network access, stub it with <code>monkeypatch</code> rather than skipping the test.</li>
 <li>Restore module-level globals you change. Tests share one imported module, so a leaked global affects whatever runs next.</li>
-<li>Put disposable artifacts under <code>local/</code>, never in the repository root or the system temp directory.</li>
+<li>Write disposable artifacts to pytest's <code>tmp_path</code> or to the gitignored <code>local/</code> directory the existing tests use. Do not leave them in the repository root.</li>
 <li>Never use a real cookie, Protobuf login file, OAuth client secret, SMTP password or webhook URL.</li>
 </ul>
 

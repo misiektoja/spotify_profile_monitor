@@ -376,6 +376,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#run-the-setup-wizard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run the setup wizard
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#before-you-start" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -387,10 +398,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#setup-wizard" class="md-nav__link">
+  <a href="#not-sure-which-command-you-need" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Setup Wizard
+        Not sure which command you need?
       
     </span>
   </a>
@@ -398,13 +409,63 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#browser-cookie-import" class="md-nav__link">
+  <a href="#run-individual-commands" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Browser Cookie Import
+        Run Individual Commands
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Run Individual Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#import-a-spotify-login-from-a-browser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Import a Spotify login from a browser
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#save-a-manually-extracted-cookie" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Save a manually extracted cookie
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#save-notification-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Save notification credentials
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#start-monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Start monitoring
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -616,6 +677,17 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#run-the-setup-wizard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Run the setup wizard
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#before-you-start" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -627,10 +699,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#setup-wizard" class="md-nav__link">
+  <a href="#not-sure-which-command-you-need" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Setup Wizard
+        Not sure which command you need?
       
     </span>
   </a>
@@ -638,13 +710,63 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#browser-cookie-import" class="md-nav__link">
+  <a href="#run-individual-commands" class="md-nav__link">
     <span class="md-ellipsis">
       
-        Browser Cookie Import
+        Run Individual Commands
       
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="Run Individual Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#import-a-spotify-login-from-a-browser" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Import a Spotify login from a browser
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#save-a-manually-extracted-cookie" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Save a manually extracted cookie
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#save-notification-credentials" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Save notification credentials
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#start-monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Start monitoring
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -685,56 +807,154 @@
 
 
 <h1 id="setup-first-run">Setup &amp; First Run<a class="headerlink" href="#setup-first-run" title="Permanent link">&para;</a></h1>
-<p>This page covers the first run: the setup wizard, importing a Spotify login from your browser and starting monitoring. Examples use the PyPI command <code>spotify_profile_monitor</code>. Manual script users should replace that command with <code>python3 spotify_profile_monitor.py</code> on macOS or Linux, or <code>python spotify_profile_monitor.py</code> on Windows.</p>
-<p><a id="before-you-start"></a></p>
-<h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
-<p>The easiest path is the interactive wizard:</p>
+<p><a id="run-the-setup-wizard"></a></p>
+<h2 id="run-the-setup-wizard">Run the setup wizard<a class="headerlink" href="#run-the-setup-wizard" title="Permanent link">&para;</a></h2>
+<p>Already installed? Run the setup command below for your installation and follow the prompts. Otherwise, start with <a href="../installation/">Installation</a>.</p>
+<p>Setup asks who to monitor, how to connect to Spotify, how often to check and which alerts and output files you want. You can review your answers before saving. Regular settings go in <code>spotify_profile_monitor.conf</code> and private values go in <code>.env</code>. Keep <code>.env</code> private.</p>
+<p>Press Enter to accept a default or Ctrl+C to cancel. Cancelling before saving leaves your files untouched. Cancelling after saving keeps the saved settings. For changes to an existing setup, see <a href="../configuration/#configuration-file">Configuration File</a>.</p>
+<p>After saving, follow the offered Doctor checks and monitoring steps.</p>
+<div class="tabbed-set tabbed-alternate" data-tabs="1:3"><input checked="checked" id="__tabbed_1_1" name="__tabbed_1" type="radio" /><input id="__tabbed_1_2" name="__tabbed_1" type="radio" /><input id="__tabbed_1_3" name="__tabbed_1" type="radio" /><div class="tabbed-labels"><label for="__tabbed_1_1">PyPI</label><label for="__tabbed_1_2">Manual Python script on macOS or Linux</label><label for="__tabbed_1_3">Manual Python script on Windows</label></div>
+<div class="tabbed-content">
+<div class="tabbed-block">
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>spotify_profile_monitor<span class="w"> </span>--setup
 </code></pre></div>
-<p>It asks for the target, authentication, polling interval and optional email or webhook alerts. You can review or change each section before saving. Regular settings go to <code>spotify_profile_monitor.conf</code>. Private values go to <code>.env</code>.</p>
-<p>For manual setup you need two values:</p>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>python3<span class="w"> </span>spotify_profile_monitor.py<span class="w"> </span>--setup
+</code></pre></div>
+</div>
+<div class="tabbed-block">
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">python</span> <span class="n">spotify_profile_monitor</span><span class="p">.</span><span class="n">py</span> <span class="p">-</span><span class="n">-setup</span>
+</code></pre></div>
+</div>
+</div>
+</div>
+<p>A <strong>target</strong> is the Spotify user whose profile and playlists you want to monitor. The <strong>monitoring account</strong> is the Spotify account represented by your saved login cookie or client credentials. They are normally different accounts.</p>
+<p>The wizard recommends importing the monitoring account's saved Firefox login. On macOS and Linux it can also import from Chrome, Brave or Chromium. Those three browsers require the optional <code>pycookiecheat</code> package. If it is missing, the wizard can install it in a local Python installation.</p>
+<p>The polling prompt accepts plain seconds or the <code>s</code>, <code>m</code>, <code>h</code> and <code>d</code> units. It shows both the seconds and a readable form of the default.</p>
+<p>With a saved target, running Spotify Profile Monitor without a target starts monitoring that user. If no target is saved, an interactive no-argument run offers setup.</p>
+<p><a id="before-you-start"></a></p>
+<h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
+<p>You need two things before the first monitoring run:</p>
 <ol>
-<li>A Spotify target for the person you want to monitor. The easiest form is the complete profile URL copied from Spotify. A <code>spotify:user:</code> URI or user ID is also accepted. See <a href="../configuration/#how-to-find-a-friends-spotify-profile-url">How to Find a Friend's Spotify Profile URL</a>.</li>
-<li>The <code>sp_dc</code> login cookie from the Spotify account used for monitoring. Follow the <a href="../configuration/#manual-cookie-extraction">manual cookie extraction steps</a> and treat this value like a password.</li>
+<li>A Spotify target. The easiest form is the complete profile URL copied from Spotify. A <code>spotify:user:</code> URI or a bare user ID also works. See <a href="../configuration/#how-to-find-a-friends-spotify-profile-url">How to Find a Friend's Spotify Profile URL</a>.</li>
+<li>Working authentication for a Spotify account. The default <code>cookie</code> token source uses the <code>sp_dc</code> login cookie of the monitoring account. See <a href="../configuration/#spotify-access-token-source">Spotify Access Token Source</a> for the <code>client</code>, <code>oauth_app</code> and <code>oauth_user</code> alternatives.</li>
 </ol>
-<p>In commands below, <code>&lt;spotify_target&gt;</code> means any accepted profile URL, <code>spotify:user:</code> URI or user ID.</p>
-<p>Save the cookie through the hidden prompt:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>spotify_profile_monitor<span class="w"> </span>--set-sp-dc
-</code></pre></div>
-<p>The command validates the cookie with Spotify before saving <code>SP_DC_COOKIE</code> to <code>.env</code>. The value is not displayed or placed in shell history. Do not share the generated <code>.env</code> file or commit it to a repository.</p>
-<p>Start monitoring profile and playlist changes:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;
-</code></pre></div>
-<p>Or if you installed <a href="../installation/#manual-installation">manually</a>:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>python3<span class="w"> </span>spotify_profile_monitor.py<span class="w"> </span>&lt;spotify_target&gt;
-</code></pre></div>
-<p>To get the list of all supported command-line arguments / flags:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>spotify_profile_monitor<span class="w"> </span>--help
-</code></pre></div>
-<p><a id="setup-wizard"></a></p>
-<h2 id="setup-wizard">Setup Wizard<a class="headerlink" href="#setup-wizard" title="Permanent link">&para;</a></h2>
-<p>Run <code>spotify_profile_monitor --setup</code> in an interactive terminal. Press Enter to accept each displayed default. The final setup summary contains no secret values and offers these actions:</p>
-<ul>
-<li>Save settings.</li>
-<li>Review or change target, authentication, polling, email, webhook or file destinations.</li>
-<li>Discard every answer without changing the destination files.</li>
-</ul>
-<p>If the selected config file already exists, setup asks before replacement or lets you choose another destination. An approved replacement creates a timestamped <code>.bak</code> copy and validates the new Python config before atomically installing it. A manually entered <code>sp_dc</code> value is validated before it is queued for saving. Setup can then run Doctor and optionally start monitoring.</p>
-<p>When you enable email or ntfy alerts, setup offers artwork attachments. If the optional Pillow package is missing it says so and can install the <code>notification-images</code> extra for you, then enables the matching setting only when the install succeeds. Declining keeps the alerts text-only.</p>
-<p>Polling intervals accept seconds or readable durations such as <code>90</code>, <code>2m</code>, <code>1.5h</code> or <code>1h 30m</code>.</p>
-<p>Generated Doctor, browser import and monitoring commands use the active Python interpreter. They also carry explicit <code>--config-file</code> and <code>--env-file</code> paths so virtual environments and custom destinations remain intact.</p>
-<p><a id="browser-cookie-import"></a></p>
-<h2 id="browser-cookie-import">Browser Cookie Import<a class="headerlink" href="#browser-cookie-import" title="Permanent link">&para;</a></h2>
-<p>First open <a href="https://open.spotify.com/">Spotify Web Player</a> in the selected browser and sign in to the Spotify account used for monitoring. Then run:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>spotify_profile_monitor<span class="w"> </span>--import-browser-cookie<span class="w"> </span>--browser<span class="w"> </span>firefox
+<p>Spotify might withhold some data for you, for example follower and following lists can be unavailable and playlists the Web API refuses are reported as <code>[ RESTRICTED ]</code> with reduced detail. See <a href="../usage/#unavailable-followers-and-followings">Unavailable Followers and Followings</a> and <a href="../usage/#restricted-playlists-spotify-api-403404">Restricted Playlists</a>.</p>
+<p><a id="not-sure-which-command-you-need"></a></p>
+<h2 id="not-sure-which-command-you-need">Not sure which command you need?<a class="headerlink" href="#not-sure-which-command-you-need" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>I want to...</th>
+<th>Run this</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Set up Spotify Profile Monitor for the first time</td>
+<td>Use the setup command for your installation above</td>
+</tr>
+<tr>
+<td>Start monitoring with existing authentication</td>
+<td><code>spotify_profile_monitor &lt;spotify_target&gt;</code>, where the target is a complete profile URL, <code>spotify:user:</code> URI or user ID</td>
+</tr>
+<tr>
+<td>Start the target saved in <code>TARGET_USER_URI_ID</code></td>
+<td><code>spotify_profile_monitor --config-file spotify_profile_monitor.conf</code></td>
+</tr>
+<tr>
+<td>Check dependencies, authentication, connectivity and one target</td>
+<td><code>spotify_profile_monitor --doctor &lt;spotify_target&gt;</code></td>
+</tr>
+<tr>
+<td>Import a Spotify login from Firefox</td>
+<td>Open <a href="https://open.spotify.com/">Spotify Web Player</a> in Firefox, sign in then run <code>spotify_profile_monitor --import-browser-cookie --browser firefox</code></td>
+</tr>
+<tr>
+<td>Most securely enter or replace a manually extracted <code>SP_DC_COOKIE</code></td>
+<td>Run <code>spotify_profile_monitor --set-sp-dc</code> and enter <code>sp_dc</code> at the hidden prompt</td>
+</tr>
+<tr>
+<td>Save an SMTP password for email alerts</td>
+<td>Run <code>spotify_profile_monitor --set-smtp-password</code></td>
+</tr>
+<tr>
+<td>Send a test email</td>
+<td>Run <code>spotify_profile_monitor --send-test-email</code></td>
+</tr>
+<tr>
+<td>Set up webhook alerts</td>
+<td>Run the setup wizard and choose webhook alerts</td>
+</tr>
+<tr>
+<td>Save a new webhook URL</td>
+<td>Run <code>spotify_profile_monitor --set-webhook-url</code></td>
+</tr>
+<tr>
+<td>Send a test webhook</td>
+<td>Run <code>spotify_profile_monitor --send-test-webhook</code></td>
+</tr>
+<tr>
+<td>Show profile details, followers, followings and playlist statistics</td>
+<td><code>spotify_profile_monitor -i &lt;spotify_target&gt;</code></td>
+</tr>
+<tr>
+<td>Display or export the tracks of one playlist</td>
+<td><code>spotify_profile_monitor -l PLAYLIST_URL -b tracks.csv</code></td>
+</tr>
+<tr>
+<td>Find a Spotify user ID by name</td>
+<td><code>spotify_profile_monitor -s "user name"</code></td>
+</tr>
+<tr>
+<td>List every supported command-line flag</td>
+<td><code>spotify_profile_monitor --help</code></td>
+</tr>
+</tbody>
+</table>
+<p><a id="run-individual-commands"></a></p>
+<h2 id="run-individual-commands">Run Individual Commands<a class="headerlink" href="#run-individual-commands" title="Permanent link">&para;</a></h2>
+<p>The examples below use PyPI. For a manual script, replace <code>spotify_profile_monitor</code> with <code>python3 spotify_profile_monitor.py</code> on macOS or Linux. Use <code>python spotify_profile_monitor.py</code> on Windows and run it from the directory holding the script or give its full path. See <a href="../usage/#command-format-by-installation-method">Command Format by Installation Method</a>.</p>
+<p>Throughout this page <code>&lt;spotify_target&gt;</code> means any accepted target form: a complete Spotify profile URL, a <code>spotify:user:</code> URI or a bare user ID.</p>
+<p><a id="import-a-spotify-login-from-a-browser"></a></p>
+<h3 id="import-a-spotify-login-from-a-browser">Import a Spotify login from a browser<a class="headerlink" href="#import-a-spotify-login-from-a-browser" title="Permanent link">&para;</a></h3>
+<p>To configure authentication without the wizard, first open <a href="https://open.spotify.com/">Spotify Web Player</a> in the chosen browser and sign in to the monitoring account. Then import that browser login:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>spotify_profile_monitor<span class="w"> </span>--import-browser-cookie<span class="w"> </span>--browser<span class="w"> </span>firefox
 </code></pre></div>
 <p>Supported sources are Firefox, Chrome, Brave and Chromium. Firefox works on macOS, Linux and Windows without an extra package. Chromium import works on macOS and Linux with the <code>browser</code> extra. If that extra is missing, setup can install it through the active Python interpreter after approval. Current Chromium app-bound encryption prevents reliable import on Windows, so use Firefox there.</p>
-<p>The importer discovers browser profiles, lets you choose when several exist, reads only the Spotify <code>sp_dc</code> cookie, validates it through Spotify and updates only <code>SP_DC_COOKIE</code> in the selected dotenv file. Existing dotenv content is preserved. Replacement needs confirmation in an interactive terminal or <code>--force</code> in a noninteractive script.</p>
-<p>Useful overrides are <code>--browser-profile PROFILE</code>, <code>--cookie-file PATH</code> and <code>--env-file PATH</code>.</p>
+<p>Select a browser profile if prompted. The importer validates its Spotify login and saves <code>SP_DC_COOKIE</code> to the selected dotenv file. Replacing a saved cookie needs confirmation or <code>--force</code> in a noninteractive script. Other dotenv settings are preserved.</p>
+<p>Useful overrides are <code>--browser-profile PROFILE</code>, <code>--cookie-file PATH</code> and <code>--env-file PATH</code>. For the browser table, profile selection and the browser extra, see <a href="../configuration/#which-browsers-are-supported">Which browsers are supported</a>.</p>
+<p>If browser import is not available, use the <a href="../configuration/#manual-cookie-extraction">manual cookie extraction</a> fallback.</p>
+<h3 id="save-a-manually-extracted-cookie">Save a manually extracted cookie<a class="headerlink" href="#save-a-manually-extracted-cookie" title="Permanent link">&para;</a></h3>
+<p>For a manually extracted cookie, <code>--set-sp-dc</code> is the recommended and most secure entry method. The command reads <code>sp_dc</code> through a hidden prompt, so the value does not appear on screen or in the command line. It validates the cookie with Spotify before updating only <code>SP_DC_COOKIE</code>. If validation fails, it does not change the <code>.env</code> file. Replacing an existing cookie requires confirmation. Directly adding <code>SP_DC_COOKIE</code> to <code>.env</code> remains supported.</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>spotify_profile_monitor<span class="w"> </span>--set-sp-dc
+</code></pre></div>
+<p><code>--set-sp-dc</code> does not accept the cookie as a command-line value. Use <code>--env-file PATH</code> to select another <code>.env</code> file. Add <code>--config-file PATH</code> when its success output should preserve a nondefault configuration path. <code>--env-file none</code> is invalid because this command must save the validated cookie. The older <code>-u</code> and <code>--spotify-dc-cookie</code> options still work, but their values may appear in shell history or process listings.</p>
+<h3 id="save-notification-credentials">Save notification credentials<a class="headerlink" href="#save-notification-credentials" title="Permanent link">&para;</a></h3>
+<p>The SMTP password is entered through a hidden prompt, checked against the mail server and saved as <code>SMTP_PASSWORD</code> in <code>.env</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>spotify_profile_monitor<span class="w"> </span>--set-smtp-password
+</code></pre></div>
+<p>A webhook URL is the private address used to deliver notifications. Treat it like a password because anyone who has it may be able to post through it. Follow the <a href="../configuration/#webhook-settings">webhook setup steps</a> then save the link:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>spotify_profile_monitor<span class="w"> </span>--set-webhook-url
+</code></pre></div>
+<p>The link is entered through a hidden prompt and saved as <code>WEBHOOK_URL</code> in <code>.env</code>. This command only saves the link. It does not turn on webhook alerts or send a message. See <a href="../configuration/#webhook-settings">Webhook Settings</a> to choose your alerts then run <code>spotify_profile_monitor --send-test-webhook</code> to test them.</p>
+<h3 id="start-monitoring">Start monitoring<a class="headerlink" href="#start-monitoring" title="Permanent link">&para;</a></h3>
+<p>Start monitoring with a complete Spotify profile URL, a <code>spotify:user:</code> URI or a user ID. The first two examples use a positional target. The third uses a saved <code>TARGET_USER_URI_ID</code>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>spotify_profile_monitor<span class="w"> </span><span class="s2">"https://open.spotify.com/user/USER_ID"</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>spotify_profile_monitor<span class="w"> </span>--config-file<span class="w"> </span>spotify_profile_monitor.conf
+</code></pre></div>
+<p>For a <a href="../installation/#install-the-manual-script">manual script</a>:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>python3<span class="w"> </span>spotify_profile_monitor.py<span class="w"> </span>&lt;spotify_target&gt;
+</code></pre></div>
+<p>To see all supported command-line arguments and flags:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>spotify_profile_monitor<span class="w"> </span>--help
+</code></pre></div>
 <p><a id="next-step"></a></p>
 <h2 id="next-step">Next Step<a class="headerlink" href="#next-step" title="Permanent link">&para;</a></h2>
-<p>Run <a href="../troubleshooting/#doctor-preflight">Doctor</a> before an unattended run to confirm authentication, connectivity and notification settings.</p>
-<p>For every configurable setting, see <a href="../configuration/">Configuration</a>. For monitoring options, listing commands, notifications and output files, see <a href="../usage/">Usage</a>.</p>
+<p>Run <a href="../troubleshooting/#doctor-preflight">Doctor</a> before an unattended run to confirm dependencies, authentication, connectivity and notification settings.</p>
+<p>With authentication saved and a first run working, continue to <a href="../configuration/">Configuration</a> for targets, Spotify login, SMTP and secrets. See <a href="../usage/">Usage</a> for command formats, monitoring, listing commands, notifications and output files.</p>
 
 
 

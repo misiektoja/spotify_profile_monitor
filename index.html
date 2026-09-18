@@ -391,17 +391,6 @@
   
 </li>
       
-        <li class="md-nav__item">
-  <a href="#common-commands" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Common Commands
-      
-    </span>
-  </a>
-  
-</li>
-      
     </ul>
   
 </nav>
@@ -724,17 +713,6 @@
   
 </li>
       
-        <li class="md-nav__item">
-  <a href="#common-commands" class="md-nav__link">
-    <span class="md-ellipsis">
-      
-        Common Commands
-      
-    </span>
-  </a>
-  
-</li>
-      
     </ul>
   
 </nav>
@@ -774,16 +752,16 @@
    <img src="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/assets/spotify_profile_monitor.png" alt="spotify_profile_monitor_screenshot" width="90%"/>
 </p>
 
-<p><a id="-quick-install-run"></a></p>
+<p><a id="quick-install-run"></a></p>
 <h3 id="quick-install-run">🚀 Quick Install &amp; Run<a class="headerlink" href="#quick-install-run" title="Permanent link">&para;</a></h3>
-<p>New to Python or unsure what is installed? Follow the <a href="installation/#new-to-python-install-everything">Python install walkthrough</a> first.</p>
+<p>New to Python or unsure what is installed? Follow the <a href="installation/#new-to-python-check-and-install">Python install walkthrough</a> first.</p>
 <p>Install from PyPI:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>pip<span class="w"> </span>install<span class="w"> </span>spotify_profile_monitor
 </code></pre></div>
 <p>Run the setup wizard:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>spotify_profile_monitor<span class="w"> </span>--setup
 </code></pre></div>
-<p>The wizard asks for the target, authentication, polling interval and optional email or webhook alerts, then offers to run Doctor and start monitoring.</p>
+<p>The wizard asks for the target, the Spotify login and optional notifications. Review the settings before saving them. See <a href="setup-and-first-run/">Setup &amp; First Run</a> for the browser login import and the manual cookie steps.</p>
 <p>For the manual single-file method, optional extras and upgrade commands, see <a href="installation/">Installation</a>.</p>
 <p><a id="features"></a></p>
 <h2 id="features">Features<a class="headerlink" href="#features" title="Permanent link">&para;</a></h2>
@@ -817,54 +795,8 @@
    <img src="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/assets/spotify_profile_monitor_playlist.png" alt="spotify_profile_monitor_playlist" width="90%"/>
 </p>
 
-<p><a id="common-commands"></a></p>
-<h2 id="common-commands">Common Commands<a class="headerlink" href="#common-commands" title="Permanent link">&para;</a></h2>
-<p>Use <a href="#-quick-install-run">Quick Install &amp; Run</a> above for first-time setup. The table uses PyPI commands. For the manual script equivalents, see <a href="usage/#command-format">Command Format by Installation Method</a>.</p>
-<table>
-<thead>
-<tr>
-<th>I want to...</th>
-<th>Run this</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Start monitoring with existing authentication</td>
-<td><code>spotify_profile_monitor TARGET</code>, where <code>TARGET</code> is a complete profile URL, <code>spotify:user:</code> URI or user ID</td>
-</tr>
-<tr>
-<td>Check dependencies, authentication, connectivity and one target</td>
-<td><code>spotify_profile_monitor --doctor TARGET</code></td>
-</tr>
-<tr>
-<td>Import a Spotify login from a browser</td>
-<td>Open <a href="https://open.spotify.com/">Spotify Web Player</a> in the browser, sign in then run <code>spotify_profile_monitor --import-browser-cookie --browser firefox</code></td>
-</tr>
-<tr>
-<td>Enter or replace securely a manually extracted <code>SP_DC_COOKIE</code></td>
-<td>Run <code>spotify_profile_monitor --set-sp-dc</code> and enter <code>sp_dc</code> at the hidden prompt</td>
-</tr>
-<tr>
-<td>Show profile details, followers, followings and playlist statistics</td>
-<td><code>spotify_profile_monitor TARGET -i</code></td>
-</tr>
-<tr>
-<td>Display or export the tracks of one playlist</td>
-<td><code>spotify_profile_monitor -l PLAYLIST_URL -b tracks.csv</code></td>
-</tr>
-<tr>
-<td>Find a Spotify user ID by name</td>
-<td><code>spotify_profile_monitor -s "user name"</code></td>
-</tr>
-<tr>
-<td>Configure and test webhook alerts</td>
-<td>Use the setup wizard or follow <a href="configuration/#webhook-settings">Webhook Settings</a></td>
-</tr>
-</tbody>
-</table>
-<p>For authentication, token sources, targets and notification setup, see the <a href="setup-and-first-run/">full Setup &amp; First Run guide</a>.</p>
 <p>✨ If you want to track Spotify friends' music activity, check out another tool I developed: <a href="https://github.com/misiektoja/spotify_monitor">spotify_monitor</a>.</p>
-<p>🛠️ For Spotify Web Player token and secret-key utilities, see <a href="debugging/">Debugging Tools</a>.</p>
+<p>🛠️ For Spotify Web Player token and secret-key utilities, see <a href="debugging/#debugging-tools">Debugging Tools</a>.</p>
 
 
 
