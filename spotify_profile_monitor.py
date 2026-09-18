@@ -1031,6 +1031,12 @@ ERROR_ALERT_AFTER_SECONDS = 300  # 5 minutes
 ERROR_ALERT_RETRY_SECONDS = 300  # 5 minutes
 ERROR_ALERT_RETRY_MAX_SECONDS = 3600  # 1 hour
 
+# A rate limit clears on a timer of Spotify's own rather than on the error cadence, and it is easy to hit while
+# sweeping many playlists, so a limited check is retried sooner than any other failure with a wait that doubles
+# while the limit lasts
+RATE_LIMIT_RETRY_SECONDS = 60  # 1 minute
+RATE_LIMIT_RETRY_MAX_SECONDS = 1800  # 30 minutes
+
 
 stdout_bck = None
 csvfieldnames = ['Date', 'Type', 'Name', 'Old', 'New']
@@ -1322,10 +1328,12 @@ def print_liveness_banner(message: str) -> None:
 
 
 # Reminds about a lasting failure once an hour, so a broken run still says it is alive without repeating itself
-def print_outage_liveness(target: str, advice: RecoveryAdvice, since: int, failures: int = 0) -> None:
+def print_outage_liveness(target: str, advice: RecoveryAdvice, since: int, failures: int = 0, close: bool = True) -> None:
     count = f", {failures} failed {'check' if failures == 1 else 'checks'}" if failures else ""
     print(f"* Monitoring degraded for {target}. {advice.summary} since {get_date_from_ts(since)}{count}")
-    print_cur_ts("Liveness check, timestamp:\t")
+    # A caller with an alert still to deliver closes the report itself, so the delivery lines stay inside it
+    if close:
+        print_cur_ts("Liveness check, timestamp:\t")
 
 
 # Notes that a reported outage now fails differently, in one line rather than a second full report
@@ -1337,6 +1345,15 @@ def print_outage_change(target: str, advice: RecoveryAdvice) -> None:
 def print_outage_recovery(target: str, lasted: int) -> None:
     print(f"* Monitoring recovered for {target} after {display_time(max(1, lasted))}")
     print_cur_ts("Timestamp:\t\t\t")
+
+
+# Returns how long a run waits after a check that could not finish, given how many checks in a row have failed
+def failure_retry_seconds(advice: RecoveryAdvice, failures: int = 1) -> int:
+    if advice.code != "spotify.rate_limited":
+        return max(1, SPOTIFY_ERROR_INTERVAL)
+    # Never longer than the poll interval, since a rate limit is not a reason to watch less often than asked
+    ceiling = min(RATE_LIMIT_RETRY_MAX_SECONDS, max(SPOTIFY_CHECK_INTERVAL, RATE_LIMIT_RETRY_SECONDS))
+    return int(min(RATE_LIMIT_RETRY_SECONDS * 2 ** max(0, failures - 1), ceiling))
 
 
 # Suppresses repeated recovery hints until a successful operation resets the category
@@ -3652,18 +3669,19 @@ def send_notification_channels(notification_type: str, subject: str, body: str, 
     return email_delivered, webhook_delivered
 
 
-# Alerts each enabled channel about a failing check once its outage is old enough, and holds a channel that could not deliver
-def dispatch_error_alert(state: "ErrorAlertState", advice: "RecoveryAdvice", error: BaseException, user_uri_id: str, outage_since: int) -> None:
+# Alerts each enabled channel about a failing check once its outage is old enough, holds a channel that could not
+# deliver and reports whether it printed anything, which decides who closes the report on screen
+def dispatch_error_alert(state: "ErrorAlertState", advice: "RecoveryAdvice", error: BaseException, user_uri_id: str, outage_since: int) -> bool:
     now = int(time.time())
     if state.since is None:
         state.since = outage_since
     # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
     if advice.retryable and now - state.since < ERROR_ALERT_AFTER_SECONDS:
-        return
+        return False
     email_pending = state.pending("email", ERROR_NOTIFICATION, now)
     webhook_pending = state.pending("webhook", webhook_event_enabled("error"), now)
     if not email_pending and not webhook_pending:
-        return
+        return False
     safe_detail = sanitize_error_text(error)
     m_subject = f"{advice.summary} (Spotify URI: {user_uri_id})"
     m_body = f"{advice.summary}\n\nTo fix: {advice.fix}\n\nTechnical detail: {safe_detail}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
@@ -3671,6 +3689,23 @@ def dispatch_error_alert(state: "ErrorAlertState", advice: "RecoveryAdvice", err
     email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, m_body_html, email_enabled=email_pending, webhook_enabled=webhook_pending)
     state.record("email", email_pending, email_delivered, now)
     state.record("webhook", webhook_pending, webhook_delivered, now)
+    return True
+
+
+# Reports one failing check the way its outage calls for, alerts the enabled channels and closes the report with a
+# single timestamp, so a delivery line is never left standing outside the report it belongs to
+def report_failing_check(outcome: str, target: str, advice: RecoveryAdvice, error: BaseException, outage: OutageReporter, alert_state: "ErrorAlertState", context: str = "runtime", retry_note: str = "", label: str = "Error", tracker: Optional[RecoveryHintTracker] = None) -> None:
+    if outcome == "full":
+        print_recovery_error(error, context, retry_note=retry_note, label=label, tracker=tracker)
+    elif outcome == "changed":
+        print_outage_change(target, advice)
+    elif outcome == "reminder":
+        print_outage_liveness(target, advice, outage.since, outage.failures, close=False)
+    alerted = dispatch_error_alert(alert_state, advice, error, target, outage.since)
+    if outcome == "reminder":
+        print_cur_ts("Liveness check, timestamp:\t")
+    elif outcome or alerted:
+        print_cur_ts("Timestamp:\t\t\t")
 
 
 # Prefixes one CSV value so spreadsheet software cannot evaluate Spotify-supplied text as a formula
@@ -12285,18 +12320,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             advice = classify_recovery_error(e, "runtime")
 
             # A halted request is one more failing check, so it shares the outage clock and the alert the other failures use
-            outage_outcome = outage.failed(advice)
-            if outage_outcome == "full":
-                print_recovery_error(e, "runtime", retry_note=f"retrying in {display_time(ALARM_RETRY)}", tracker=monitor_recovery_tracker)
-            elif outage_outcome == "changed":
-                print_outage_change(user_uri_id, advice)
-            elif outage_outcome == "reminder":
-                print_outage_liveness(user_uri_id, advice, outage.since, outage.failures)
+            report_failing_check(outage.failed(advice), user_uri_id, advice, e, outage, error_alert, retry_note=f"retrying in {display_time(ALARM_RETRY)}", tracker=monitor_recovery_tracker)
 
-            dispatch_error_alert(error_alert, advice, e, user_uri_id, outage.since)
-
-            if outage_outcome in ("full", "changed"):
-                print_cur_ts("Timestamp:\t\t\t")
             time.sleep(ALARM_RETRY)
             continue
         except Exception as e:
@@ -12316,18 +12341,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
             outage_outcome = outage.failed(advice)
-            if outage_outcome == "full":
-                print_recovery_error(e, context, retry_note=f"retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}", tracker=monitor_recovery_tracker)
-            elif outage_outcome == "changed":
-                print_outage_change(user_uri_id, advice)
-            elif outage_outcome == "reminder":
-                print_outage_liveness(user_uri_id, advice, outage.since, outage.failures)
+            retry_seconds = failure_retry_seconds(advice, outage.failures)
+            report_failing_check(outage_outcome, user_uri_id, advice, e, outage, error_alert, context=context, retry_note=f"retrying in {display_time(retry_seconds)}", tracker=monitor_recovery_tracker)
 
-            dispatch_error_alert(error_alert, advice, e, user_uri_id, outage.since)
-
-            if outage_outcome in ("full", "changed"):
-                print_cur_ts("Timestamp:\t\t\t")
-            time.sleep(SPOTIFY_ERROR_INTERVAL)
+            time.sleep(retry_seconds)
             continue
 
         username = sp_user_data["sp_username"]
@@ -12366,18 +12383,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
             follower_outcome = follower_outage.failed(follower_advice)
-            if follower_outcome == "full":
-                print_recovery_error(e, f"{TOKEN_SOURCE}_auth", retry_note=f"retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}", label="Error while getting followers and followings", tracker=follower_recovery_tracker)
-                print_cur_ts("Timestamp:\t\t\t")
-            elif follower_outcome == "changed":
-                print_outage_change(user_uri_id, follower_advice)
-                print_cur_ts("Timestamp:\t\t\t")
-            elif follower_outcome == "reminder":
-                print_outage_liveness(user_uri_id, follower_advice, follower_outage.since, follower_outage.failures)
+            follower_retry_seconds = failure_retry_seconds(follower_advice, follower_outage.failures)
+            report_failing_check(follower_outcome, user_uri_id, follower_advice, e, follower_outage, error_alert, context=f"{TOKEN_SOURCE}_auth", retry_note=f"retrying in {display_time(follower_retry_seconds)}", label="Error while getting followers and followings", tracker=follower_recovery_tracker)
 
-            dispatch_error_alert(error_alert, follower_advice, e, user_uri_id, follower_outage.since)
-
-            time.sleep(SPOTIFY_ERROR_INTERVAL)
+            time.sleep(follower_retry_seconds)
             continue
 
         followers = sp_user_followers_data["sp_user_followers"]
@@ -13223,21 +13232,19 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             playlist_error = playlist_errors[0] if playlist_errors else RuntimeError("One or more playlists could not be processed")
             playlist_advice = classify_recovery_error(playlist_error, "playlist")
             playlist_outcome = playlist_outage.failed(playlist_advice)
-            if playlist_outcome == "full":
-                print_recovery_error(playlist_error, "playlist", retry_note=f"retrying in {display_time(SPOTIFY_CHECK_INTERVAL)}", label="Error while processing playlists")
-                print_cur_ts("Timestamp:\t\t\t")
-            elif playlist_outcome == "changed":
-                print_outage_change(user_uri_id, playlist_advice)
-            elif playlist_outcome == "reminder":
-                print_outage_liveness(user_uri_id, playlist_advice, playlist_outage.since, playlist_outage.failures)
-            dispatch_error_alert(error_alert, playlist_advice, playlist_error, user_uri_id, playlist_outage.since)
+            # A sweep that could not finish is retried on the error cadence rather than after a full poll interval,
+            # which on a long interval would leave the run blind for hours over a rate limit that clears in minutes.
+            # A failure nothing here can retry away keeps the poll interval, since asking again sooner only repeats it
+            next_check_seconds = min(failure_retry_seconds(playlist_advice, playlist_outage.failures), SPOTIFY_CHECK_INTERVAL) if playlist_advice.retryable else SPOTIFY_CHECK_INTERVAL
+            report_failing_check(playlist_outcome, user_uri_id, playlist_advice, playlist_error, playlist_outage, error_alert, context="playlist", retry_note=f"retrying in {display_time(next_check_seconds)}", label="Error while processing playlists")
         else:
+            next_check_seconds = SPOTIFY_CHECK_INTERVAL
             error_alert.reset()
             playlist_lasted = playlist_outage.recovered()
             if playlist_lasted is not None:
                 print_outage_recovery(user_uri_id, playlist_lasted)
 
-        debug_print("Completed check", check=f"#{check_count}", user=user_uri_id, next=display_time(SPOTIFY_CHECK_INTERVAL))
+        debug_print("Completed check", check=f"#{check_count}", user=user_uri_id, next=display_time(next_check_seconds))
 
         # The banner speaks for a quiet, complete check, so anything this one reported or could not finish
         # restarts the clock instead of being contradicted by it
@@ -13247,7 +13254,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             print_liveness_banner(f"Monitoring healthy for {user_uri_id}. No profile or playlist change since the last check")
             alive_since = int(time.time())
 
-        time.sleep(SPOTIFY_CHECK_INTERVAL)
+        time.sleep(next_check_seconds)
 
 
 # Applies validated one-run webhook command-line overrides to runtime settings
