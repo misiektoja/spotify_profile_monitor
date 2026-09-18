@@ -1,5 +1,7 @@
 """Drives the profile monitoring loop with scripted Spotify answers, so error alert timing can be observed."""
 
+import inspect
+
 import pytest
 
 import spotify_profile_monitor as monitor
@@ -335,3 +337,44 @@ def test_another_failing_profile_poll_keeps_the_error_interval(monkeypatch, tmp_
     error_alerts_for(monkeypatch, tmp_path, [profile_snapshot(), *[RuntimeError("503 Server Error")] * 6], 4, check_interval=10800, sleep_log=sleeps)
 
     assert sleeps == [10800, 300, 300, 300]
+
+
+# Verifies a change names the window the run actually observed, since a failing check no longer costs a full poll
+# interval and the configured one would overstate how long the tool had been watching
+def test_a_change_names_the_window_the_run_observed(monkeypatch, tmp_path, capsys):
+    renamed = dict(profile_snapshot(), sp_username="Renamed Person")
+    error_alerts_for(monkeypatch, tmp_path, [profile_snapshot(), RuntimeError("503 Server Error"), renamed], 3, check_interval=10800)
+
+    lines = capsys.readouterr().out.splitlines()
+    window = next(line for line in lines if line.startswith("Check interval:") and " - " in line)
+    assert window.split("\t")[-1].startswith("3 hours, 5 minutes ("), window
+
+
+# Verifies the window helpers measure from the previous check rather than from the configured interval
+def test_the_window_helpers_measure_from_the_previous_check(monkeypatch):
+    monkeypatch.setattr(monitor.time, "time", lambda: 1_000_000.0)
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor, "SPOTIFY_CHECK_INTERVAL", 10800)
+    monkeypatch.setattr(monitor, "LAST_CHECK_TS", 1_000_000 - 60)
+
+    assert monitor.observed_window() == (60, 1_000_000)
+    assert monitor.check_window_text().startswith("1 minute (")
+    assert monitor.check_window_html().startswith("<b>1 minute</b> (")
+
+
+# Verifies the configured interval is all a run can report before it has a previous check to measure from
+def test_the_window_falls_back_to_the_configured_interval(monkeypatch):
+    monkeypatch.setattr(monitor.time, "time", lambda: 1_000_000.0)
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor, "SPOTIFY_CHECK_INTERVAL", 10800)
+    monkeypatch.setattr(monitor, "LAST_CHECK_TS", 0)
+
+    assert monitor.observed_window() == (10800, 1_000_000)
+
+
+# Verifies no report still builds its window from the configured interval, which a shortened retry makes wrong
+def test_no_report_builds_its_window_from_the_configured_interval():
+    source = inspect.getsource(monitor)
+
+    assert "int(time.time()) - SPOTIFY_CHECK_INTERVAL" not in source
+    assert source.count("check_window_text()") + source.count("check_window_html()") >= 50
