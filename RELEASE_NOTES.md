@@ -4,10 +4,13 @@ This is a high-level summary of the most important changes.
 
 # Changes in 3.9.1 (TBD)
 
-Version **3.9.1** reports an alert channel that still holds the values from the sample configuration as unset, instead of naming a mail server and a recipient no alert could reach.
+Version **3.9.1** brings a check that could not finish back on the **error interval** instead of waiting out the full polling interval, retries **rate limiting** on its own short backoff and keeps alert delivery lines inside the report they belong to. It also reports an alert channel that still holds the values from the sample configuration as unset.
 
 **Bug fixes**:
 
+- **BUGFIX:** **Failing checks retry on the error interval** - A check that could not finish waited out the full **`SPOTIFY_CHECK_INTERVAL`**, so a run polling every few hours stayed blind that long after one failure. It now retries after **`SPOTIFY_ERROR_INTERVAL`** (default: 300, i.e. 5 minutes). This covers the playlist sweep, which previously ignored the error interval altogether
+- **BUGFIX:** **Rate limiting has its own backoff** - Spotify clears a rate limit on a timer of its own and it is easy to hit while sweeping a profile with many playlists, so a limited check now comes back after **1 minute**, then 2, 4, 8, 16 and 30 minutes while the limit lasts, never waiting longer than the polling interval. A complete check returns to the polling interval, and a failure nothing can retry away, such as a target that no longer exists, keeps it
+- **BUGFIX:** **Alert deliveries stay inside their report** - **`Sending email notification to ...`** and its webhook equivalent could print after the line that closed a failing check's report, leaving no timestamp to say when the alert went out. Every failing check now closes with one timestamp below its delivery lines, including the hourly **`Monitoring degraded`** reminder and a failure that changes category during a playlist sweep
 - **BUGFIX:** **Unset alert channels are reported as unset** - The verbose startup summary read the values the sample configuration ships as a real destination, so a run that had never been given a mail server printed **`Email transport: your_smtp_server_ssl:587`**, a recipient of **`your_receiver_email`** and a webhook provider of **`Discord`**. Those rows now read **`Not configured`** and the channel rollup above them reads **`Off (not configured)`** rather than naming alert types nothing could deliver
 
 # Changes in 3.9 (18 Sep 2026)
