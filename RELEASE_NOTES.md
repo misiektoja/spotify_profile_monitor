@@ -2,6 +2,14 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 3.9.1 (TBD)
+
+Version **3.9.1** reports an alert channel that still holds the values from the sample configuration as unset, instead of naming a mail server and a recipient no alert could reach.
+
+**Bug fixes**:
+
+- **BUGFIX:** **Unset alert channels are reported as unset** - The verbose startup summary read the values the sample configuration ships as a real destination, so a run that had never been given a mail server printed **`Email transport: your_smtp_server_ssl:587`**, a recipient of **`your_receiver_email`** and a webhook provider of **`Discord`**. Those rows now read **`Not configured`** and the channel rollup above them reads **`Off (not configured)`** rather than naming alert types nothing could deliver
+
 # Changes in 3.9 (18 Sep 2026)
 
 Version **3.9** restores **OAuth playlist reads** and preserves **follower history** when Spotify data is unavailable. It adds **private SMTP password entry**, improves the **`--setup` wizard** and Doctor reports and makes diagnostics and outage alerts quieter. Configuration updates, credentials and notification delivery are better protected.
