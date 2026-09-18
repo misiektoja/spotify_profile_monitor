@@ -462,6 +462,14 @@ A check that could not finish does not wait out the full interval. It comes back
 
 Rate limiting is the exception. Spotify clears it on a timer of its own and it is easy to hit while sweeping a profile with many playlists, so a rate limited check is retried after 1 minute, then 2, 4, 8, 16 and 30 minutes while the limit lasts, never waiting longer than the polling interval. A complete check returns the tool to the polling interval. A failure the tool cannot retry away, such as a target that no longer exists, keeps the polling interval, since asking again sooner would only repeat it.
 
+The `Check interval:` line under a reported change names the window that change was observed in, measured from the previous successful check:
+
+```
+Check interval:			3 hours, 5 minutes (Sat 19 Sep 00:43 - 03:48)
+```
+
+When checks run on schedule this is the configured interval. After a failure it is longer, since the last successful read is further back, and after a shortened retry it is shorter.
+
 <a id="liveness-reminder"></a>
 ### Liveness Reminder
 
