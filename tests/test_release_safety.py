@@ -106,6 +106,16 @@ def test_invalid_collection(tmp_path, record):
     assert path.read_text(encoding="utf-8") == original
 
 
+# Files written before 3.9 hold null where a count or list was unavailable and still load
+@pytest.mark.parametrize("record, expected", [([0, None], [0, []]), ([3, None, {"note": "kept"}], [3, [], {"note": "kept"}]), ([None, None], []), ([None, [{"uri": "spotify:user:someone"}]], [])])
+def test_legacy_collection_with_null_fields(tmp_path, record, expected):
+    path = tmp_path / "collection.json"
+    original = json.dumps(record)
+    path.write_text(original, encoding="utf-8")
+    assert monitor.read_collection_record(path) == expected
+    assert path.read_text(encoding="utf-8") == original
+
+
 # A reported total can exceed a partial saved list and extra metadata is retained
 def test_partial_collection_with_extra_metadata(tmp_path):
     path = tmp_path / "collection.json"
