@@ -1843,7 +1843,13 @@ def _colorize_list_row(match):
             meta = f"{added_date}{separator}{colorize('username', collaborator)}"
     else:
         return match.group(0)
-    return f"{prefix}{colorize(style_name, name)}{opening}{meta}{closing}"
+    # A rename row names the same person twice, so the arrow between the two names stays plain
+    old_name, arrow, new_name = name.partition(" -> ")
+    if arrow:
+        name = f"{colorize(style_name, old_name)}{arrow}{colorize(style_name, new_name)}"
+    else:
+        name = colorize(style_name, name)
+    return f"{prefix}{name}{opening}{meta}{closing}"
 
 
 # Colors a count transition using decimal text comparison without unbounded integer conversion
@@ -5355,13 +5361,6 @@ def remove_key_from_list_of_dicts(list_of_dicts, del_key):
                 del items[del_key]
 
 
-# Removes the specified key from the list of dictionaries, but preserves the original list
-def remove_key_from_list_of_dicts_copy(list_of_dicts, del_key):
-    if not list_of_dicts:
-        return []
-    return [{k: v for k, v in d.items() if k != del_key} for d in list_of_dicts]
-
-
 # Displays one image inline through imgcat using an argument vector instead of a shell
 def display_image_via_imgcat(imgcat_exe, path, blank_before=False, blank_after=False):
     # Route the spacing to the terminal only; the image itself bypasses the log, so its blank lines should too
@@ -6868,6 +6867,53 @@ def compare_two_lists_of_dicts(list1: list, list2: list):
     return [item for item in list1 if dict_signature(item) not in signatures]
 
 
+# Splits profile entries into a URI-keyed mapping and the entries that carry no URI to key on
+def index_profiles_by_uri(profiles):
+    indexed = {}
+    unkeyed = []
+    for profile in profiles or []:
+        if not isinstance(profile, dict):
+            unkeyed.append(profile)
+            continue
+        uri = profile.get("uri")
+        if uri:
+            indexed[uri] = profile
+        else:
+            unkeyed.append(profile)
+    return indexed, unkeyed
+
+
+# Compares two profile snapshots by URI so a display name change is reported as a rename instead of a departure and an arrival
+def split_profile_changes(current, previous):
+    current_by_uri, current_unkeyed = index_profiles_by_uri(current)
+    previous_by_uri, previous_unkeyed = index_profiles_by_uri(previous)
+
+    removed = [profile for uri, profile in previous_by_uri.items() if uri not in current_by_uri]
+    added = [profile for uri, profile in current_by_uri.items() if uri not in previous_by_uri]
+    renamed = []
+
+    # A rename needs a current name to report, so an entry that lost its name is left out rather than
+    # producing a heading with nothing under it
+    for uri, profile in current_by_uri.items():
+        earlier = previous_by_uri.get(uri)
+        if earlier is None or not profile.get("name") or earlier.get("name") == profile.get("name"):
+            continue
+        renamed.append({**profile, "old_name": earlier.get("name") or "Unknown"})
+
+    removed.extend(compare_two_lists_of_dicts(previous_unkeyed, current_unkeyed))
+    added.extend(compare_two_lists_of_dicts(current_unkeyed, previous_unkeyed))
+
+    return removed, added, renamed
+
+
+# Reports whether a follow snapshot changed its membership or a display name, treating an empty list beside a positive count as an unavailable list rather than an emptied one
+def follow_membership_changed(current, previous, count):
+    if count and (not current or not previous):
+        return False
+    removed, added, renamed = split_profile_changes(current, previous)
+    return bool(removed or added or renamed)
+
+
 # Searches for Spotify users (-s flag)
 def spotify_search_users(access_token, username):
     url = f"{SPOTIFY_PARTNER_BASE_URL}/pathfinder/v1/query"
@@ -7879,6 +7925,10 @@ def get_playlist_details_for_notification(sp_accessToken, playlist_uri):
         }
 
 
+# Section heading and CSV event name used to report a follower or following who changed their display name
+RENAMED_FOLLOW_LABELS = {"Followers": ("Renamed followers", "Renamed Follower"), "Followings": ("Renamed followings", "Renamed Following")}
+
+
 # Prints and saves changed lists of followers, followings or playlists with enabled notifications
 def spotify_print_changed_followers_followings_playlists(username, f_list, f_list_old, f_count, f_old_count, f_str, f_str_by_or_from, f_added_str, f_added_csv, f_removed_str, f_removed_csv, f_file, csv_file_name, profile_notification, is_playlist, sp_accessToken=None, notification_image_url="", webhook_notification_allowed=None):
     if is_playlist:
@@ -7896,25 +7946,35 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
 
         f_list_stripped = _playlist_identity(f_list)
         f_list_old_stripped = _playlist_identity(f_list_old)
-    else:
-        f_list_stripped = remove_key_from_list_of_dicts_copy(f_list, "owner_name")
-        f_list_old_stripped = remove_key_from_list_of_dicts_copy(f_list_old, "owner_name")
 
-    removed_f_list = compare_two_lists_of_dicts(f_list_old_stripped, f_list_stripped)
-    added_f_list = compare_two_lists_of_dicts(f_list_stripped, f_list_old_stripped)
-    playlist_membership_only_change = is_playlist and f_diff == 0 and bool(added_f_list or removed_f_list)
+        removed_f_list = compare_two_lists_of_dicts(f_list_old_stripped, f_list_stripped)
+        added_f_list = compare_two_lists_of_dicts(f_list_stripped, f_list_old_stripped)
+        renamed_f_list = []
+    else:
+        # A person keeps their URI when they change their display name, so the two snapshots are paired on it
+        removed_f_list, added_f_list, renamed_f_list = split_profile_changes(f_list, f_list_old)
+
+    f_renamed_str, f_renamed_csv = RENAMED_FOLLOW_LABELS.get(f_str, ("", ""))
+    if not f_renamed_str:
+        renamed_f_list = []
+
+    membership_only_change = f_diff == 0 and bool(added_f_list or removed_f_list or renamed_f_list)
 
     list_of_added_f_list = ""
     list_of_removed_f_list = ""
+    list_of_renamed_f_list = ""
     added_f_list_mbody = ""
     removed_f_list_mbody = ""
+    renamed_f_list_mbody = ""
     list_of_added_f_list_html = ""
     list_of_removed_f_list_html = ""
+    list_of_renamed_f_list_html = ""
     added_f_list_mbody_html = ""
     removed_f_list_mbody_html = ""
+    renamed_f_list_mbody_html = ""
     playlist_notification_image_url = ""
 
-    if playlist_membership_only_change:
+    if membership_only_change:
         print(f"* {f_str} changed for user {username} while the total remained {f_count}\n")
     elif added_f_list or removed_f_list or ((f_str == "Followers" or f_str == "Followings") and TOKEN_SOURCE == "oauth_app"):
         print(f"* {f_str} number changed {f_str_by_or_from} user {username} from {f_old_count} to {f_count} ({f_diff_str})\n")
@@ -8266,9 +8326,38 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
         if removed_f_list:
             print()
 
-    # A playlist count moved without producing any renderable membership change, so there is nothing to
+    if renamed_f_list:
+        print(f"{f_renamed_str}:\n")
+        renamed_f_list_mbody = f"\n{f_renamed_str}:\n\n"
+        renamed_f_list_mbody_html = f"<br><b>{escape(f_renamed_str)}:</b><br><br>"
+        for idx, f_dict in enumerate(renamed_f_list):
+            if "name" not in f_dict or "uri" not in f_dict:
+                continue
+            f_url = spotify_convert_uri_to_url(f_dict["uri"])
+            old_name = f_dict["old_name"]
+            print(f"- {old_name} -> {f_dict['name']} [ {f_url} ]")
+            list_of_renamed_f_list += f"- {old_name} -> {f_dict['name']} [ {f_url} ]"
+            list_of_renamed_f_list_html += f"- {escape(old_name)} -&gt; <a href=\"{escape_html_attr(f_url)}\">{escape(f_dict['name'])}</a>"
+
+            # Add empty line between items if not the last one and there are multiple items
+            if len(renamed_f_list) > 1 and idx < len(renamed_f_list) - 1:
+                print()
+                list_of_renamed_f_list += "\n\n"
+                list_of_renamed_f_list_html += "<br><br>"
+            else:
+                list_of_renamed_f_list += "\n"
+                list_of_renamed_f_list_html += "<br>"
+
+            try:
+                if csv_file_name:
+                    write_csv_entry(csv_file_name, now_local_naive(), f_renamed_csv, username, old_name, f_dict["name"])
+            except Exception as e:
+                print_operation_error("A CSV event could not be written", e)
+        print()
+
+    # A count moved or a membership shifted without producing any renderable line, so there is nothing to
     # report. The baseline below is still written, otherwise the same delta is re-evaluated every check
-    nothing_to_report = is_playlist and f_diff != 0 and not list_of_added_f_list.strip() and not list_of_removed_f_list.strip()
+    nothing_to_report = not (list_of_added_f_list.strip() or list_of_removed_f_list.strip() or list_of_renamed_f_list.strip()) and (is_playlist or f_diff == 0)
 
     f_list_to_save = []
     f_list_to_save.append(f_count)
@@ -8296,14 +8385,17 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
     if not email_enabled and not webhook_enabled:
         return
 
-    if playlist_membership_only_change:
+    m_changes = f"{removed_f_list_mbody}{list_of_removed_f_list}{added_f_list_mbody}{list_of_added_f_list}{renamed_f_list_mbody}{list_of_renamed_f_list}"
+    m_changes_html = f"{removed_f_list_mbody_html}{list_of_removed_f_list_html}{added_f_list_mbody_html}{list_of_added_f_list_html}{renamed_f_list_mbody_html}{list_of_renamed_f_list_html}"
+
+    if membership_only_change:
         m_subject = f"Spotify user {username} {str(f_str).lower()} have changed! (total remains {f_count})"
-        m_body = f"{f_str} changed for user {username} while the total remained {f_count}\n{removed_f_list_mbody}{list_of_removed_f_list}{added_f_list_mbody}{list_of_added_f_list}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
-        m_body_html = f"<html><head></head><body>{escape(f_str)} changed for user <b>{escape(username)}</b> while the total remained <b>{f_count}</b><br>{removed_f_list_mbody_html}{list_of_removed_f_list_html}{added_f_list_mbody_html}{list_of_added_f_list_html}<br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}</body></html>"
+        m_body = f"{f_str} changed for user {username} while the total remained {f_count}\n{m_changes}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+        m_body_html = f"<html><head></head><body>{escape(f_str)} changed for user <b>{escape(username)}</b> while the total remained <b>{f_count}</b><br>{m_changes_html}<br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}</body></html>"
     else:
         m_subject = f"Spotify user {username} {str(f_str).lower()} number has changed! ({f_diff_str}, {f_old_count} -> {f_count})"
-        m_body = f"{f_str} number changed {f_str_by_or_from} user {username} from {f_old_count} to {f_count} ({f_diff_str})\n{removed_f_list_mbody}{list_of_removed_f_list}{added_f_list_mbody}{list_of_added_f_list}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
-        m_body_html = f"<html><head></head><body>{escape(f_str)} number changed {escape(f_str_by_or_from)} user <b>{escape(username)}</b> from <b>{f_old_count}</b> to <b>{f_count}</b> (<b>{escape(f_diff_str)}</b>)<br>{removed_f_list_mbody_html}{list_of_removed_f_list_html}{added_f_list_mbody_html}{list_of_added_f_list_html}<br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}</body></html>"
+        m_body = f"{f_str} number changed {f_str_by_or_from} user {username} from {f_old_count} to {f_count} ({f_diff_str})\n{m_changes}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+        m_body_html = f"<html><head></head><body>{escape(f_str)} number changed {escape(f_str_by_or_from)} user <b>{escape(username)}</b> from <b>{f_old_count}</b> to <b>{f_count}</b> (<b>{escape(f_diff_str)}</b>)<br>{m_changes_html}<br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}</body></html>"
 
     selected_notification_image_url = select_notification_image_url(playlist_notification_image_url, profile_image_url=notification_image_url)
     send_notification_channels(notification_type, m_subject, m_body, m_body_html, email_enabled=email_enabled, webhook_enabled=webhook_enabled, image_url=selected_notification_image_url, email_image_url=playlist_notification_image_url if is_playlist else "")
@@ -12200,7 +12292,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         followers_count, followers = followers_old_count, followers_old
     elif followers is None:
         followers = followers_old
-    if followers_count is not None and followers_old_count is not None and followers_count != followers_old_count:
+    if followers_count is not None and followers_old_count is not None and (followers_count != followers_old_count or follow_membership_changed(followers, followers_old, followers_count)):
         spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, False, False)
 
     print_cur_ts("Timestamp:\t\t\t")
@@ -12232,7 +12324,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         followings_count, followings = followings_old_count, followings_old
     elif followings is None:
         followings = followings_old
-    if followings_count is not None and followings_old_count is not None and followings_count != followings_old_count:
+    if followings_count is not None and followings_old_count is not None and (followings_count != followings_old_count or follow_membership_changed(followings, followings_old, followings_count)):
         spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, False, False)
 
     print_cur_ts("Timestamp:\t\t\t")
@@ -12491,6 +12583,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     print(f"Check interval:\t\t\t{check_window_text()}")
                     print_cur_ts("Timestamp:\t\t\t")
                 followers_zeroed_counter = 0
+                if follow_membership_changed(followers, followers_old, followers_count):
+                    spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, PROFILE_NOTIFICATION, False, notification_image_url=image_url, webhook_notification_allowed=True)
+                    print(f"Check interval:\t\t\t{check_window_text()}")
+                    print_cur_ts("Timestamp:\t\t\t")
                 followers_old = followers
 
         if followings_count is None:
@@ -12538,6 +12634,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     print(f"Check interval:\t\t\t{check_window_text()}")
                     print_cur_ts("Timestamp:\t\t\t")
                 followings_zeroed_counter = 0
+                if follow_membership_changed(followings, followings_old, followings_count):
+                    spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, PROFILE_NOTIFICATION, False, notification_image_url=image_url, webhook_notification_allowed=True)
+                    print(f"Check interval:\t\t\t{check_window_text()}")
+                    print_cur_ts("Timestamp:\t\t\t")
                 followings_old = followings
 
         # profile pic
