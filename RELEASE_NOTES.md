@@ -2,9 +2,9 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 3.10 (TBD)
+# Changes in 4.0 (TBD)
 
-Version **3.10** reports a follower or following who changed their display name as a **rename** rather than as a departure and an arrival, and no longer stays silent about follower changes that leave the total unchanged. It also brings a check that could not finish back on the **error interval** instead of waiting out the full polling interval, retries **rate limiting** on its own short backoff and keeps alert delivery lines inside the report they belong to. It reports an alert channel that still holds the values from the sample configuration as unset.
+Version **4.0** reports a follower or following who changed their display name as a **rename** rather than as a departure and an arrival, and no longer stays silent about follower changes that leave the total unchanged. It also brings a check that could not finish back on the **error interval** instead of waiting out the full polling interval, retries **rate limiting** on its own short backoff and keeps alert delivery lines inside the report they belong to. It reports an alert channel that still holds the values from the sample configuration as unset.
 
 **Features and improvements**:
 
