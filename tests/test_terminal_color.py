@@ -534,6 +534,35 @@ def test_date_rows_keep_the_elapsed_time_green(colored):
         assert f"{colored['duration']}{elapsed}{monitor.ANSI_RESET}" in result
 
 
+# Verifies each column of a track listing row carries its own colour, since the columns are positional
+def test_track_listing_row_colors_every_column(colored):
+    row = monitor.format_track_listing_row("Alexander Popov - Shining - Extended Mix", 75, "07 Feb 26, 00:05:42", "Sat", "misiektoja")
+
+    assert monitor.ANSI_ESCAPE_RE.sub("", row) == '%75s    %20s    %3s     %10s' % ("Alexander Popov - Shining - Extended Mix", "07 Feb 26, 00:05:42", "Sat", "misiektoja")
+    assert f"{colored['track']}Alexander Popov - Shining - Extended Mix{monitor.ANSI_RESET}" in row
+    assert f"{colored['date']}07 Feb 26, 00:05:42{monitor.ANSI_RESET}" in row
+    assert f"{colored['weekday']}Sat{monitor.ANSI_RESET}" in row
+    assert f"{colored['username']}misiektoja{monitor.ANSI_RESET}" in row
+
+
+# Verifies the liked tracks listing, which has no added-by column, still colours the columns it prints
+def test_liked_track_listing_row_has_no_added_by_column(colored):
+    row = monitor.format_track_listing_row("ATB - My Everything", 80, "24 Mar 26, 18:44:55", "Tue")
+
+    assert monitor.ANSI_ESCAPE_RE.sub("", row) == '%80s    %20s    %3s' % ("ATB - My Everything", "24 Mar 26, 18:44:55", "Tue")
+    assert colored["username"] not in row
+
+
+# Verifies the date rule leaves the padded column in front of it alone, so a track title keeps its last word
+def test_a_padded_column_before_a_date_is_not_read_as_a_weekday(colored):
+    row = monitor.format_track_listing_row("Blank & Jones - Mind of the Wonderful - Short Cut", 75, "13 Jul 26, 16:00:48", "Mon", "misiektoja")
+
+    result = monitor._colorize_line(row)
+
+    assert result == row
+    assert f"{colored['date']}Cut" not in result
+
+
 # Verifies a listing row takes its colour from the reference in its brackets rather than from the row order
 @pytest.mark.parametrize("line,part", [
     ("- bzy i kosy [ https://open.spotify.com/playlist/64038SKKJNi7GIAh16NlRr?si=1 ]", "playlist"),
