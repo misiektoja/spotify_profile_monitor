@@ -458,6 +458,7 @@ COLORED_OUTPUT = True
 #     # Dates
 #     "date": "magenta",
 #     "date_range": "magenta",
+#     "weekday": "cyan",
 #     # Boolean values
 #     "boolean_true": "green",
 #     "boolean_false": "red",
@@ -1529,6 +1530,7 @@ DEFAULT_COLOR_THEME = {
     # Dates
     "date": "magenta",
     "date_range": "magenta",
+    "weekday": "cyan",
     # Boolean values
     "boolean_true": "green",
     "boolean_false": "red",
@@ -1762,6 +1764,23 @@ def colorize_status(status_text):
     else:
         key = "status_other"
     return colorize(key, status_text)
+
+
+# Right-aligns one listing column and colours only its value, so the column padding stays outside the style
+def _pad_colored_column(value, width, style_name):
+    return f"{' ' * max(0, width - len(value))}{colorize(style_name, value)}"
+
+
+# Builds one row of a track listing, whose columns are positional and cannot be recognized once they are printed
+def format_track_listing_row(artist_track, track_width, date_str, weekday, added_by=None):
+    track_column = _pad_colored_column(artist_track, track_width, "track")
+    date_column = _pad_colored_column(date_str, 20, "date")
+    weekday_column = _pad_colored_column(weekday, 3, "weekday")
+    row = f"{track_column}    {date_column}    {weekday_column}"
+    if added_by is None:
+        return row
+    added_by_column = _pad_colored_column(added_by, 10, "username")
+    return f"{row}     {added_by_column}"
 
 
 # Splits a recognized output label from its value without applying a backtracking expression
@@ -6646,7 +6665,7 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
                 added_at_dt_week_day = calendar.day_abbr[added_at_dt.weekday()]
                 if not CLEAN_OUTPUT and not EXPORT_ALL:
                     artist_track = artist_track[:75]
-                    line_new = '%75s    %20s    %3s     %10s' % (artist_track, added_at_dt_str, added_at_dt_week_day, added_by_name)
+                    line_new = format_track_listing_row(artist_track, 75, added_at_dt_str, added_at_dt_week_day, added_by_name)
                 else:
                     line_new = f"{artist_track}"
                     tracks_list.append(line_new)
@@ -6817,7 +6836,7 @@ def spotify_list_liked_tracks(sp_accessToken, csv_file_name, format_type=2):
                 added_at_dt_week_day = calendar.day_abbr[added_at_dt.weekday()]
                 if not CLEAN_OUTPUT:
                     artist_track = artist_track[:75]
-                    line_new = '%80s    %20s    %3s' % (artist_track, added_at_dt_str, added_at_dt_week_day)
+                    line_new = format_track_listing_row(artist_track, 80, added_at_dt_str, added_at_dt_week_day)
                 else:
                     line_new = f"{artist_track}"
                     tracks_list.append(line_new)
