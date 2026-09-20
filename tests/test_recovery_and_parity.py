@@ -94,6 +94,23 @@ def test_transient_spotify_failures_link_to_the_connection_guide(error):
     assert "--debug" not in advice.fix
 
 
+RETRY_FIX = "Usually nothing to do, the tool retries on its own. If it continues, "
+
+
+# A transient failure is named in the reader's terms and says that the tool is already retrying, so a passing blip
+# reads as one rather than as something to act on
+@pytest.mark.parametrize("error,summary,fix", [
+    (requests.Timeout("request timed out"), "Spotify did not answer in time", RETRY_FIX + "check network access, DNS, firewall and proxy settings"),
+    (requests.ConnectionError("connection refused"), "Spotify could not be reached", RETRY_FIX + "check network access, DNS, firewall and proxy settings"),
+    (make_status_error(503), "Spotify is temporarily unavailable", RETRY_FIX + "wait for Spotify to recover"),
+])
+def test_a_transient_failure_names_the_service_and_the_retry(error, summary, fix):
+    advice = monitor.classify_recovery_error(error)
+
+    assert advice.summary == summary
+    assert advice.fix == f"{fix}\nGuide: {monitor.CONNECTION_GUIDE_URL}"
+
+
 # A local limit and an unreadable file link to the pages that cover them rather than to a diagnostics page
 def test_local_failures_link_to_their_own_guides():
     assert f"\nGuide: {monitor.DESCRIPTOR_LIMIT_GUIDE_URL}" in monitor.classify_recovery_error(OSError(24, "Too many open files")).fix
@@ -1052,9 +1069,103 @@ def test_the_loop_tracks_the_error_alert_through_the_state():
     assert source.count("error_alert = ErrorAlertState()") == 1
     assert source.count("error_alert.reset()") >= 1
     # Every failing path reports through the one helper that also alerts, so none of them can close its report early
-    assert source.count("error_alert, context=") + source.count("error_alert, retry_note=") >= 4
+    assert source.count("error_alert, retry_seconds=") >= 4
     assert source.count("dispatch_error_alert(") == 2
+    assert source.count("dispatch_recovery_alert(") == 2
     assert not re.search(r"^\s*error_(email|webhook)_sent = ", source, re.MULTILINE)
+
+
+# Verifies the failure alert subject names the tool and the target, so an inbox fed by several monitors sorts by tool
+def test_the_failure_alert_subject_names_the_tool_and_the_target():
+    advice = monitor.classify_recovery_error(requests.Timeout("request timed out"))
+
+    assert monitor.recovery_alert_subject(advice, "watched-user") == "Spotify Profile Monitor error: Spotify did not answer in time (user: watched-user)"
+
+
+# Verifies the failure alert body leads with the failure and the fix and names the wait before the next check,
+# while the streak and its start are left out of the first failing check, which has neither
+def test_the_failure_alert_body_lists_the_fix_and_the_next_retry(monkeypatch):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor, "DEBUG_MODE", False)
+    advice = monitor.classify_recovery_error(make_status_error(503))
+
+    first = monitor.recovery_alert_body(advice, 300, 1, 1_700_000_000, with_timestamp=False)
+    lasting = monitor.recovery_alert_body(advice, 300, 4, 1_700_000_000, with_timestamp=False)
+
+    assert first == f"Spotify is temporarily unavailable\n\nTo fix: {advice.fix}\n\nNext retry in: 5 minutes"
+    assert f"\n\nFailed checks in a row: 4\nFailing since: {monitor.get_date_from_ts(1_700_000_000)}\nNext retry in: 5 minutes" in lasting
+    assert "Technical detail:" not in lasting
+    assert monitor.recovery_alert_body(advice, 300, 4, 1_700_000_000).startswith(lasting + "\n\nTimestamp: ")
+
+
+# Verifies the technical detail reaches the alert only with --debug, so a plain alert stays free of internals
+def test_the_failure_alert_body_adds_the_detail_only_with_debug(monkeypatch):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    advice = monitor.classify_recovery_error(RuntimeError("503 Server Error for https://api.spotify.test/v1/users"))
+
+    monkeypatch.setattr(monitor, "DEBUG_MODE", True)
+    with_debug = monitor.recovery_alert_body(advice, 300, with_timestamp=False)
+    monkeypatch.setattr(monitor, "DEBUG_MODE", False)
+    without_debug = monitor.recovery_alert_body(advice, 300, with_timestamp=False)
+
+    assert with_debug.endswith("\n\nTechnical detail: 503 Server Error for https://api.spotify.test/v1/users")
+    assert "Technical detail:" not in without_debug
+
+
+# Verifies the HTML body carries the same fields with the summary in bold and every line break rendered, since
+# HTML would otherwise run the guide link into the fix above it
+def test_the_failure_alert_html_body_matches_the_plain_one(monkeypatch):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor, "DEBUG_MODE", False)
+    advice = monitor.classify_recovery_error(make_status_error(503))
+
+    body_html = monitor.recovery_alert_body_html(advice, 300, 4, 1_700_000_000, with_timestamp=False)
+
+    assert body_html.startswith("<html><head></head><body><b>Spotify is temporarily unavailable</b><br><br>To fix: Usually nothing to do, ")
+    assert f"<br>Guide: {monitor.CONNECTION_GUIDE_URL}<br><br>Failed checks in a row: 4<br>Failing since: " in body_html
+    assert body_html.endswith("<br>Next retry in: 5 minutes</body></html>")
+    assert "\n" not in body_html
+
+
+# Verifies the recovery alert reaches only the channel whose failure alert was delivered and then forgets the
+# alert, so the next outage earns every channel a new one
+def test_the_recovery_alert_reaches_only_the_alerted_channel(monkeypatch):
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", True)
+    monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", True)
+    sent = []
+
+    # Records the alert the dispatcher hands the channels instead of delivering it
+    def record(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, **keywords):
+        sent.append({"subject": subject, "body": body, "body_html": body_html, "webhook_body": keywords.get("webhook_body", ""), "email": email_enabled, "webhook": webhook_enabled})
+        return bool(email_enabled), bool(webhook_enabled)
+
+    monkeypatch.setattr(monitor, "send_notification_channels", record)
+    state = monitor.ErrorAlertState()
+    state.since = 1_700_000_000
+    state.summary = "Spotify is temporarily unavailable"
+    state.email_sent = True
+
+    assert monitor.dispatch_recovery_alert(state, "watched-user", 600) is True
+    assert len(sent) == 1
+    assert sent[0]["subject"] == "Spotify Profile Monitor recovered: monitoring watched-user resumed after 10 minutes"
+    assert (sent[0]["email"], sent[0]["webhook"]) == (True, False)
+    assert sent[0]["webhook_body"] == "Monitoring recovered for watched-user after 10 minutes.\n\nThe failure was: Spotify is temporarily unavailable"
+    assert sent[0]["body"].startswith(sent[0]["webhook_body"] + "\n\nTimestamp: ")
+    assert sent[0]["body_html"].startswith("<html><head></head><body>Monitoring recovered for watched-user after 10 minutes.<br><br>The failure was: ")
+    assert state.email_sent is False and state.since is None
+
+
+# Verifies a failure no channel was alerted about ends without a recovery alert and leaves the alert clock alone,
+# since another poll of the same check may still be failing
+def test_a_failure_nobody_was_told_about_ends_quietly(monkeypatch):
+    monkeypatch.setattr(monitor, "send_notification_channels", lambda *arguments, **keywords: pytest.fail("a recovery alert went out without a failure alert"))
+    state = monitor.ErrorAlertState()
+    state.since = 1_700_000_000
+
+    assert monitor.dispatch_recovery_alert(state, "watched-user", 600) is False
+    assert state.since == 1_700_000_000
 
 
 # Verifies the dispatcher reports what each transport actually delivered, since a failed send that reads as delivered

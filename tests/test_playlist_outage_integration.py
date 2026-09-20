@@ -1,7 +1,7 @@
 import pytest
 
 import spotify_profile_monitor as monitor
-from test_monitoring_loop import error_alerts_for, profile_snapshot
+from test_monitoring_loop import error_alerts_for, failure_alerts, profile_snapshot, recovery_alerts
 
 A = "spotify:playlist:aaaaaaaaaaaaaaaaaaaaaa"
 B = "spotify:playlist:bbbbbbbbbbbbbbbbbbbbbb"
@@ -77,7 +77,8 @@ def test_playlist_recovery_resets_alert_delivery(monkeypatch, tmp_path, capsys):
     healthy = {"sp_playlist_name": "Playlist", "sp_playlist_owner": "Owner", "sp_playlist_owner_uri": "spotify:user:owner", "sp_playlist_description": "", "sp_playlist_tracks": [], "sp_playlist_tracks_count": 0, "sp_playlist_tracks_count_before_filtering": 0, "sp_playlist_followers_count": 1}
     failure = RuntimeError("503 Server Error")
     errors = error_alerts_for(monkeypatch, tmp_path, [playlist_profile(A)] * 7, 6, check_interval=300, playlist_checks=True, playlist_answers=[healthy, failure, failure, healthy, failure, failure])
-    assert len(errors) == 2
+    assert len(failure_alerts(errors)) == 2
+    assert len(recovery_alerts(errors)) == 1
     assert "Monitoring recovered" in capsys.readouterr().out
 
 

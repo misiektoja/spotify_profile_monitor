@@ -70,8 +70,8 @@ def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answer
         return remaining_followings.pop(0) if remaining_followings else {"sp_user_followings": []}
 
     # Prints the same delivery lines the real dispatcher prints, so a report that leaves one outside itself is visible
-    def record_delivery(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, **_keywords):
-        calls.append({"type": notification_type, "subject": subject, "body": body, "body_html": body_html, "email": email_enabled, "webhook": webhook_enabled})
+    def record_delivery(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, **keywords):
+        calls.append({"type": notification_type, "subject": subject, "body": body, "body_html": body_html, "webhook_body": keywords.get("webhook_body", ""), "email": email_enabled, "webhook": webhook_enabled})
         if email_enabled:
             print(f"Sending email notification to {monitor.RECEIVER_EMAIL}")
         if webhook_enabled:
@@ -114,6 +114,16 @@ def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answer
     return [call for call in calls if call["type"] == "error"]
 
 
+# Returns the alerts that report a failing check, which share the error event with the recovery alerts that close them
+def failure_alerts(alerts):
+    return [alert for alert in alerts if " error: " in alert["subject"]]
+
+
+# Returns the alerts that report a failure cleared
+def recovery_alerts(alerts):
+    return [alert for alert in alerts if " recovered: " in alert["subject"]]
+
+
 # A failure the loop can retry away is alerted only once the outage has lasted the alert delay, which the second
 # failing check of a poller this slow already is, while the first failing check reaches nobody
 @pytest.mark.parametrize("stop_after,expected", [(2, []), (3, [(True, True)])])
@@ -131,7 +141,7 @@ def test_a_failure_that_cannot_clear_itself_is_alerted_at_once(monkeypatch, tmp_
 
     assert len(errors) == 1
     assert not errors[0]["subject"].startswith("spotify_profile_monitor: ")
-    assert errors[0]["subject"].endswith(f" (Spotify URI: {USER})")
+    assert errors[0]["subject"] == f"Spotify Profile Monitor error: Spotify rejected the sp_dc cookie (user: {USER})"
     assert "To fix:" in errors[0]["body"]
 
 
@@ -168,7 +178,7 @@ def test_a_second_failure_category_is_noted_in_one_line(monkeypatch, tmp_path, c
     reports = [line for line in lines if line.startswith("* Error:")]
     changes = [number for number, line in enumerate(lines) if line.startswith(f"* Monitoring failure changed for {USER}. ")]
     assert len(reports) == 1 and "temporarily unavailable" in reports[0]
-    assert len(changes) == 1 and lines[changes[0]].endswith("The Spotify request timed out")
+    assert len(changes) == 1 and lines[changes[0]].endswith("Spotify did not answer in time")
     assert lines[changes[0] + 1].startswith("Timestamp:")
     assert "\n".join(lines).count("To fix: ") == 1
 
@@ -182,7 +192,7 @@ def test_a_lasting_outage_is_carried_by_the_hourly_reminder(monkeypatch, tmp_pat
     assert output.count("* Error:") == 1
     assert output.count("To fix: ") == 1
     # Five minute error checks put every third one at the reminder interval
-    assert output.count(f"* Monitoring degraded for {USER}. The Spotify request timed out since ") == 3
+    assert output.count(f"* Monitoring degraded for {USER}. Spotify did not answer in time since ") == 3
     assert ", 4 failed checks\n" in output and ", 10 failed checks\n" in output
     assert output.count("Liveness check, timestamp:") == 3
 
@@ -254,7 +264,7 @@ def test_a_watchdog_timeout_is_reported_and_alerted(monkeypatch, tmp_path, capsy
     output = capsys.readouterr().out
     assert output.count("* Error:") == 1
     assert len(errors) == 1
-    assert errors[0]["subject"].endswith(f" (Spotify URI: {USER})")
+    assert errors[0]["subject"] == f"Spotify Profile Monitor error: Spotify did not answer in time (user: {USER})"
 
 
 # Verifies a run that halts and then answers again reports the recovery, which needs the timeout to have opened an outage
@@ -320,6 +330,44 @@ def test_the_degraded_reminder_closes_after_the_alert_it_carries(monkeypatch, tm
     assert lines[reminder + 1].startswith("Sending email notification to ")
     assert lines[reminder + 3].startswith("Liveness check, timestamp:")
     assert unclosed_delivery_lines("\n".join(lines)) == []
+
+
+# Verifies a failure alert names the failure, the fix, the streak and the next retry, and that a recovery alert
+# follows on the channels that received it once the failure clears
+def test_a_recovery_alert_closes_the_failure_alert(monkeypatch, tmp_path, capsys):
+    answers = [profile_snapshot(), *[RuntimeError("503 Server Error")] * 2, profile_snapshot()]
+    alerts = error_alerts_for(monkeypatch, tmp_path, answers, 5, check_interval=300)
+    failures, recoveries = failure_alerts(alerts), recovery_alerts(alerts)
+
+    assert len(failures) == 1 and len(recoveries) == 1
+    assert failures[0]["subject"] == f"Spotify Profile Monitor error: Spotify is temporarily unavailable (user: {USER})"
+    assert failures[0]["body"].startswith("Spotify is temporarily unavailable\n\nTo fix: Usually nothing to do, ")
+    assert "\nFailed checks in a row: 2\nFailing since: " in failures[0]["body"]
+    assert "\nNext retry in: 5 minutes\n" in failures[0]["body"]
+    assert recoveries[0]["subject"] == f"Spotify Profile Monitor recovered: monitoring {USER} resumed after 10 minutes"
+    assert recoveries[0]["body"].startswith(f"Monitoring recovered for {USER} after 10 minutes.\n\nThe failure was: Spotify is temporarily unavailable")
+    assert (recoveries[0]["email"], recoveries[0]["webhook"]) == (True, True)
+    assert unclosed_delivery_lines(capsys.readouterr().out) == []
+
+
+# Verifies only the email body carries a timestamp, since a chat message already shows when it arrived
+def test_the_webhook_body_leaves_the_timestamp_to_the_email(monkeypatch, tmp_path):
+    answers = [profile_snapshot(), *[RuntimeError("503 Server Error")] * 2, profile_snapshot()]
+    alerts = error_alerts_for(monkeypatch, tmp_path, answers, 5, check_interval=300)
+
+    for alert in alerts:
+        assert "\n\nTimestamp: " in alert["body"]
+        assert "Timestamp: " not in alert["webhook_body"]
+        assert alert["body"].startswith(alert["webhook_body"])
+
+
+# Verifies a failure that cleared before any channel was alerted ends without a recovery alert, since nobody was told
+def test_a_failure_nobody_was_alerted_about_ends_without_a_recovery_alert(monkeypatch, tmp_path, capsys):
+    answers = [profile_snapshot(), RuntimeError("503 Server Error"), profile_snapshot()]
+    alerts = error_alerts_for(monkeypatch, tmp_path, answers, 4, check_interval=300)
+
+    assert alerts == []
+    assert capsys.readouterr().out.count(f"* Monitoring recovered for {USER} after ") == 1
 
 
 # Verifies a rate limited profile poll comes back on its own short backoff rather than on the error interval,
