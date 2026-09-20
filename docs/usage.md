@@ -275,7 +275,11 @@ To disable sending an email on errors (enabled by default):
 spotify_profile_monitor <spotify_target> -e
 ```
 
-Email and webhook error alerts are sent after **5 minutes** of a continuing failure. Problems that need your action, such as an expired `sp_dc` cookie, alert immediately. Each channel gets one alert until a full check succeeds, including the follower poll. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour.
+Email and webhook failure alerts are sent after **5 minutes** of a continuing failure. Problems that need your action, such as an expired `sp_dc` cookie, alert immediately. The subject reads `Spotify Profile Monitor error: <what went wrong> (user: <target>)` and the body gives the fix, a link to the page that covers it, how many checks failed in a row, since when the check has been failing and how long until the next attempt.
+
+A **recovery alert** follows on the same channels once the failure clears, naming how long it lasted and which failure it closes. `-e` / `--no-error-notify` switches off the failure email and the recovery email together, and `--no-webhook-error-notify` does the same for webhooks.
+
+Each channel gets one alert until a full check succeeds, including the follower poll. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour.
 
 Make sure you defined your SMTP settings earlier (see [SMTP settings](configuration.md#smtp-settings)).
 
@@ -305,6 +309,8 @@ Webhook event settings mirror the email controls while remaining independent fro
 | Profile or playlist change | `WEBHOOK_PROFILE_NOTIFICATION` | `--webhook-profile` |
 | Followers or followings change | `WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION` | Disable with `--no-webhook-followers-followings-notify` |
 | Monitoring error | `WEBHOOK_ERROR_NOTIFICATION` | Enable with `--webhook-errors` or disable with `--no-webhook-error-notify` |
+
+The monitoring error event covers the failure alert and the recovery alert that follows it, with the same subject and text as the [email alerts](#email-notifications). The webhook message leaves out the timestamp line, since a chat message already shows when it arrived.
 
 Enable the master switch and the profile event setting in `spotify_profile_monitor.conf`:
 
