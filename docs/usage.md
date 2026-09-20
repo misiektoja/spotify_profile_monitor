@@ -341,6 +341,21 @@ The file will be automatically created if it does not exist.
 
 Spotify-supplied text (playlist names, track names, artist names, collaborator names and descriptions) that starts with `=`, `+`, `-`, `@`, a tab or a carriage return is written with a leading apostrophe, so opening the export in a spreadsheet cannot evaluate it as a formula. The same applies to the per-playlist files produced by `--export-all-playlists`. Timestamps and numeric values are unaffected.
 
+<a id="follower-and-following-changes"></a>
+## Follower and Following Changes
+
+Followers and followings are compared by their Spotify URI. Someone who only changes their display name appears under `Renamed followers` or `Renamed followings` with both names, instead of being reported as a departure and an arrival:
+
+```
+Renamed followers:
+
+- Miss Johnson -> Johnson [ https://open.spotify.com/user/USER_ID ]
+```
+
+The CSV export records that as a single `Renamed Follower` or `Renamed Following` row holding the old and the new name.
+
+A change that leaves the total untouched, such as a rename or one person leaving while another arrives in the same check, is reported as `Followers changed for user <name> while the total remained <count>`.
+
 <a id="unavailable-followers-and-followings"></a>
 ## Unavailable Followers and Followings
 

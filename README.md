@@ -46,7 +46,7 @@ For the manual single-file method, optional extras and upgrade commands, see [In
 
 ### 👤 Profile Changes
 - Track username and profile-picture changes.
-- See when followers or followed accounts are added or removed.
+- See when followers or followed accounts are added, removed or renamed.
 - View profile details and recently played artists.
 
 ### 🔔 Notifications and History
