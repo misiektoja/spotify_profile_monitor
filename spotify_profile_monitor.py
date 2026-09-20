@@ -8718,6 +8718,11 @@ def read_collection_record(path):
         record = json.load(source)
     if not isinstance(record, list) or len(record) < 2:
         raise ValueError("expected a collection list containing a count and entries")
+    # Releases before 3.9 saved null for a count or list Spotify did not return, so a null count is no baseline and null entries are an empty list
+    if record[0] is None:
+        return []
+    if record[1] is None:
+        record[1] = []
     if not isinstance(record[0], int) or isinstance(record[0], bool) or record[0] < 0:
         raise ValueError("the saved collection count must be a nonnegative integer")
     if not isinstance(record[1], list) or any(not isinstance(item, dict) for item in record[1]):
