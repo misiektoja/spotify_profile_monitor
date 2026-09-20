@@ -2,9 +2,13 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 3.9.1 (TBD)
+# Changes in 3.10 (TBD)
 
-Version **3.9.1** brings a check that could not finish back on the **error interval** instead of waiting out the full polling interval, retries **rate limiting** on its own short backoff and keeps alert delivery lines inside the report they belong to. It also reports an alert channel that still holds the values from the sample configuration as unset.
+Version **3.10** reports a follower or following who changed their display name as a **rename** rather than as a departure and an arrival, and no longer stays silent about follower changes that leave the total unchanged. It also brings a check that could not finish back on the **error interval** instead of waiting out the full polling interval, retries **rate limiting** on its own short backoff and keeps alert delivery lines inside the report they belong to. It reports an alert channel that still holds the values from the sample configuration as unset.
+
+**Features and improvements**:
+
+- **NEW:** **Display name changes are reported as renames** - Followers and followings are compared by their Spotify URI, so someone who only changed their display name is listed once under **`Renamed followers`** or **`Renamed followings`** with the old and the new name, instead of appearing as a removal and an addition. The CSV export records it as one **`Renamed Follower`** or **`Renamed Following`** row. A change that leaves the total untouched, such as a rename or one person leaving while another arrives in the same check, is now reported as **`Followers changed for user <name> while the total remained <count>`** and saves the updated list, so a restart no longer replays an old name against a stale baseline
 
 **Bug fixes**:
 
