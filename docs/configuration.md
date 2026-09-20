@@ -575,6 +575,7 @@ Parts with the same name mean the same thing in [spotify_monitor](https://github
 | `warning`, `signal` | The opening `Warning:` word and the name of a received signal. The rest of the line keeps the colours of the values in it |
 | `email`, `webhook` | Notification delivery lines |
 | `date`, `date_range` | Single dates and times, and date or hour ranges |
+| `weekday` | The weekday column of the track listings |
 | `boolean_true`, `boolean_false` | `True` / `Enabled` and `False` / `Disabled` |
 | `count_up`, `count_down` | Reported changes only, such as `from 10 to 12` and the `(+2)` / `(-2)` differences. A static count is left plain |
 | `link` | URLs |
