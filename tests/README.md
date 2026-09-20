@@ -56,6 +56,7 @@ would see.
 | `test_private_sp_dc.py` | `--set-sp-dc` validation, atomic dotenv updates and refusal to write on a bad cookie |
 | `test_browser_cookie_import.py` | Firefox and Chromium profile discovery, cookie selection, deceptive-domain rejection and dotenv preservation |
 | `test_follow_snapshot.py` | Unavailable follow data, restart history, first available baselines and confirmed zero counts |
+| `test_follower_renames.py` | Pairing follow snapshots on the Spotify URI, the rename report and the membership changes that keep the total |
 | `test_oauth_user_playlists.py` | Current playlist item shapes, pagination, older route compatibility and per-playlist OAuth restrictions |
 | `test_web_playlist_backend.py` | TOTP generation and config, plus the generated config's token-source guidance |
 | `test_playlist_snapshot_baseline.py` | Playlist baseline advancement on partial failure, removal confirmation and membership acceptance |
