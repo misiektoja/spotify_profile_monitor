@@ -11,6 +11,7 @@ import unicodedata
 from unittest.mock import Mock
 
 import pytest
+import requests
 
 import spotify_profile_monitor as monitor
 
@@ -68,6 +69,35 @@ def test_guide_urls_match_documentation_anchors():
         assert document.is_file(), f"{name} references missing page {document_path}"
         if fragment:
             assert fragment in markdown_anchors(document.read_text(encoding="utf-8")), f"{name} references missing anchor #{fragment} in {document_path}"
+
+
+# Builds a requests HTTPError carrying the given status, the shape the classifier reads a server error from
+def make_status_error(status_code):
+    response = Mock()
+    response.status_code = status_code
+    return requests.HTTPError(f"{status_code} Server Error", response=response)
+
+
+# The Debugging Tools page covers token utilities, so a failure pointed there finds nothing about its own cause
+def test_guide_urls_stay_off_the_debugging_tools_page():
+    for name in (name for name in vars(monitor) if name.endswith("_GUIDE_URL")):
+        assert not getattr(monitor, name).startswith(monitor.DOCS_BASE_URL + "/debugging/"), name
+
+
+# A check the monitor retries on its own must not send the reader to Doctor or debug output for a passing network blip
+@pytest.mark.parametrize("error", [requests.Timeout("request timed out"), requests.ConnectionError("connection refused"), make_status_error(503)])
+def test_transient_spotify_failures_link_to_the_connection_guide(error):
+    advice = monitor.classify_recovery_error(error)
+    assert advice.retryable is True
+    assert f"\nGuide: {monitor.CONNECTION_GUIDE_URL}" in advice.fix
+    assert "--doctor" not in advice.fix
+    assert "--debug" not in advice.fix
+
+
+# A local limit and an unreadable file link to the pages that cover them rather than to a diagnostics page
+def test_local_failures_link_to_their_own_guides():
+    assert f"\nGuide: {monitor.DESCRIPTOR_LIMIT_GUIDE_URL}" in monitor.classify_recovery_error(OSError(24, "Too many open files")).fix
+    assert f"\nGuide: {monitor.CONFIG_GUIDE_URL}" in monitor.classify_recovery_error(PermissionError("denied"), "file_read").fix
 
 
 # Verifies the documentation site publishes every navigation page through a strict deployment
@@ -454,7 +484,7 @@ def test_an_operation_failure_names_the_step_and_the_cause(monkeypatch, capsys):
     printed = capsys.readouterr().out
     assert "* Error: A CSV event could not be written: An output destination is not writable" in printed
     assert "To fix: Choose a writable path" in printed
-    assert f"Guide: {monitor.DIAGNOSTICS_GUIDE_URL}" in printed
+    assert f"Guide: {monitor.CONFIG_GUIDE_URL}" in printed
 
 
 # Verifies a step that failed without an exception still picks its fix from the context it names
