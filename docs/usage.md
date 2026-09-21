@@ -275,9 +275,9 @@ To disable sending an email on errors (enabled by default):
 spotify_profile_monitor <spotify_target> -e
 ```
 
-Email and webhook failure alerts are sent after **5 minutes** of a continuing failure. Problems that need your action, such as an expired `sp_dc` cookie, alert immediately. The subject reads `Spotify Profile Monitor error: <what went wrong> (user: <display name>, <user URI id>)`, falling back to the user URI id alone while the display name is unknown, and the body gives the fix, a link to the page that covers it, how many checks failed in a row, since when the check has been failing and how long until the next attempt.
+Email and webhook failure alerts are sent after **5 minutes** of a continuing failure. Problems that need your action, such as an expired `sp_dc` cookie, alert immediately. The subject reads `Spotify Profile Monitor error: <what went wrong> (user: <display name>, <user URI id>)`, falling back to the user URI id alone while the display name is unknown. Everywhere else the profile is written as `<display name> (<user URI id>)`, which is how the recovery alert and the console lines name it. The body gives the fix, a link to the page that covers it, how many checks failed in a row, since when the check has been failing and how long until the next attempt.
 
-A **recovery alert** follows on the same channels once the failure clears, naming how long it lasted and which failure it closes. `-e` / `--no-error-notify` switches off the failure email and the recovery email together, and `--no-webhook-error-notify` does the same for webhooks.
+A **recovery alert** follows on the same channels once the failure clears, naming how long it lasted and which failure it closes. A channel that could not receive the failure alert while the outage lasted is told about the failure and its recovery together, so a blocked channel is not left without any word of an outage. `-e` / `--no-error-notify` switches off the failure email and the recovery email together, and `--no-webhook-error-notify` does the same for webhooks.
 
 Each channel gets one alert until a full check succeeds, including the follower poll. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour.
 
