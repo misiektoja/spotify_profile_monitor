@@ -118,7 +118,7 @@ EMAIL_IMAGES = False
 # Can also be disabled via the -g flag
 FOLLOWERS_FOLLOWINGS_NOTIFICATION = True
 
-# Whether to send an email on errors
+# Whether to send an email on errors and the recovery alert that follows once the failure clears
 # Can also be disabled via the -e flag
 ERROR_NOTIFICATION = True
 
@@ -160,7 +160,7 @@ WEBHOOK_PROFILE_NOTIFICATION = False
 # Can also be disabled via the --no-webhook-followers-followings-notify flag
 WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION = True
 
-# Whether to send a webhook notification on monitoring errors
+# Whether to send a webhook notification on monitoring errors and the recovery alert that follows once the failure clears
 # Can also be enabled via --webhook-errors or disabled via --no-webhook-error-notify
 WEBHOOK_ERROR_NOTIFICATION = True
 
@@ -13787,7 +13787,7 @@ def main():
         dest="error_notification",
         action="store_false",
         default=None,
-        help="Disable emails on errors and the recovery alert that follows"
+        help="Disable email on errors and the recovery alert that follows"
     )
     notify.add_argument(
         "--send-test-email",
@@ -13845,7 +13845,7 @@ def main():
         dest="webhook_errors",
         action="store_true",
         default=None,
-        help="Send webhook alerts when monitoring has a problem"
+        help="Send webhook alerts when monitoring has a problem and the recovery alert that follows"
     )
     webhook_error_toggle.add_argument(
         "--no-webhook-error-notify",
