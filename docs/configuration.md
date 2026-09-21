@@ -391,6 +391,8 @@ python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
 
 Email notifications need SMTP server details for the sending account. Add them to `spotify_profile_monitor.conf` or use the setup wizard. Setup checks the login without sending an email. To replace only the password, run `spotify_profile_monitor --set-smtp-password`. Password entry is hidden and preserves spaces.
 
+Every alert is sent as both HTML and plain text in one message. Mail clients that render HTML show the monitored user, the changed value and the check interval in bold, with each follower, following, playlist and track linked to its Spotify page. Clients that do not fall back to the plain text, which is unchanged.
+
 Send one test message to verify the settings:
 
 ```sh
