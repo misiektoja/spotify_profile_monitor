@@ -8,7 +8,7 @@ import spotify_profile_monitor as monitor
 
 USER = "watched-user"
 # The alert label the loop builds, since a failure names the profile by display name and URI id
-ALERT_TARGET = "Watched Person (watched-user)"
+ALERT_TARGET = "Watched Person, watched-user"
 
 
 class LoopStopped(BaseException):

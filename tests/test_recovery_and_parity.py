@@ -1154,7 +1154,7 @@ def test_the_recovery_alert_reaches_only_the_alerted_channel(monkeypatch):
     assert (sent[0]["email"], sent[0]["webhook"]) == (True, False)
     assert sent[0]["webhook_body"] == "Monitoring recovered for watched-user after 10 minutes.\n\nThe failure was: Spotify is temporarily unavailable"
     assert sent[0]["body"].startswith(sent[0]["webhook_body"] + "\n\nTimestamp: ")
-    assert sent[0]["body_html"].startswith("<html><head></head><body>Monitoring recovered for watched-user after 10 minutes.<br><br>The failure was: ")
+    assert sent[0]["body_html"].startswith("<html><head></head><body>Monitoring recovered for <b>watched-user</b> after <b>10 minutes</b>.<br><br>The failure was: ")
     assert state.email_sent is False and state.since is None
 
 
