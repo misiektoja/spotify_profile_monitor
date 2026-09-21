@@ -7,6 +7,8 @@ import pytest
 import spotify_profile_monitor as monitor
 
 USER = "watched-user"
+# The alert label the loop builds, since a failure names the profile by display name and URI id
+ALERT_TARGET = "Watched Person (watched-user)"
 
 
 class LoopStopped(BaseException):
@@ -141,7 +143,7 @@ def test_a_failure_that_cannot_clear_itself_is_alerted_at_once(monkeypatch, tmp_
 
     assert len(errors) == 1
     assert not errors[0]["subject"].startswith("spotify_profile_monitor: ")
-    assert errors[0]["subject"] == f"Spotify Profile Monitor error: Spotify rejected the sp_dc cookie (user: {USER})"
+    assert errors[0]["subject"] == f"Spotify Profile Monitor error: Spotify rejected the sp_dc cookie (user: {ALERT_TARGET})"
     assert "To fix:" in errors[0]["body"]
 
 
@@ -176,7 +178,7 @@ def test_a_second_failure_category_is_noted_in_one_line(monkeypatch, tmp_path, c
 
     lines = capsys.readouterr().out.splitlines()
     reports = [line for line in lines if line.startswith("* Error:")]
-    changes = [number for number, line in enumerate(lines) if line.startswith(f"* Monitoring failure changed for {USER}. ")]
+    changes = [number for number, line in enumerate(lines) if line.startswith(f"* Monitoring failure changed for {ALERT_TARGET}. ")]
     assert len(reports) == 1 and "temporarily unavailable" in reports[0]
     assert len(changes) == 1 and lines[changes[0]].endswith("Spotify did not answer in time")
     assert lines[changes[0] + 1].startswith("Timestamp:")
@@ -192,7 +194,7 @@ def test_a_lasting_outage_is_carried_by_the_hourly_reminder(monkeypatch, tmp_pat
     assert output.count("* Error:") == 1
     assert output.count("To fix: ") == 1
     # Five minute error checks put every third one at the reminder interval
-    assert output.count(f"* Monitoring degraded for {USER}. Spotify did not answer in time since ") == 3
+    assert output.count(f"* Monitoring degraded for {ALERT_TARGET}. Spotify did not answer in time since ") == 3
     assert ", 4 failed checks\n" in output and ", 10 failed checks\n" in output
     assert output.count("Liveness check, timestamp:") == 3
 
@@ -213,7 +215,7 @@ def test_a_check_that_succeeds_after_a_failure_announces_the_recovery(monkeypatc
     error_alerts_for(monkeypatch, tmp_path, answers, 4, follower_answers=follower_answers)
 
     output = capsys.readouterr().out
-    assert output.count(f"* Monitoring recovered for {USER} after ") == 1
+    assert output.count(f"* Monitoring recovered for {ALERT_TARGET} after ") == 1
 
 
 # Verifies a run that never fails announces no recovery, so the line marks a real return rather than every check
@@ -232,7 +234,7 @@ def test_the_healthy_banner_reaches_a_plain_run_on_its_own_clock(monkeypatch, tm
     error_alerts_for(monkeypatch, tmp_path, [profile_snapshot()], 5, check_interval=check_interval, liveness_seconds=900)
 
     lines = capsys.readouterr().out.splitlines()
-    banners = [number for number, line in enumerate(lines) if line == f"* Monitoring healthy for {USER}. No profile or playlist change since the last check"]
+    banners = [number for number, line in enumerate(lines) if line == f"* Monitoring healthy for {ALERT_TARGET}. No profile or playlist change since the last check"]
     assert len(banners) == expected
     assert all(lines[number + 1].startswith("Liveness check, timestamp:") for number in banners)
 
@@ -264,7 +266,7 @@ def test_a_watchdog_timeout_is_reported_and_alerted(monkeypatch, tmp_path, capsy
     output = capsys.readouterr().out
     assert output.count("* Error:") == 1
     assert len(errors) == 1
-    assert errors[0]["subject"] == f"Spotify Profile Monitor error: Spotify did not answer in time (user: {USER})"
+    assert errors[0]["subject"] == f"Spotify Profile Monitor error: Spotify did not answer in time (user: {ALERT_TARGET})"
 
 
 # Verifies a run that halts and then answers again reports the recovery, which needs the timeout to have opened an outage
@@ -272,7 +274,7 @@ def test_a_watchdog_timeout_that_clears_announces_the_recovery(monkeypatch, tmp_
     answers = [profile_snapshot(), monitor.TimeoutException("Spotify timeout"), monitor.TimeoutException("Spotify timeout"), profile_snapshot()]
     error_alerts_for(monkeypatch, tmp_path, answers, 5)
 
-    assert capsys.readouterr().out.count(f"* Monitoring recovered for {USER} after ") == 1
+    assert capsys.readouterr().out.count(f"* Monitoring recovered for {ALERT_TARGET} after ") == 1
 
 
 # Verifies a follower poll that keeps failing alerts too, since the profile poll answering does not make the check complete
@@ -291,7 +293,7 @@ def test_a_check_that_reported_a_change_does_not_claim_it_was_quiet(monkeypatch,
 
     output = capsys.readouterr().out
     assert "has changed username to 'Renamed Person'" in output
-    assert f"* Monitoring healthy for {USER}." not in output
+    assert f"* Monitoring healthy for {ALERT_TARGET}." not in output
 
 
 # Returns every delivery line that no timestamp closes before the next separator, which would leave it dangling
@@ -326,7 +328,7 @@ def test_the_degraded_reminder_closes_after_the_alert_it_carries(monkeypatch, tm
     error_alerts_for(monkeypatch, tmp_path, [profile_snapshot(), *[RuntimeError("503 Server Error")] * 6], 5)
 
     lines = capsys.readouterr().out.splitlines()
-    reminder = next(number for number, line in enumerate(lines) if line.startswith(f"* Monitoring degraded for {USER}."))
+    reminder = next(number for number, line in enumerate(lines) if line.startswith(f"* Monitoring degraded for {ALERT_TARGET}."))
     assert lines[reminder + 1].startswith("Sending email notification to ")
     assert lines[reminder + 3].startswith("Liveness check, timestamp:")
     assert unclosed_delivery_lines("\n".join(lines)) == []
@@ -340,12 +342,12 @@ def test_a_recovery_alert_closes_the_failure_alert(monkeypatch, tmp_path, capsys
     failures, recoveries = failure_alerts(alerts), recovery_alerts(alerts)
 
     assert len(failures) == 1 and len(recoveries) == 1
-    assert failures[0]["subject"] == f"Spotify Profile Monitor error: Spotify is temporarily unavailable (user: {USER})"
+    assert failures[0]["subject"] == f"Spotify Profile Monitor error: Spotify is temporarily unavailable (user: {ALERT_TARGET})"
     assert failures[0]["body"].startswith("Spotify is temporarily unavailable\n\nTo fix: Usually nothing to do, ")
     assert "\nFailed checks in a row: 2\nFailing since: " in failures[0]["body"]
     assert "\nNext retry in: 5 minutes\n" in failures[0]["body"]
-    assert recoveries[0]["subject"] == f"Spotify Profile Monitor recovered: monitoring {USER} resumed after 10 minutes"
-    assert recoveries[0]["body"].startswith(f"Monitoring recovered for {USER} after 10 minutes.\n\nThe failure was: Spotify is temporarily unavailable")
+    assert recoveries[0]["subject"] == f"Spotify Profile Monitor recovered: monitoring {ALERT_TARGET} resumed after 10 minutes"
+    assert recoveries[0]["body"].startswith(f"Monitoring recovered for {ALERT_TARGET} after 10 minutes.\n\nThe failure was: Spotify is temporarily unavailable")
     assert (recoveries[0]["email"], recoveries[0]["webhook"]) == (True, True)
     assert unclosed_delivery_lines(capsys.readouterr().out) == []
 
@@ -367,7 +369,7 @@ def test_a_failure_nobody_was_alerted_about_ends_without_a_recovery_alert(monkey
     alerts = error_alerts_for(monkeypatch, tmp_path, answers, 4, check_interval=300)
 
     assert alerts == []
-    assert capsys.readouterr().out.count(f"* Monitoring recovered for {USER} after ") == 1
+    assert capsys.readouterr().out.count(f"* Monitoring recovered for {ALERT_TARGET} after ") == 1
 
 
 # Verifies a rate limited profile poll comes back on its own short backoff rather than on the error interval,
