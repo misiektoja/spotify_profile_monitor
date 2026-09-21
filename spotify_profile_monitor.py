@@ -3809,9 +3809,10 @@ def outage_recovered_body(target: str, lasted: int, summary: str, with_timestamp
     return body + (get_cur_ts("\n\nTimestamp: ") if with_timestamp else "")
 
 
-# Builds the HTML body of the recovery alert from the same text
+# Builds the HTML body of the recovery alert, with the profile and the outage length in bold like the failure alert
 def outage_recovered_body_html(target: str, lasted: int, summary: str, with_timestamp: bool = True) -> str:
-    return f"<html><head></head><body>{html_text(outage_recovered_body(target, lasted, summary, False))}{get_cur_ts('<br><br>Timestamp: ') if with_timestamp else ''}</body></html>"
+    body = f"Monitoring recovered for <b>{html_text(str(target))}</b> after <b>{html_text(display_time(lasted))}</b>.<br><br>The failure was: {html_text(summary)}"
+    return f"<html><head></head><body>{body}{get_cur_ts('<br><br>Timestamp: ') if with_timestamp else ''}</body></html>"
 
 
 # Alerts each enabled channel about a failing check once its outage is old enough, holds a channel that could not
