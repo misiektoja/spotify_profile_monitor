@@ -3753,7 +3753,7 @@ def send_notification_channels(notification_type: str, subject: str, body: str, 
 # Names the monitored profile by display name and URI id, since the id alone is hard to place in an alert
 def profile_alert_target(user_uri_id: str, username: str = "") -> str:
     name = sanitize_terminal_text(str(username or "")).strip()
-    return f"{name} ({user_uri_id})" if name and name != str(user_uri_id) else str(user_uri_id)
+    return f"{name}, {user_uri_id}" if name and name != str(user_uri_id) else str(user_uri_id)
 
 
 # Builds the subject every failure alert shares, so an inbox fed by several monitors sorts them by tool
