@@ -3750,6 +3750,12 @@ def send_notification_channels(notification_type: str, subject: str, body: str, 
     return email_delivered, webhook_delivered
 
 
+# Names the monitored profile by display name and URI id, since the id alone is hard to place in an alert
+def profile_alert_target(user_uri_id: str, username: str = "") -> str:
+    name = sanitize_terminal_text(str(username or "")).strip()
+    return f"{name} ({user_uri_id})" if name and name != str(user_uri_id) else str(user_uri_id)
+
+
 # Builds the subject every failure alert shares, so an inbox fed by several monitors sorts them by tool
 def recovery_alert_subject(advice: RecoveryAdvice, target: str) -> str:
     return f"Spotify Profile Monitor error: {advice.summary} (user: {target})"
@@ -12590,14 +12596,14 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             monitor_recovery_tracker.reset()
             outage_lasted = outage.recovered()
             if outage_lasted is not None:
-                print_outage_recovery(user_uri_id, outage_lasted, error_alert)
+                print_outage_recovery(profile_alert_target(user_uri_id, username), outage_lasted, error_alert)
             _restore_timeout_alarm(alarm_state)
         except TimeoutException as e:
             _restore_timeout_alarm(alarm_state)
             advice = classify_recovery_error(e, "runtime")
 
             # A halted request is one more failing check, so it shares the outage clock and the alert the other failures use
-            report_failing_check(outage.failed(advice), user_uri_id, advice, e, outage, error_alert, retry_seconds=ALARM_RETRY, tracker=monitor_recovery_tracker)
+            report_failing_check(outage.failed(advice), profile_alert_target(user_uri_id, username), advice, e, outage, error_alert, retry_seconds=ALARM_RETRY, tracker=monitor_recovery_tracker)
 
             time.sleep(ALARM_RETRY)
             continue
@@ -12619,7 +12625,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
             outage_outcome = outage.failed(advice)
             retry_seconds = failure_retry_seconds(advice, outage.failures)
-            report_failing_check(outage_outcome, user_uri_id, advice, e, outage, error_alert, retry_seconds=retry_seconds, context=context, tracker=monitor_recovery_tracker)
+            report_failing_check(outage_outcome, profile_alert_target(user_uri_id, username), advice, e, outage, error_alert, retry_seconds=retry_seconds, context=context, tracker=monitor_recovery_tracker)
 
             time.sleep(retry_seconds)
             continue
@@ -12654,14 +12660,14 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             follower_recovery_tracker.reset()
             follower_lasted = follower_outage.recovered()
             if follower_lasted is not None:
-                print_outage_recovery(user_uri_id, follower_lasted, error_alert)
+                print_outage_recovery(profile_alert_target(user_uri_id, username), follower_lasted, error_alert)
         except Exception as e:
             follower_advice = classify_recovery_error(e, f"{TOKEN_SOURCE}_auth")
 
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
             follower_outcome = follower_outage.failed(follower_advice)
             follower_retry_seconds = failure_retry_seconds(follower_advice, follower_outage.failures)
-            report_failing_check(follower_outcome, user_uri_id, follower_advice, e, follower_outage, error_alert, retry_seconds=follower_retry_seconds, context=f"{TOKEN_SOURCE}_auth", label="Error while getting followers and followings", tracker=follower_recovery_tracker)
+            report_failing_check(follower_outcome, profile_alert_target(user_uri_id, username), follower_advice, e, follower_outage, error_alert, retry_seconds=follower_retry_seconds, context=f"{TOKEN_SOURCE}_auth", label="Error while getting followers and followings", tracker=follower_recovery_tracker)
 
             time.sleep(follower_retry_seconds)
             continue
@@ -13521,12 +13527,12 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             # which on a long interval would leave the run blind for hours over a rate limit that clears in minutes.
             # A failure nothing here can retry away keeps the poll interval, since asking again sooner only repeats it
             next_check_seconds = min(failure_retry_seconds(playlist_advice, playlist_outage.failures), SPOTIFY_CHECK_INTERVAL) if playlist_advice.retryable else SPOTIFY_CHECK_INTERVAL
-            report_failing_check(playlist_outcome, user_uri_id, playlist_advice, playlist_error, playlist_outage, error_alert, retry_seconds=next_check_seconds, context="playlist", label="Error while processing playlists")
+            report_failing_check(playlist_outcome, profile_alert_target(user_uri_id, username), playlist_advice, playlist_error, playlist_outage, error_alert, retry_seconds=next_check_seconds, context="playlist", label="Error while processing playlists")
         else:
             next_check_seconds = SPOTIFY_CHECK_INTERVAL
             playlist_lasted = playlist_outage.recovered()
             if playlist_lasted is not None:
-                print_outage_recovery(user_uri_id, playlist_lasted, error_alert)
+                print_outage_recovery(profile_alert_target(user_uri_id, username), playlist_lasted, error_alert)
             # Every poll of this check answered, so a failure that was noted but never confirmed must not shorten
             # the alert delay of the next outage
             error_alert.reset()
@@ -13538,7 +13544,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         if REPORTS_PRINTED != reports_before_check or error_while_processing:
             alive_since = int(time.time())
         elif LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
-            print_liveness_banner(f"Monitoring healthy for {user_uri_id}. No profile or playlist change since the last check")
+            print_liveness_banner(f"Monitoring healthy for {profile_alert_target(user_uri_id, username)}. No profile or playlist change since the last check")
             alive_since = int(time.time())
 
         # Only a check that got this far advanced the baselines, so a failing check leaves the window where it was
