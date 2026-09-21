@@ -1158,6 +1158,34 @@ def test_the_recovery_alert_reaches_only_the_alerted_channel(monkeypatch):
     assert state.email_sent is False and state.since is None
 
 
+# Verifies a channel whose failure alert never landed is told about the outage and its end together, since a channel
+# blocked for the length of the outage would otherwise hear nothing at all
+def test_a_channel_that_missed_the_failure_alert_is_told_about_the_whole_outage(monkeypatch):
+    sent = []
+
+    # Records the alert the dispatcher hands the channels instead of delivering it
+    def record(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, **keywords):
+        sent.append({"body": body, "webhook_body": keywords.get("webhook_body", ""), "email": email_enabled, "webhook": webhook_enabled})
+        return bool(email_enabled), bool(webhook_enabled)
+
+    monkeypatch.setattr(monitor, "send_notification_channels", record)
+    monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
+    monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
+    monkeypatch.setattr(monitor, "webhook_event_enabled", lambda notification_type: True)
+    state = monitor.ErrorAlertState()
+    state.since = 1_700_000_000
+    state.summary = "Spotify is temporarily unavailable"
+    state.email_sent = True
+    state.webhook_failures = 1
+
+    assert monitor.dispatch_recovery_alert(state, "watched-user", 600) is True
+    assert (sent[0]["email"], sent[0]["webhook"]) == (True, True)
+    assert sent[0]["body"].startswith("Monitoring recovered for watched-user after 10 minutes.")
+    assert sent[0]["webhook_body"].startswith("Monitoring failed for watched-user at ")
+    assert "The failure was: Spotify is temporarily unavailable" in sent[0]["webhook_body"]
+    assert sent[0]["webhook_body"].endswith("The failure alert could not be delivered here while the failure lasted.")
+
+
 # Verifies a failure no channel was alerted about ends without a recovery alert and leaves the alert clock alone,
 # since another poll of the same check may still be failing
 def test_a_failure_nobody_was_told_about_ends_quietly(monkeypatch):

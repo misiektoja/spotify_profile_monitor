@@ -8,7 +8,9 @@ import spotify_profile_monitor as monitor
 
 USER = "watched-user"
 # The alert label the loop builds, since a failure names the profile by display name and URI id
-ALERT_TARGET = "Watched Person, watched-user"
+ALERT_TARGET = "Watched Person (watched-user)"
+# The same label inside a subject that already brackets it, where a second pair of brackets would nest
+ALERT_TARGET_INLINE = "Watched Person, watched-user"
 
 
 class LoopStopped(BaseException):
@@ -143,7 +145,7 @@ def test_a_failure_that_cannot_clear_itself_is_alerted_at_once(monkeypatch, tmp_
 
     assert len(errors) == 1
     assert not errors[0]["subject"].startswith("spotify_profile_monitor: ")
-    assert errors[0]["subject"] == f"Spotify Profile Monitor error: Spotify rejected the sp_dc cookie (user: {ALERT_TARGET})"
+    assert errors[0]["subject"] == f"Spotify Profile Monitor error: Spotify rejected the sp_dc cookie (user: {ALERT_TARGET_INLINE})"
     assert "To fix:" in errors[0]["body"]
 
 
@@ -266,7 +268,7 @@ def test_a_watchdog_timeout_is_reported_and_alerted(monkeypatch, tmp_path, capsy
     output = capsys.readouterr().out
     assert output.count("* Error:") == 1
     assert len(errors) == 1
-    assert errors[0]["subject"] == f"Spotify Profile Monitor error: Spotify did not answer in time (user: {ALERT_TARGET})"
+    assert errors[0]["subject"] == f"Spotify Profile Monitor error: Spotify did not answer in time (user: {ALERT_TARGET_INLINE})"
 
 
 # Verifies a run that halts and then answers again reports the recovery, which needs the timeout to have opened an outage
@@ -342,7 +344,7 @@ def test_a_recovery_alert_closes_the_failure_alert(monkeypatch, tmp_path, capsys
     failures, recoveries = failure_alerts(alerts), recovery_alerts(alerts)
 
     assert len(failures) == 1 and len(recoveries) == 1
-    assert failures[0]["subject"] == f"Spotify Profile Monitor error: Spotify is temporarily unavailable (user: {ALERT_TARGET})"
+    assert failures[0]["subject"] == f"Spotify Profile Monitor error: Spotify is temporarily unavailable (user: {ALERT_TARGET_INLINE})"
     assert failures[0]["body"].startswith("Spotify is temporarily unavailable\n\nTo fix: Usually nothing to do, ")
     assert "\nFailed checks in a row: 2\nFailing since: " in failures[0]["body"]
     assert "\nNext retry in: 5 minutes\n" in failures[0]["body"]
