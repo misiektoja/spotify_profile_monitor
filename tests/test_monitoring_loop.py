@@ -19,8 +19,8 @@ def profile_snapshot():
 
 
 # Runs the loop until stop_after sleeps have passed and returns the error alerts it handed to the channels
-def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answers=(), check_interval=1800, liveness_seconds=None, delivery_results=(), playlist_checks=False, playlist_answers=(), collection_events=None, initial_followers=(), following_answers=(), sleep_log=None):
-    calls = []
+def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answers=(), check_interval=1800, liveness_seconds=None, delivery_results=(), playlist_checks=False, playlist_answers=(), collection_events=None, initial_followers=(), following_answers=(), sleep_log=None, alert_log=None):
+    calls = alert_log if alert_log is not None else []
     sleeps = sleep_log if sleep_log is not None else []
     now = [1_800_000_000.0]
     remaining = list(answers)
@@ -71,7 +71,7 @@ def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answer
 
     # Prints the same delivery lines the real dispatcher prints, so a report that leaves one outside itself is visible
     def record_delivery(notification_type, subject, body, body_html="", email_enabled=False, webhook_enabled=None, **keywords):
-        calls.append({"type": notification_type, "subject": subject, "body": body, "body_html": body_html, "webhook_body": keywords.get("webhook_body", ""), "email": email_enabled, "webhook": webhook_enabled})
+        calls.append({"type": notification_type, "subject": subject, "body": body, "body_html": body_html, "webhook_body": keywords.get("webhook_body", ""), "webhook_body_html": keywords.get("webhook_body_html", ""), "email": email_enabled, "webhook": webhook_enabled})
         if email_enabled:
             print(f"Sending email notification to {monitor.RECEIVER_EMAIL}")
         if webhook_enabled:
@@ -151,7 +151,7 @@ def test_the_guide_link_keeps_its_own_line_in_the_html_body(monkeypatch, tmp_pat
 
     parts = errors[0]["body_html"].split("<br>")
     fix_index = next(index for index, part in enumerate(parts) if part.startswith("To fix: "))
-    assert parts[fix_index + 1].startswith("Guide: https://")
+    assert parts[fix_index + 1].startswith('Guide: <a href="https://')
     assert "\n" not in parts[fix_index]
 
 

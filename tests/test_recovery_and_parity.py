@@ -1122,7 +1122,8 @@ def test_the_failure_alert_html_body_matches_the_plain_one(monkeypatch):
     body_html = monitor.recovery_alert_body_html(advice, 300, 4, 1_700_000_000, with_timestamp=False)
 
     assert body_html.startswith("<html><head></head><body><b>Spotify is temporarily unavailable</b><br><br>To fix: Usually nothing to do, ")
-    assert f"<br>Guide: {monitor.CONNECTION_GUIDE_URL}<br><br>Failed checks in a row: 4<br>Failing since: " in body_html
+    guide_link = f'<a href="{monitor.CONNECTION_GUIDE_URL}">{monitor.CONNECTION_GUIDE_URL}</a>'
+    assert f"<br>Guide: {guide_link}<br><br>Failed checks in a row: <b>4</b><br>Failing since: " in body_html
     assert body_html.endswith("<br>Next retry in: 5 minutes</body></html>")
     assert "\n" not in body_html
 
