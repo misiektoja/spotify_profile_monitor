@@ -2585,6 +2585,11 @@ def html_text(text: str) -> str:
     return escape(text).replace("\n", "<br>")
 
 
+# Turns a bare URL inside already escaped HTML text into a link, so an alert that prints a guide link is clickable
+def html_autolink_urls(content: str) -> str:
+    return re.sub(r"(?<![\"'=])(https?://[^\s<>\"']+[^\s<>\"'.,;:!?)\]])", r'<a href="\1">\1</a>', str(content))
+
+
 # Returns the advice a cancelled secret entry reports, worded the same way by every one-shot secret command
 def secret_entry_cancelled_advice(subject, flag, guide_url):
     return make_recovery_advice("secret.entry", f"{subject[:1].upper()}{subject[1:]} setup was cancelled and the dotenv file was not changed", recovery_fix_with_guide(f"Run {flag} again when you have the value ready", guide_url), False)
@@ -3762,16 +3767,18 @@ def recovery_alert_body(advice: RecoveryAdvice, retry_seconds: int, failed_check
     return body + (get_cur_ts("\n\nTimestamp: ") if with_timestamp else "")
 
 
-# Bolds the moment an outage started, the field a reader looks for first in a failure alert
-def html_bold_failing_since(content):
-    return re.sub(r"(Failing since: )([^<]+)", r"\1<b>\2</b>", content, count=1)
+# Bolds the values a reader scans a failure alert for: how often it has failed and since when
+def html_bold_outage_fields(content):
+    for label in ("Failed checks in a row: ", "Failing since: "):
+        content = re.sub(f"({re.escape(label)})([^<]+)", r"\1<b>\2</b>", content, count=1)
+    return content
 
 
 # Builds the HTML body of the failure alert from the same fields, with the summary in bold
 def recovery_alert_body_html(advice: RecoveryAdvice, retry_seconds: int, failed_checks: int = 0, failing_since: int = 0, with_timestamp: bool = True) -> str:
     groups = recovery_alert_groups(advice, retry_seconds, failed_checks, failing_since)
-    rendered = [f"<b>{html_text(groups[0][0])}</b>"] + ["<br>".join(html_text(line) for line in group) for group in groups[1:]]
-    return html_bold_failing_since(f"<html><head></head><body>{'<br><br>'.join(rendered)}{get_cur_ts('<br><br>Timestamp: ') if with_timestamp else ''}</body></html>")
+    rendered = [f"<b>{html_text(groups[0][0])}</b>"] + ["<br>".join(html_autolink_urls(html_text(line)) for line in group) for group in groups[1:]]
+    return html_bold_outage_fields(f"<html><head></head><body>{'<br><br>'.join(rendered)}{get_cur_ts('<br><br>Timestamp: ') if with_timestamp else ''}</body></html>")
 
 
 # Builds the subject of the alert that closes a failure alert, shaped like it so the two sort together
