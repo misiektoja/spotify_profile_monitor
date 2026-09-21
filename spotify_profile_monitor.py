@@ -3750,15 +3750,33 @@ def send_notification_channels(notification_type: str, subject: str, body: str, 
     return email_delivered, webhook_delivered
 
 
+# Carries the two shapes a target is written in, since a subject that already brackets it cannot nest another pair
+class AlertTarget(str):
+    inline: str
+
+    # Builds the running text form and keeps the flat form beside it
+    def __new__(cls, identifier: str, name: str = "") -> "AlertTarget":
+        identifier = str(identifier)
+        display = sanitize_terminal_text(str(name or "")).strip()
+        display = display if display and display != identifier else ""
+        target = super().__new__(cls, f"{display} ({identifier})" if display else identifier)
+        target.inline = f"{display}, {identifier}" if display else identifier
+        return target
+
+
 # Names the monitored profile by display name and URI id, since the id alone is hard to place in an alert
-def profile_alert_target(user_uri_id: str, username: str = "") -> str:
-    name = sanitize_terminal_text(str(username or "")).strip()
-    return f"{name}, {user_uri_id}" if name and name != str(user_uri_id) else str(user_uri_id)
+def profile_alert_target(user_uri_id: str, username: str = "") -> AlertTarget:
+    return AlertTarget(user_uri_id, username)
+
+
+# Returns the form of a target that fits inside text already wrapped in brackets, where another pair would nest
+def alert_target_inline(target) -> str:
+    return getattr(target, "inline", None) or str(target)
 
 
 # Builds the subject every failure alert shares, so an inbox fed by several monitors sorts them by tool
 def recovery_alert_subject(advice: RecoveryAdvice, target: str) -> str:
-    return f"Spotify Profile Monitor error: {advice.summary} (user: {target})"
+    return f"Spotify Profile Monitor error: {advice.summary} (user: {alert_target_inline(target)})"
 
 
 # Lists the fields of the failure alert as groups of lines, so the plain and HTML bodies are built from one source
