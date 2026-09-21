@@ -2676,7 +2676,7 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
 
     if context == "browser_import":
         if any(term in message for term in ("network", "connectivity", "timeout", "timed out", "name resolution", "dns", "proxy", "ssl")):
-            return make_recovery_advice("network.unavailable", safe_detail or "Browser cookie validation could not reach Spotify", recovery_fix_with_guide("Check connectivity then retry browser import", BROWSER_COOKIE_GUIDE_URL), True, safe_detail)
+            return make_recovery_advice("network.unavailable", safe_detail or "Browser cookie validation could not reach Spotify", recovery_fix_with_guide("Check connectivity then retry browser import", CONNECTION_GUIDE_URL), True, safe_detail)
         if any(term in message for term in ("invalid or expired", "authentication rejected", "no sp_dc", "nonempty sp_dc")):
             return make_recovery_advice("auth.cookie_invalid", safe_detail or "No valid sp_dc cookie was found", recovery_fix_with_guide(cookie_auth_recovery_fix(), BROWSER_COOKIE_GUIDE_URL), False, safe_detail)
         if any(term in message for term in ("database", "cookie file", "cookies.sqlite", "could not read")):
@@ -2689,7 +2689,7 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         if "interactive terminal" in message:
             return make_recovery_advice("secret.missing", "--set-sp-dc requires an interactive terminal", recovery_fix_with_guide("Run --set-sp-dc from an interactive shell so the cookie remains hidden", SECRETS_GUIDE_URL), False, safe_detail)
         if any(term in message for term in ("network", "connectivity", "timeout", "timed out", "name resolution")):
-            return make_recovery_advice("network.unavailable", "Spotify cookie validation could not reach Spotify", recovery_fix_with_guide("Check connectivity then run the private entry command again", MANUAL_COOKIE_GUIDE_URL), True, safe_detail)
+            return make_recovery_advice("network.unavailable", "Spotify cookie validation could not reach Spotify", recovery_fix_with_guide("Check connectivity then run the private entry command again", CONNECTION_GUIDE_URL), True, safe_detail)
         if any(term in message for term in ("invalid or expired", "authentication rejected", "no nonempty", "rejected")):
             return make_recovery_advice("auth.cookie_invalid", "Spotify rejected the entered sp_dc cookie", recovery_fix_with_guide("Sign in to Spotify Web Player then run the private entry command again", MANUAL_COOKIE_GUIDE_URL), False, safe_detail)
         if any(term in message for term in ("dotenv", "file permissions", "writable path")):
@@ -2717,7 +2717,7 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
     if context == "target_invalid":
         return make_recovery_advice("target.invalid", "Invalid Spotify target", recovery_fix_with_guide("Pass a Spotify profile URL, spotify:user:USER_ID URI or user ID", TARGET_GUIDE_URL), False, safe_detail)
     if context == "target" and (status == 403 or "cannot monitor user" in message):
-        return make_recovery_advice("auth.rejected", "The selected authentication mode cannot load this profile", recovery_fix_with_guide("Use cookie or client authentication for another user's profile then run Doctor again", COOKIE_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("auth.rejected", "The selected authentication mode cannot load this profile", recovery_fix_with_guide("Use cookie or client authentication for another user's profile then run Doctor again", TOKEN_SOURCE_GUIDE_URL), False, safe_detail)
     if context == "target_not_found":
         fix = "Check the target ID or profile URL then retry"
         if target_user_id:
