@@ -2637,6 +2637,24 @@ def iter_exc_chain(error, max_depth=8):
         current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
 
 
+# Names the transport failure behind an exception chain, since a timeout raised with no message leaves the text rules nothing to read
+def network_failure_code(error):
+    timed_out = False
+    unreachable = False
+    for current in iter_exc_chain(error):
+        name = type(current).__name__
+        # A TLS failure has its own advice, so a chain that names one is left to the rules that recognize it
+        if "SSL" in name or "Certificate" in name:
+            return ""
+        if isinstance(current, TimeoutError) or "Timeout" in name:
+            timed_out = True
+        elif isinstance(current, ConnectionError) or name in ("gaierror", "herror") or any(term in name for term in ("Connect", "ProxyError", "NameResolution", "Unreachable")):
+            unreachable = True
+    if timed_out:
+        return "network.timeout"
+    return "network.unavailable" if unreachable else ""
+
+
 # Reports whether this process hit the local file descriptor limit rather than a remote failure
 def is_too_many_open_files(error):
     for current in iter_exc_chain(error):
@@ -2755,13 +2773,15 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         return make_recovery_advice("smtp.authentication", "SMTP authentication was rejected", recovery_fix_with_guide("Verify SMTP_USER and SMTP_PASSWORD then run --send-test-email", SMTP_GUIDE_URL), False, safe_detail)
     if isinstance(error, (smtplib.SMTPException, ConnectionError)) and context.startswith("smtp"):
         return make_recovery_advice("smtp.connection", "The SMTP server connection failed", recovery_fix_with_guide("Verify SMTP_HOST, SMTP_PORT and SMTP_SSL then run --send-test-email", SMTP_GUIDE_URL), True, safe_detail)
-    if isinstance(error, (req.Timeout, TimeoutException, socket.timeout)) or "timed out" in message or " timeout" in message:
+    # The chain is read alongside the text, since a transport error can arrive with an empty message
+    transport_code = network_failure_code(error)
+    if isinstance(error, (req.Timeout, TimeoutException, socket.timeout)) or transport_code == "network.timeout" or "timed out" in message or " timeout" in message:
         if context.startswith("smtp"):
             return make_recovery_advice("smtp.connection", "The SMTP connection timed out", recovery_fix_with_guide("Verify SMTP_HOST, SMTP_PORT and network access then run --send-test-email", SMTP_GUIDE_URL), True, safe_detail)
         return make_recovery_advice("network.timeout", "Spotify did not answer in time", recovery_fix_with_guide("Usually nothing to do, the tool retries on its own. If it continues, check network access, DNS, firewall and proxy settings", CONNECTION_GUIDE_URL), True, safe_detail)
     if isinstance(error, req.exceptions.SSLError) or any(term in message for term in ("certificate verify failed", "tls", "ssl error")):
         return make_recovery_advice("network.unavailable", "A secure connection could not be established", recovery_fix_with_guide("Check the system clock, CA certificates, firewall and TLS-inspecting proxy settings then retry", TLS_GUIDE_URL), True, safe_detail)
-    if isinstance(error, (req.ConnectionError, socket.gaierror)) or any(term in message for term in ("name resolution", "failed to resolve", "network is unreachable", "connection refused", "connection aborted", "max retries exceeded")):
+    if isinstance(error, (req.ConnectionError, socket.gaierror)) or transport_code == "network.unavailable" or any(term in message for term in ("name resolution", "failed to resolve", "network is unreachable", "connection refused", "connection aborted", "max retries exceeded")):
         return make_recovery_advice("network.unavailable", "Spotify could not be reached", recovery_fix_with_guide("Usually nothing to do, the tool retries on its own. If it continues, check network access, DNS, firewall and proxy settings", CONNECTION_GUIDE_URL), True, safe_detail)
     if status == 429 or mentions_status_code("429", message) or any(term in message for term in ("too many requests", "rate limit")):
         return make_recovery_advice("spotify.rate_limited", "Spotify is rate limiting requests", recovery_fix_with_guide("Wait before retrying and increase --check-interval if this repeats", INTERVALS_GUIDE_URL), True, safe_detail)
