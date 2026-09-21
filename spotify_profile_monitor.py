@@ -2620,11 +2620,22 @@ def resolved_command_config(config_path=None):
     return "none" if CONFIG_DISCOVERY_DISABLED else find_config_file()
 
 
+# Names the other browsers the import accepts
+def cookie_auth_recovery_browser_hint() -> str:
+    # Nothing records which browser a cookie came from, so a message built around the Firefox command names the
+    # alternatives rather than sending a Chrome or Brave user to a browser they may not even have
+    others = [browser for browser in _wizard_import_browsers() if browser != "firefox"]
+    if not others:
+        return ""
+    listed = f"{', '.join(others[:-1])} or {others[-1]}" if len(others) > 1 else others[0]
+    return f" (use --browser {listed} to import from one of those instead)"
+
+
 # Returns an install-aware Firefox cookie recovery command
 def cookie_auth_recovery_fix() -> str:
     # The import reads the config and writes the dotenv, so the config sentinel is carried while the dotenv one is not
     command = _wizard_action_command(_wizard_install_method(), "--import-browser-cookie --browser firefox", active_config_path(), active_dotenv_path())
-    return f"Open {SPOTIFY_WEB_LOGIN_URL} in Firefox. Sign in to the Spotify account used for monitoring then run: {command}"
+    return f"Open {SPOTIFY_WEB_LOGIN_URL} in Firefox. Sign in to the Spotify account used for monitoring then run: {command}{cookie_auth_recovery_browser_hint()}"
 
 
 # Builds a directly usable Spotify profile URL from a normalized user ID
