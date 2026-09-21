@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 4.0 (TBD)
+# Changes in 4.0 (22 Sep 2026)
 
 Version **4.0** reports a follower or following who changed their display name as a **rename** rather than as an addition and a removal, and no longer stays silent about follower changes that leave the total unchanged. It also brings a check that could not finish back on the **error interval** instead of waiting out the full polling interval, retries **rate limiting** on its own short backoff. Alert delivery messages stay within the correct check report and alert channels that still use placeholder configuration values are shown as not configured.
 
