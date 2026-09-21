@@ -3762,11 +3762,16 @@ def recovery_alert_body(advice: RecoveryAdvice, retry_seconds: int, failed_check
     return body + (get_cur_ts("\n\nTimestamp: ") if with_timestamp else "")
 
 
+# Bolds the moment an outage started, the field a reader looks for first in a failure alert
+def html_bold_failing_since(content):
+    return re.sub(r"(Failing since: )([^<]+)", r"\1<b>\2</b>", content, count=1)
+
+
 # Builds the HTML body of the failure alert from the same fields, with the summary in bold
 def recovery_alert_body_html(advice: RecoveryAdvice, retry_seconds: int, failed_checks: int = 0, failing_since: int = 0, with_timestamp: bool = True) -> str:
     groups = recovery_alert_groups(advice, retry_seconds, failed_checks, failing_since)
     rendered = [f"<b>{html_text(groups[0][0])}</b>"] + ["<br>".join(html_text(line) for line in group) for group in groups[1:]]
-    return f"<html><head></head><body>{'<br><br>'.join(rendered)}{get_cur_ts('<br><br>Timestamp: ') if with_timestamp else ''}</body></html>"
+    return html_bold_failing_since(f"<html><head></head><body>{'<br><br>'.join(rendered)}{get_cur_ts('<br><br>Timestamp: ') if with_timestamp else ''}</body></html>")
 
 
 # Builds the subject of the alert that closes a failure alert, shaped like it so the two sort together
