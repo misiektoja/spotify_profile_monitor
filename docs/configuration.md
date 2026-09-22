@@ -191,6 +191,8 @@ spotify_profile_monitor --import-browser-cookie --browser chrome
 
 Select a Chromium browser profile by its directory name, such as `Default` or `Profile 1`. Friendly names are also accepted.
 
+On Linux, Brave and Chromium installed from Snap or Flatpak keep their profiles outside the usual `~/.config` location. Import searches those locations too, so no extra option is needed.
+
 <a id="manual-cookie-extraction"></a>
 #### Manual cookie extraction
 
