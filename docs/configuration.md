@@ -391,6 +391,8 @@ python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
 
 Email notifications need SMTP server details for the sending account. Add them to `spotify_profile_monitor.conf` or use the setup wizard. Setup checks the login without sending an email. To replace only the password, run `spotify_profile_monitor --set-smtp-password`. Password entry is hidden and preserves spaces.
 
+Every alert is sent as both HTML and plain text in one message. Mail clients that render HTML show the monitored user, the changed value and the check interval in bold, with each follower, following, playlist and track linked to its Spotify page. Clients that do not fall back to the plain text, which is unchanged.
+
 Send one test message to verify the settings:
 
 ```sh
@@ -575,6 +577,7 @@ Parts with the same name mean the same thing in [spotify_monitor](https://github
 | `warning`, `signal` | The opening `Warning:` word and the name of a received signal. The rest of the line keeps the colours of the values in it |
 | `email`, `webhook` | Notification delivery lines |
 | `date`, `date_range` | Single dates and times, and date or hour ranges |
+| `weekday` | The weekday column of the track listings |
 | `boolean_true`, `boolean_false` | `True` / `Enabled` and `False` / `Disabled` |
 | `count_up`, `count_down` | Reported changes only, such as `from 10 to 12` and the `(+2)` / `(-2)` differences. A static count is left plain |
 | `link` | URLs |

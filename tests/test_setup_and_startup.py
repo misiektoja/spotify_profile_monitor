@@ -1378,7 +1378,7 @@ def test_the_cookie_recovery_command_leaves_the_dotenv_sentinel_out(monkeypatch)
     fix = monitor.cookie_auth_recovery_fix()
 
     assert "--env-file" not in fix
-    assert fix.endswith(runtime_command(f"{PYTHON_NAME} spotify_profile_monitor.py --import-browser-cookie --browser firefox"))
+    assert fix.endswith(runtime_command(f"{PYTHON_NAME} spotify_profile_monitor.py --import-browser-cookie --browser firefox") + monitor.cookie_auth_recovery_browser_hint())
 
 
 # Verifies the config sentinel is carried, since the import it suggests reads the config rather than writing it
@@ -1390,7 +1390,24 @@ def test_the_cookie_recovery_command_carries_the_config_sentinel(monkeypatch):
 
     fix = monitor.cookie_auth_recovery_fix()
 
-    assert fix.endswith(runtime_command(f"{PYTHON_NAME} spotify_profile_monitor.py --import-browser-cookie --browser firefox --config-file none"))
+    assert fix.endswith(runtime_command(f"{PYTHON_NAME} spotify_profile_monitor.py --import-browser-cookie --browser firefox --config-file none") + monitor.cookie_auth_recovery_browser_hint())
+
+
+# Verifies a recovery message names the other browsers rather than sending every user to Firefox
+def test_the_cookie_recovery_hint_names_the_other_browsers(monkeypatch):
+    monkeypatch.setattr(monitor, "_wizard_import_browsers", lambda: list(monitor.IMPORT_BROWSERS))
+    assert monitor.cookie_auth_recovery_browser_hint() == " (use --browser chrome, brave or chromium to import from one of those instead)"
+
+    monkeypatch.setattr(monitor, "_wizard_import_browsers", lambda: ["firefox", "chrome"])
+    assert monitor.cookie_auth_recovery_browser_hint() == " (use --browser chrome to import from one of those instead)"
+
+
+# Verifies the hint stays out of the way where Firefox is the only supported browser
+def test_the_cookie_recovery_hint_is_empty_when_firefox_is_the_only_option(monkeypatch):
+    monkeypatch.setattr(monitor, "_wizard_import_browsers", lambda: ["firefox"])
+
+    assert monitor.cookie_auth_recovery_browser_hint() == ""
+    assert "--browser chrome" not in monitor.cookie_auth_recovery_fix()
 
 
 # Verifies the no-target error opens with the banner, the way every other error path in the sibling monitors does

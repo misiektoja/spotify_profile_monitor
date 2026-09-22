@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v3.9
+v4.0
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -22,7 +22,7 @@ pathvalidate (optional, needed by --export-all-playlists)
 Pillow (needed for email and ntfy artwork attachments)
 """
 
-VERSION = "3.9"
+VERSION = "4.0"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -118,7 +118,7 @@ EMAIL_IMAGES = False
 # Can also be disabled via the -g flag
 FOLLOWERS_FOLLOWINGS_NOTIFICATION = True
 
-# Whether to send an email on errors
+# Whether to send an email on errors and the recovery alert that follows once the failure clears
 # Can also be disabled via the -e flag
 ERROR_NOTIFICATION = True
 
@@ -160,7 +160,7 @@ WEBHOOK_PROFILE_NOTIFICATION = False
 # Can also be disabled via the --no-webhook-followers-followings-notify flag
 WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION = True
 
-# Whether to send a webhook notification on monitoring errors
+# Whether to send a webhook notification on monitoring errors and the recovery alert that follows once the failure clears
 # Can also be enabled via --webhook-errors or disabled via --no-webhook-error-notify
 WEBHOOK_ERROR_NOTIFICATION = True
 
@@ -458,6 +458,7 @@ COLORED_OUTPUT = True
 #     # Dates
 #     "date": "magenta",
 #     "date_range": "magenta",
+#     "weekday": "cyan",
 #     # Boolean values
 #     "boolean_true": "green",
 #     "boolean_false": "red",
@@ -902,7 +903,8 @@ SECRETS_GUIDE_URL = DOCS_BASE_URL + "/configuration/#storing-secrets"
 TLS_GUIDE_URL = DOCS_BASE_URL + "/configuration/#tls-verification"
 INTERVALS_GUIDE_URL = DOCS_BASE_URL + "/usage/#check-intervals"
 DOCTOR_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#doctor-preflight"
-DIAGNOSTICS_GUIDE_URL = DOCS_BASE_URL + "/debugging/#cli-output-modes"
+CONNECTION_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#connection-problems"
+DESCRIPTOR_LIMIT_GUIDE_URL = DOCS_BASE_URL + "/troubleshooting/#too-many-open-files"
 USAGE_GUIDE_URL = DOCS_BASE_URL + "/usage/"
 TOKEN_SOURCE_GUIDE_URL = DOCS_BASE_URL + "/configuration/#spotify-access-token-source"
 
@@ -1023,6 +1025,10 @@ COLLABORATORS_PENDING_CACHE = {}
 PLAYLISTS_BASELINE_CACHE = {}
 PLAYLISTS_PENDING_CACHE = {}
 
+# When the run last read the data a change is compared against, which a shortened retry after a failing check
+# puts closer to now than the configured interval
+LAST_CHECK_TS = 0
+
 # Seconds rather than checks, because a failing run usually retries on a different interval than a healthy one
 LIVENESS_REMINDER_SECONDS = LIVENESS_CHECK_INTERVAL if LIVENESS_CHECK_INTERVAL > 0 else 0
 # How long a failure the tool can retry away must last before it is alerted, a failure it cannot is alerted at once
@@ -1030,6 +1036,12 @@ ERROR_ALERT_AFTER_SECONDS = 300  # 5 minutes
 # How long a channel that could not deliver an error alert waits before the next attempt, doubled on every further failure up to the cap
 ERROR_ALERT_RETRY_SECONDS = 300  # 5 minutes
 ERROR_ALERT_RETRY_MAX_SECONDS = 3600  # 1 hour
+
+# A rate limit clears on a timer of Spotify's own rather than on the error cadence, and it is easy to hit while
+# sweeping many playlists, so a limited check is retried sooner than any other failure with a wait that doubles
+# while the limit lasts
+RATE_LIMIT_RETRY_SECONDS = 60  # 1 minute
+RATE_LIMIT_RETRY_MAX_SECONDS = 1800  # 30 minutes
 
 
 stdout_bck = None
@@ -1188,11 +1200,13 @@ except ImportError:
     colorama_init = None
 
 
-# Tracks the error alert per channel: what was delivered, and how long a channel that failed waits before the next attempt
+# Tracks the error alert per channel: what was delivered, which failure it named and how long a channel that failed
+# waits before the next attempt
 class ErrorAlertState:
     # Starts with nothing delivered and no channel on hold
     def __init__(self) -> None:
         self.since: Optional[int] = None
+        self.summary = ""
         self.email_sent = False
         self.webhook_sent = False
         self.email_failures = 0
@@ -1207,6 +1221,10 @@ class ErrorAlertState:
     # Tells whether a channel still owes the alert and its wait after a failed attempt, if any, has passed
     def pending(self, channel: str, enabled, now: int) -> bool:
         return bool(enabled) and not getattr(self, f"{channel}_sent") and now >= getattr(self, f"{channel}_retry_at")
+
+    # Tells whether a channel was owed the failure alert but never received it, so the recovery can tell it the whole story
+    def missed(self, channel: str, enabled) -> bool:
+        return bool(enabled) and not getattr(self, f"{channel}_sent") and getattr(self, f"{channel}_failures") > 0
 
     # Records one attempt, holding a channel that failed for a growing wait so a broken server is not dialled on every check
     def record(self, channel: str, attempted: bool, delivered: bool, now: int) -> None:
@@ -1322,10 +1340,12 @@ def print_liveness_banner(message: str) -> None:
 
 
 # Reminds about a lasting failure once an hour, so a broken run still says it is alive without repeating itself
-def print_outage_liveness(target: str, advice: RecoveryAdvice, since: int, failures: int = 0) -> None:
+def print_outage_liveness(target: str, advice: RecoveryAdvice, since: int, failures: int = 0, close: bool = True) -> None:
     count = f", {failures} failed {'check' if failures == 1 else 'checks'}" if failures else ""
     print(f"* Monitoring degraded for {target}. {advice.summary} since {get_date_from_ts(since)}{count}")
-    print_cur_ts("Liveness check, timestamp:\t")
+    # A caller with an alert still to deliver closes the report itself, so the delivery lines stay inside it
+    if close:
+        print_cur_ts("Liveness check, timestamp:\t")
 
 
 # Notes that a reported outage now fails differently, in one line rather than a second full report
@@ -1333,10 +1353,23 @@ def print_outage_change(target: str, advice: RecoveryAdvice) -> None:
     print(f"* Monitoring failure changed for {target}. {advice.summary}")
 
 
-# Reports that a failure cleared, since a throttled failure no longer stops printing when it is over
-def print_outage_recovery(target: str, lasted: int) -> None:
-    print(f"* Monitoring recovered for {target} after {display_time(max(1, lasted))}")
+# Reports that a failure cleared, tells the channels that were alerted about it and closes the report below the
+# delivery lines, so they are never left standing outside it
+def print_outage_recovery(target: str, lasted: int, alert_state: Optional[ErrorAlertState] = None) -> None:
+    lasted = max(1, lasted)
+    print(f"* Monitoring recovered for {target} after {display_time(lasted)}")
+    if alert_state is not None:
+        dispatch_recovery_alert(alert_state, target, lasted)
     print_cur_ts("Timestamp:\t\t\t")
+
+
+# Returns how long a run waits after a check that could not finish, given how many checks in a row have failed
+def failure_retry_seconds(advice: RecoveryAdvice, failures: int = 1) -> int:
+    if advice.code != "spotify.rate_limited":
+        return max(1, SPOTIFY_ERROR_INTERVAL)
+    # Never longer than the poll interval, since a rate limit is not a reason to watch less often than asked
+    ceiling = min(RATE_LIMIT_RETRY_MAX_SECONDS, max(SPOTIFY_CHECK_INTERVAL, RATE_LIMIT_RETRY_SECONDS))
+    return int(min(RATE_LIMIT_RETRY_SECONDS * 2 ** max(0, failures - 1), ceiling))
 
 
 # Suppresses repeated recovery hints until a successful operation resets the category
@@ -1508,6 +1541,7 @@ DEFAULT_COLOR_THEME = {
     # Dates
     "date": "magenta",
     "date_range": "magenta",
+    "weekday": "cyan",
     # Boolean values
     "boolean_true": "green",
     "boolean_false": "red",
@@ -1581,10 +1615,14 @@ _USER_TAG_RE = re.compile(r"((?:for user|by user|of user|Spotify user|Monitoring
 # A quoted name is left to the quoted-value rule, which keeps the quotes outside the coloured span
 _CHANGE_HEADER_USER_RE = re.compile(r"((?:for|by|of)\s+user\s+|\*\s+User\s+)((?!')\S.*?)(\s+(?:from\s+\d|while\s+the\s+total\b|has\b|profile\b))")
 _DURATION_RE = re.compile(r"~?\b[0-9]{1,20}[ \t]{1,20}(?:seconds?|minutes?|hours?|days?|weeks?|months?|years?)\b", re.IGNORECASE)
-_LONG_DATE_RE = re.compile(r"\b(?:\w{3}\s+)?\d{1,2}\s+\w{3}(?:\s+\d{2,4})?[\s,]*\d{2}:\d{2}(:\d{2})?(\s*[AP]M)?\b", re.IGNORECASE)
+# The weekday in front of a date, taken from the abbreviations the running locale prints. A date is separated
+# from its weekday by one space, so the wide gap of a padded listing column cannot pull the word before it,
+# such as the last word of a track title, into the date
+_WEEKDAY_ABBR_PATTERN = "|".join(re.escape(day_abbr) for day_abbr in calendar.day_abbr)
+_LONG_DATE_RE = re.compile(r"\b(?:(?:" + _WEEKDAY_ABBR_PATTERN + r")[\t ])?\d{1,2}\s+\w{3}(?:\s+\d{2,4})?[\s,]*\d{2}:\d{2}(:\d{2})?(\s*[AP]M)?\b", re.IGNORECASE)
 _TIME_ONLY_RE = re.compile(r"(?<![\w:])(~?(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?(?:\s*[AP]M)?)(?![\w:])", re.IGNORECASE)
-_SHORT_RANGE_DATE_RE = re.compile(r"\(\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\)", re.IGNORECASE)
-_DATE_RANGE_RE = re.compile(r"\b\w{3}\s+\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\b", re.IGNORECASE)
+_SHORT_RANGE_DATE_RE = re.compile(r"\((?:" + _WEEKDAY_ABBR_PATTERN + r")[\t ]\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\)", re.IGNORECASE)
+_DATE_RANGE_RE = re.compile(r"\b(?:" + _WEEKDAY_ABBR_PATTERN + r")[\t ]\d{1,2}\s+\w{3}\s+\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\b", re.IGNORECASE)
 _HOUR_RANGE_RE = re.compile(r"\b\d{2}:\d{2}(\s*[AP]M)?\s*-\s*\d{2}:\d{2}(\s*[AP]M)?\b", re.IGNORECASE)
 _URL_RE = re.compile(r"(https?://[^\s\]]+)")
 _PERCENTAGE_RE = re.compile(r"\(\d{1,3}%")
@@ -1596,7 +1634,6 @@ _TLS_STATE_RE = re.compile(r"^(\* TLS verification:\s+)(On|Off)(.*)$")
 _NOTIFICATION_SUMMARY_STATE_RE = re.compile(r"^(\* Notifications \((?:email|webhook)\):\s+)(On|Off)(.*)$")
 # Startup summary row whose label happens to contain a problem word. It reports a configured setting, not a
 # failure, so the whole-line error style must skip it and leave its value coloured like any other row
-_STARTUP_SUMMARY_TIMER_ROW_RE = re.compile(r"^\* error retry timer:")
 # Words that report a problem. The same word used as a key in a 'key=value' diagnostic detail names a setting
 # such as 'timeout=15' or a counter such as 'failures=3', so it leaves its line unpainted
 _ERROR_KEYWORD_RE = re.compile(r"\b(?:failures?|failed|forbidden|timeout|disappeared)\b(?!\s*=)")
@@ -1740,6 +1777,23 @@ def colorize_status(status_text):
     return colorize(key, status_text)
 
 
+# Right-aligns one listing column and colours only its value, so the column padding stays outside the style
+def _pad_colored_column(value, width, style_name):
+    return f"{' ' * max(0, width - len(value))}{colorize(style_name, value)}"
+
+
+# Builds one row of a track listing, whose columns are positional and cannot be recognized once they are printed
+def format_track_listing_row(artist_track, track_width, date_str, weekday, added_by=None):
+    track_column = _pad_colored_column(artist_track, track_width, "track")
+    date_column = _pad_colored_column(date_str, 20, "date")
+    weekday_column = _pad_colored_column(weekday, 3, "weekday")
+    row = f"{track_column}    {date_column}    {weekday_column}"
+    if added_by is None:
+        return row
+    added_by_column = _pad_colored_column(added_by, 10, "username")
+    return f"{row}     {added_by_column}"
+
+
 # Splits a recognized output label from its value without applying a backtracking expression
 def _split_output_label(value, labels):
     body = value.rstrip("\n")
@@ -1823,7 +1877,13 @@ def _colorize_list_row(match):
             meta = f"{added_date}{separator}{colorize('username', collaborator)}"
     else:
         return match.group(0)
-    return f"{prefix}{colorize(style_name, name)}{opening}{meta}{closing}"
+    # A rename row names the same person twice, so the arrow between the two names stays plain
+    old_name, arrow, new_name = name.partition(" -> ")
+    if arrow:
+        name = f"{colorize(style_name, old_name)}{arrow}{colorize(style_name, new_name)}"
+    else:
+        name = colorize(style_name, name)
+    return f"{prefix}{name}{opening}{meta}{closing}"
 
 
 # Colors a count transition using decimal text comparison without unbounded integer conversion
@@ -1836,6 +1896,8 @@ def _colorize_count_change(match):
 # Applies colour rules to a single output line
 def _colorize_line(line):
     lowered = line.lower()
+    # Read before any highlight is inserted, since the label column has to be measured on the plain text
+    is_settings_row = is_startup_summary_row(line)
 
     # Notification summary rows carry their own On/Off state word
     notification_match = _NOTIFICATION_SUMMARY_STATE_RE.match(line)
@@ -1942,12 +2004,15 @@ def _colorize_line(line):
     line = _sub_outside_color(_ACTIVE_WORD_RE, lambda mo: colorize("status_active", mo.group(0)), line)
     line = _sub_outside_color(_INACTIVE_WORD_RE, lambda mo: colorize("status_inactive", mo.group(0)), line)
 
+    # A summary row reports a setting, so a value that happens to read like a log keyword must not paint the whole row
+    if is_settings_row:
+        return line
+
     # Block highlighting (activity headers, errors, warnings, signals)
     # Applied last so the internal colours above are preserved through the nesting logic
-    is_summary_timer_row = bool(_STARTUP_SUMMARY_TIMER_ROW_RE.match(lowered))
     is_recovery_notice = bool(_RECOVERY_NOTICE_RE.search(lowered))
     is_debug_line = bool(_DEBUG_LINE_RE.match(lowered))
-    is_error = not is_summary_timer_row and not is_recovery_notice and not is_debug_line and (
+    is_error = not is_recovery_notice and not is_debug_line and (
         bool(_ERROR_KEYWORD_RE.search(lowered)) or "critical:" in lowered or (
             "* error" in lowered and "[errors =" not in lowered
         )
@@ -2524,6 +2589,11 @@ def html_text(text: str) -> str:
     return escape(text).replace("\n", "<br>")
 
 
+# Turns a bare URL inside already escaped HTML text into a link, so an alert that prints a guide link is clickable
+def html_autolink_urls(content: str) -> str:
+    return re.sub(r"(?<![\"'=])(https?://[^\s<>\"']+[^\s<>\"'.,;:!?)\]])", r'<a href="\1">\1</a>', str(content))
+
+
 # Returns the advice a cancelled secret entry reports, worded the same way by every one-shot secret command
 def secret_entry_cancelled_advice(subject, flag, guide_url):
     return make_recovery_advice("secret.entry", f"{subject[:1].upper()}{subject[1:]} setup was cancelled and the dotenv file was not changed", recovery_fix_with_guide(f"Run {flag} again when you have the value ready", guide_url), False)
@@ -2554,11 +2624,22 @@ def resolved_command_config(config_path=None):
     return "none" if CONFIG_DISCOVERY_DISABLED else find_config_file()
 
 
+# Names the other browsers the import accepts
+def cookie_auth_recovery_browser_hint() -> str:
+    # Nothing records which browser a cookie came from, so a message built around the Firefox command names the
+    # alternatives rather than sending a Chrome or Brave user to a browser they may not even have
+    others = [browser for browser in _wizard_import_browsers() if browser != "firefox"]
+    if not others:
+        return ""
+    listed = f"{', '.join(others[:-1])} or {others[-1]}" if len(others) > 1 else others[0]
+    return f" (use --browser {listed} to import from one of those instead)"
+
+
 # Returns an install-aware Firefox cookie recovery command
 def cookie_auth_recovery_fix() -> str:
     # The import reads the config and writes the dotenv, so the config sentinel is carried while the dotenv one is not
     command = _wizard_action_command(_wizard_install_method(), "--import-browser-cookie --browser firefox", active_config_path(), active_dotenv_path())
-    return f"Open {SPOTIFY_WEB_LOGIN_URL} in Firefox. Sign in to the Spotify account used for monitoring then run: {command}"
+    return f"Open {SPOTIFY_WEB_LOGIN_URL} in Firefox. Sign in to the Spotify account used for monitoring then run: {command}{cookie_auth_recovery_browser_hint()}"
 
 
 # Builds a directly usable Spotify profile URL from a normalized user ID
@@ -2574,6 +2655,24 @@ def iter_exc_chain(error, max_depth=8):
             return
         yield current
         current = getattr(current, "__cause__", None) or getattr(current, "__context__", None)
+
+
+# Names the transport failure behind an exception chain, since a timeout raised with no message leaves the text rules nothing to read
+def network_failure_code(error):
+    timed_out = False
+    unreachable = False
+    for current in iter_exc_chain(error):
+        name = type(current).__name__
+        # A TLS failure has its own advice, so a chain that names one is left to the rules that recognize it
+        if "SSL" in name or "Certificate" in name:
+            return ""
+        if isinstance(current, TimeoutError) or "Timeout" in name:
+            timed_out = True
+        elif isinstance(current, ConnectionError) or name in ("gaierror", "herror") or any(term in name for term in ("Connect", "ProxyError", "NameResolution", "Unreachable")):
+            unreachable = True
+    if timed_out:
+        return "network.timeout"
+    return "network.unavailable" if unreachable else ""
 
 
 # Reports whether this process hit the local file descriptor limit rather than a remote failure
@@ -2611,11 +2710,11 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
 
     # Checked ahead of every context, since a local descriptor limit is not a failure of whatever call hit it
     if error is not None and is_too_many_open_files(error):
-        return make_recovery_advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not a Spotify problem", recovery_fix_with_guide("Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", DIAGNOSTICS_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("resource.exhausted", "This process ran out of file descriptors, which is a local limit and not a Spotify problem", recovery_fix_with_guide("Raise the file descriptor limit, for example with 'ulimit -n 4096', or set LimitNOFILE= if you run under systemd, then restart the tool", DESCRIPTOR_LIMIT_GUIDE_URL), False, safe_detail)
 
     if context == "browser_import":
         if any(term in message for term in ("network", "connectivity", "timeout", "timed out", "name resolution", "dns", "proxy", "ssl")):
-            return make_recovery_advice("network.unavailable", safe_detail or "Browser cookie validation could not reach Spotify", recovery_fix_with_guide("Check connectivity then retry browser import", BROWSER_COOKIE_GUIDE_URL), True, safe_detail)
+            return make_recovery_advice("network.unavailable", safe_detail or "Browser cookie validation could not reach Spotify", recovery_fix_with_guide("Check connectivity then retry browser import", CONNECTION_GUIDE_URL), True, safe_detail)
         if any(term in message for term in ("invalid or expired", "authentication rejected", "no sp_dc", "nonempty sp_dc")):
             return make_recovery_advice("auth.cookie_invalid", safe_detail or "No valid sp_dc cookie was found", recovery_fix_with_guide(cookie_auth_recovery_fix(), BROWSER_COOKIE_GUIDE_URL), False, safe_detail)
         if any(term in message for term in ("database", "cookie file", "cookies.sqlite", "could not read")):
@@ -2628,7 +2727,7 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         if "interactive terminal" in message:
             return make_recovery_advice("secret.missing", "--set-sp-dc requires an interactive terminal", recovery_fix_with_guide("Run --set-sp-dc from an interactive shell so the cookie remains hidden", SECRETS_GUIDE_URL), False, safe_detail)
         if any(term in message for term in ("network", "connectivity", "timeout", "timed out", "name resolution")):
-            return make_recovery_advice("network.unavailable", "Spotify cookie validation could not reach Spotify", recovery_fix_with_guide("Check connectivity then run the private entry command again", MANUAL_COOKIE_GUIDE_URL), True, safe_detail)
+            return make_recovery_advice("network.unavailable", "Spotify cookie validation could not reach Spotify", recovery_fix_with_guide("Check connectivity then run the private entry command again", CONNECTION_GUIDE_URL), True, safe_detail)
         if any(term in message for term in ("invalid or expired", "authentication rejected", "no nonempty", "rejected")):
             return make_recovery_advice("auth.cookie_invalid", "Spotify rejected the entered sp_dc cookie", recovery_fix_with_guide("Sign in to Spotify Web Player then run the private entry command again", MANUAL_COOKIE_GUIDE_URL), False, safe_detail)
         if any(term in message for term in ("dotenv", "file permissions", "writable path")):
@@ -2656,16 +2755,16 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
     if context == "target_invalid":
         return make_recovery_advice("target.invalid", "Invalid Spotify target", recovery_fix_with_guide("Pass a Spotify profile URL, spotify:user:USER_ID URI or user ID", TARGET_GUIDE_URL), False, safe_detail)
     if context == "target" and (status == 403 or "cannot monitor user" in message):
-        return make_recovery_advice("auth.rejected", "The selected authentication mode cannot load this profile", recovery_fix_with_guide("Use cookie or client authentication for another user's profile then run Doctor again", COOKIE_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("auth.rejected", "The selected authentication mode cannot load this profile", recovery_fix_with_guide("Use cookie or client authentication for another user's profile then run Doctor again", TOKEN_SOURCE_GUIDE_URL), False, safe_detail)
     if context == "target_not_found":
         fix = "Check the target ID or profile URL then retry"
         if target_user_id:
             fix = f"Open this profile and confirm it still exists and is public enough for the selected authentication mode:\nProfile: {spotify_user_profile_url(target_user_id)}"
         return make_recovery_advice("target.not_found", "The Spotify target could not be loaded", recovery_fix_with_guide(fix, TARGET_GUIDE_URL), False, safe_detail)
     if context == "file_read":
-        return make_recovery_advice("file.unreadable", "A required file could not be read", recovery_fix_with_guide("Verify the path, file format and read permissions then retry", DIAGNOSTICS_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("file.unreadable", "A required file could not be read", recovery_fix_with_guide("Verify the path, file format and read permissions then retry", CONFIG_GUIDE_URL), False, safe_detail)
     if context == "file_write":
-        return make_recovery_advice("file.unwritable", "An output destination is not writable", recovery_fix_with_guide("Choose a writable path and verify its parent directory permissions then retry", DIAGNOSTICS_GUIDE_URL), False, safe_detail)
+        return make_recovery_advice("file.unwritable", "An output destination is not writable", recovery_fix_with_guide("Choose a writable path and verify its parent directory permissions then retry", CONFIG_GUIDE_URL), False, safe_detail)
     if context == "file_exists":
         return make_recovery_advice("file.exists", safe_detail or "The destination file already exists", recovery_fix_with_guide("Re-run with --force to replace it after a timestamped backup, or write to a different path", CONFIG_GUIDE_URL), False, safe_detail)
     if context == "smtp_config":
@@ -2694,18 +2793,20 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
         return make_recovery_advice("smtp.authentication", "SMTP authentication was rejected", recovery_fix_with_guide("Verify SMTP_USER and SMTP_PASSWORD then run --send-test-email", SMTP_GUIDE_URL), False, safe_detail)
     if isinstance(error, (smtplib.SMTPException, ConnectionError)) and context.startswith("smtp"):
         return make_recovery_advice("smtp.connection", "The SMTP server connection failed", recovery_fix_with_guide("Verify SMTP_HOST, SMTP_PORT and SMTP_SSL then run --send-test-email", SMTP_GUIDE_URL), True, safe_detail)
-    if isinstance(error, (req.Timeout, TimeoutException, socket.timeout)) or "timed out" in message or " timeout" in message:
+    # The chain is read alongside the text, since a transport error can arrive with an empty message
+    transport_code = network_failure_code(error)
+    if isinstance(error, (req.Timeout, TimeoutException, socket.timeout)) or transport_code == "network.timeout" or "timed out" in message or " timeout" in message:
         if context.startswith("smtp"):
             return make_recovery_advice("smtp.connection", "The SMTP connection timed out", recovery_fix_with_guide("Verify SMTP_HOST, SMTP_PORT and network access then run --send-test-email", SMTP_GUIDE_URL), True, safe_detail)
-        return make_recovery_advice("network.timeout", "The Spotify request timed out", recovery_fix_with_guide("Check connectivity and retry. Run --doctor --debug if timeouts continue", DIAGNOSTICS_GUIDE_URL), True, safe_detail)
+        return make_recovery_advice("network.timeout", "Spotify did not answer in time", recovery_fix_with_guide("Usually nothing to do, the tool retries on its own. If it continues, check network access, DNS, firewall and proxy settings", CONNECTION_GUIDE_URL), True, safe_detail)
     if isinstance(error, req.exceptions.SSLError) or any(term in message for term in ("certificate verify failed", "tls", "ssl error")):
         return make_recovery_advice("network.unavailable", "A secure connection could not be established", recovery_fix_with_guide("Check the system clock, CA certificates, firewall and TLS-inspecting proxy settings then retry", TLS_GUIDE_URL), True, safe_detail)
-    if isinstance(error, (req.ConnectionError, socket.gaierror)) or any(term in message for term in ("name resolution", "failed to resolve", "network is unreachable", "connection refused", "connection aborted", "max retries exceeded")):
-        return make_recovery_advice("network.unavailable", "Spotify could not be reached", recovery_fix_with_guide("Check DNS, internet access, firewall and proxy settings then retry", DIAGNOSTICS_GUIDE_URL), True, safe_detail)
+    if isinstance(error, (req.ConnectionError, socket.gaierror)) or transport_code == "network.unavailable" or any(term in message for term in ("name resolution", "failed to resolve", "network is unreachable", "connection refused", "connection aborted", "max retries exceeded")):
+        return make_recovery_advice("network.unavailable", "Spotify could not be reached", recovery_fix_with_guide("Usually nothing to do, the tool retries on its own. If it continues, check network access, DNS, firewall and proxy settings", CONNECTION_GUIDE_URL), True, safe_detail)
     if status == 429 or mentions_status_code("429", message) or any(term in message for term in ("too many requests", "rate limit")):
         return make_recovery_advice("spotify.rate_limited", "Spotify is rate limiting requests", recovery_fix_with_guide("Wait before retrying and increase --check-interval if this repeats", INTERVALS_GUIDE_URL), True, safe_detail)
     if (status is not None and 500 <= status <= 599) or any(term in message for term in ("500 server", "502 server", "503 server", "504 server")):
-        return make_recovery_advice("spotify.unavailable", "Spotify is temporarily unavailable", recovery_fix_with_guide("Wait and retry later. Run --doctor if the failure continues", DIAGNOSTICS_GUIDE_URL), True, safe_detail)
+        return make_recovery_advice("spotify.unavailable", "Spotify is temporarily unavailable", recovery_fix_with_guide("Usually nothing to do, the tool retries on its own. If it continues, wait for Spotify to recover", CONNECTION_GUIDE_URL), True, safe_detail)
     if status == 404 or "not found" in message:
         return classify_recovery_error(error, "target_not_found", safe_detail, target_user_id)
     if status == 401 or "401 unauthorized" in message or "unauthorized" in message:
@@ -3628,7 +3729,7 @@ def send_webhook(title: str, description: str, notification_type: str = "profile
 
 
 # Sends one alert through the enabled email and webhook channels
-def send_notification_channels(notification_type: str, subject: str, body: str, body_html: str = "", email_enabled: bool = False, webhook_enabled: Optional[bool] = None, image_url: str = "", email_image_file: str = "", email_image_name: str = "image1", email_image_url: str = "") -> Tuple[bool, bool]:
+def send_notification_channels(notification_type: str, subject: str, body: str, body_html: str = "", email_enabled: bool = False, webhook_enabled: Optional[bool] = None, image_url: str = "", email_image_file: str = "", email_image_name: str = "image1", email_image_url: str = "", webhook_body: str = "", webhook_body_html: str = "") -> Tuple[bool, bool]:
     email_attempted = bool(email_enabled)
     webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
     email_delivered = False
@@ -3647,30 +3748,164 @@ def send_notification_channels(notification_type: str, subject: str, body: str, 
             email_delivered = send_email(subject, body, body_html, SMTP_SSL) == 0
     if webhook_attempted:
         print(f"Sending webhook notification via {webhook_provider_display_name()}")
-        webhook_delivered = send_webhook(subject, body, notification_type, force=True, image_url=image_url, discord_description=html_body_to_discord_markdown(body_html)) == 0
+        # An alert may hand the webhook its own body, which drops the timestamp a chat message already carries
+        webhook_delivered = send_webhook(subject, webhook_body or body, notification_type, force=True, image_url=image_url, discord_description=html_body_to_discord_markdown(webhook_body_html or body_html)) == 0
     # Delivery, not the attempt, so a channel that failed is retried while one that succeeded is not resent
     return email_delivered, webhook_delivered
 
 
-# Alerts each enabled channel about a failing check once its outage is old enough, and holds a channel that could not deliver
-def dispatch_error_alert(state: "ErrorAlertState", advice: "RecoveryAdvice", error: BaseException, user_uri_id: str, outage_since: int) -> None:
+# Carries the two shapes a target is written in, since a subject that already brackets it cannot nest another pair
+class AlertTarget(str):
+    inline: str
+
+    # Builds the running text form and keeps the flat form beside it
+    def __new__(cls, identifier: str, name: str = "") -> "AlertTarget":
+        identifier = str(identifier)
+        display = sanitize_terminal_text(str(name or "")).strip()
+        display = display if display and display != identifier else ""
+        target = super().__new__(cls, f"{display} ({identifier})" if display else identifier)
+        target.inline = f"{display}, {identifier}" if display else identifier
+        return target
+
+
+# Names the monitored profile by display name and URI id, since the id alone is hard to place in an alert
+def profile_alert_target(user_uri_id: str, username: str = "") -> AlertTarget:
+    return AlertTarget(user_uri_id, username)
+
+
+# Returns the form of a target that fits inside text already wrapped in brackets, where another pair would nest
+def alert_target_inline(target) -> str:
+    return getattr(target, "inline", None) or str(target)
+
+
+# Builds the subject every failure alert shares, so an inbox fed by several monitors sorts them by tool
+def recovery_alert_subject(advice: RecoveryAdvice, target: str) -> str:
+    return f"Spotify Profile Monitor error: {advice.summary} (user: {alert_target_inline(target)})"
+
+
+# Lists the fields of the failure alert as groups of lines, so the plain and HTML bodies are built from one source
+def recovery_alert_groups(advice: RecoveryAdvice, retry_seconds: int, failed_checks: int = 0, failing_since: int = 0) -> List[List[str]]:
+    groups = [[advice.summary], [f"To fix: {advice.fix}"]]
+    retry = []
+    # A single failed check has no streak to count and started at the timestamp the alert already carries
+    if failed_checks > 1:
+        retry.append(f"Failed checks in a row: {failed_checks}")
+        retry.append(f"Failing since: {get_date_from_ts(failing_since)}")
+    retry.append(f"Next retry in: {display_time(retry_seconds)}")
+    groups.append(retry)
+    detail = sanitize_error_text(advice.detail) if advice.detail else ""
+    # A detail that only repeats the summary spends a line saying nothing
+    if DEBUG_MODE and detail and detail != advice.summary:
+        groups.append([f"Technical detail: {detail}"])
+    return groups
+
+
+# Builds the plain text body every failure alert shares, with the timestamp only the email carries
+def recovery_alert_body(advice: RecoveryAdvice, retry_seconds: int, failed_checks: int = 0, failing_since: int = 0, with_timestamp: bool = True) -> str:
+    body = "\n\n".join("\n".join(group) for group in recovery_alert_groups(advice, retry_seconds, failed_checks, failing_since))
+    return body + (get_cur_ts("\n\nTimestamp: ") if with_timestamp else "")
+
+
+# Bolds the values a reader scans a failure alert for: how often it has failed and since when
+def html_bold_outage_fields(content):
+    for label in ("Failed checks in a row: ", "Failing since: "):
+        content = re.sub(f"({re.escape(label)})([^<]+)", r"\1<b>\2</b>", content, count=1)
+    return content
+
+
+# Builds the HTML body of the failure alert from the same fields, with the summary in bold
+def recovery_alert_body_html(advice: RecoveryAdvice, retry_seconds: int, failed_checks: int = 0, failing_since: int = 0, with_timestamp: bool = True) -> str:
+    groups = recovery_alert_groups(advice, retry_seconds, failed_checks, failing_since)
+    rendered = [f"<b>{html_text(groups[0][0])}</b>"] + ["<br>".join(html_autolink_urls(html_text(line)) for line in group) for group in groups[1:]]
+    return html_bold_outage_fields(f"<html><head></head><body>{'<br><br>'.join(rendered)}{get_cur_ts('<br><br>Timestamp: ') if with_timestamp else ''}</body></html>")
+
+
+# Builds the subject of the alert that closes a failure alert, shaped like it so the two sort together
+def outage_recovered_subject(target: str, lasted: int) -> str:
+    return f"Spotify Profile Monitor recovered: monitoring {target} resumed after {display_time(lasted)}"
+
+
+# Builds the plain text body of the recovery alert, naming the failure it closes
+def outage_recovered_body(target: str, lasted: int, summary: str, with_timestamp: bool = True) -> str:
+    body = f"Monitoring recovered for {target} after {display_time(lasted)}.\n\nThe failure was: {summary}"
+    return body + (get_cur_ts("\n\nTimestamp: ") if with_timestamp else "")
+
+
+# Builds the HTML body of the recovery alert, with the profile and the outage length in bold like the failure alert
+def outage_recovered_body_html(target: str, lasted: int, summary: str, with_timestamp: bool = True) -> str:
+    body = f"Monitoring recovered for <b>{html_text(str(target))}</b> after <b>{html_text(display_time(lasted))}</b>.<br><br>The failure was: {html_text(summary)}"
+    return f"<html><head></head><body>{body}{get_cur_ts('<br><br>Timestamp: ') if with_timestamp else ''}</body></html>"
+
+
+# Tells a channel that never received the failure alert about the whole outage, since a bare recovery would close
+# a failure it was never told about
+def outage_missed_body(target: str, lasted: int, summary: str, with_timestamp: bool = True) -> str:
+    body = f"Monitoring failed for {target} at {get_date_from_ts(int(time.time()) - lasted)} and recovered after {display_time(lasted)}.\n\nThe failure was: {summary}\n\nThe failure alert could not be delivered here while the failure lasted."
+    return body + (get_cur_ts("\n\nTimestamp: ") if with_timestamp else "")
+
+
+# Builds the HTML body of the combined failure and recovery alert, with the same fields in bold
+def outage_missed_body_html(target: str, lasted: int, summary: str, with_timestamp: bool = True) -> str:
+    body = f"Monitoring failed for <b>{html_text(str(target))}</b> at <b>{html_text(get_date_from_ts(int(time.time()) - lasted))}</b> and recovered after <b>{html_text(display_time(lasted))}</b>.<br><br>The failure was: {html_text(summary)}<br><br>The failure alert could not be delivered here while the failure lasted."
+    return f"<html><head></head><body>{body}{get_cur_ts('<br><br>Timestamp: ') if with_timestamp else ''}</body></html>"
+
+
+# Alerts each enabled channel about a failing check once its outage is old enough, holds a channel that could not
+# deliver and reports whether it printed anything, which decides who closes the report on screen
+def dispatch_error_alert(state: "ErrorAlertState", advice: "RecoveryAdvice", target: str, outage: OutageReporter, retry_seconds: int) -> bool:
     now = int(time.time())
     if state.since is None:
-        state.since = outage_since
+        state.since = outage.since
+    # The recovery alert names the failure the outage ended with, which an outage that flaps changes along the way
+    state.summary = advice.summary
     # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
     if advice.retryable and now - state.since < ERROR_ALERT_AFTER_SECONDS:
-        return
+        return False
     email_pending = state.pending("email", ERROR_NOTIFICATION, now)
     webhook_pending = state.pending("webhook", webhook_event_enabled("error"), now)
     if not email_pending and not webhook_pending:
-        return
-    safe_detail = sanitize_error_text(error)
-    m_subject = f"{advice.summary} (Spotify URI: {user_uri_id})"
-    m_body = f"{advice.summary}\n\nTo fix: {advice.fix}\n\nTechnical detail: {safe_detail}{get_cur_ts(nl_ch + nl_ch + 'Timestamp: ')}"
-    m_body_html = f"<html><head></head><body>{html_text(advice.summary)}<br><br>To fix: {html_text(advice.fix)}<br><br>Technical detail: {html_text(safe_detail)}{get_cur_ts('<br><br>Timestamp: ')}</body></html>"
-    email_delivered, webhook_delivered = send_notification_channels("error", m_subject, m_body, m_body_html, email_enabled=email_pending, webhook_enabled=webhook_pending)
+        return False
+    fields = (advice, retry_seconds, outage.failures, outage.since)
+    email_delivered, webhook_delivered = send_notification_channels("error", recovery_alert_subject(advice, target), recovery_alert_body(*fields), recovery_alert_body_html(*fields), email_enabled=email_pending, webhook_enabled=webhook_pending, webhook_body=recovery_alert_body(*fields, with_timestamp=False), webhook_body_html=recovery_alert_body_html(*fields, with_timestamp=False))
     state.record("email", email_pending, email_delivered, now)
     state.record("webhook", webhook_pending, webhook_delivered, now)
+    return True
+
+
+# Tells each channel whose failure alert went out that the failure cleared, then forgets the alert so the next
+# outage earns every channel a new one
+def dispatch_recovery_alert(state: "ErrorAlertState", target: str, lasted: int) -> bool:
+    email_owed = state.email_sent and bool(ERROR_NOTIFICATION)
+    webhook_owed = state.webhook_sent and webhook_event_enabled("error")
+    # A channel whose failure alert never got through hears about the outage and its end together, rather than
+    # nothing at all, which is what a channel blocked for the length of the outage would otherwise receive
+    email_missed = state.missed("email", ERROR_NOTIFICATION)
+    webhook_missed = state.missed("webhook", webhook_event_enabled("error"))
+    # A state that alerted nobody can still be timing a degradation the other polls of this check are in, so it is
+    # left for the completed check to clear rather than reset by the first poll that answers again
+    if not (email_owed or webhook_owed or email_missed or webhook_missed):
+        return False
+    email_text, email_html = (outage_missed_body, outage_missed_body_html) if email_missed else (outage_recovered_body, outage_recovered_body_html)
+    webhook_text, webhook_html = (outage_missed_body, outage_missed_body_html) if webhook_missed else (outage_recovered_body, outage_recovered_body_html)
+    send_notification_channels("error", outage_recovered_subject(target, lasted), email_text(target, lasted, state.summary), email_html(target, lasted, state.summary), email_enabled=email_owed or email_missed, webhook_enabled=webhook_owed or webhook_missed, webhook_body=webhook_text(target, lasted, state.summary, False), webhook_body_html=webhook_html(target, lasted, state.summary, False))
+    state.reset()
+    return True
+
+
+# Reports one failing check the way its outage calls for, alerts the enabled channels and closes the report with a
+# single timestamp, so a delivery line is never left standing outside the report it belongs to
+def report_failing_check(outcome: str, target: str, advice: RecoveryAdvice, error: BaseException, outage: OutageReporter, alert_state: "ErrorAlertState", retry_seconds: int, context: str = "runtime", label: str = "Error", tracker: Optional[RecoveryHintTracker] = None) -> None:
+    if outcome == "full":
+        print_recovery_error(error, context, retry_note=f"retrying in {display_time(retry_seconds)}", label=label, tracker=tracker)
+    elif outcome == "changed":
+        print_outage_change(target, advice)
+    elif outcome == "reminder":
+        print_outage_liveness(target, advice, outage.since, outage.failures, close=False)
+    alerted = dispatch_error_alert(alert_state, advice, target, outage, retry_seconds)
+    if outcome == "reminder":
+        print_cur_ts("Liveness check, timestamp:\t")
+    elif outcome or alerted:
+        print_cur_ts("Timestamp:\t\t\t")
 
 
 # Prefixes one CSV value so spreadsheet software cannot evaluate Spotify-supplied text as a formula
@@ -3910,6 +4145,25 @@ def get_range_of_dates_from_tss(ts1, ts2, between_sep=" - ", short=False):
             out_str = f"{get_date_from_ts(ts1_new)}{between_sep}{get_date_from_ts(ts2_new)}"
 
     return str(out_str)
+
+
+# Returns how long the window a change was observed in lasted and when it ended, falling back to the configured
+# interval until the run has a previous check to measure from
+def observed_window() -> Tuple[int, int]:
+    ended = int(time.time())
+    return max(1, ended - LAST_CHECK_TS if LAST_CHECK_TS else SPOTIFY_CHECK_INTERVAL), ended
+
+
+# Returns the window a change was observed in, as a duration followed by the dates it spans
+def check_window_text() -> str:
+    lasted, ended = observed_window()
+    return f"{display_time(lasted)} ({get_range_of_dates_from_tss(ended - lasted, ended, short=True)})"
+
+
+# Returns the same window with the duration emphasized, for an HTML notification body
+def check_window_html() -> str:
+    lasted, ended = observed_window()
+    return f"<b>{escape(display_time(lasted))}</b> ({escape(get_range_of_dates_from_tss(ended - lasted, ended, short=True))})"
 
 
 # Checks if the given timezone name is valid
@@ -4524,6 +4778,8 @@ def refresh_access_token_from_sp_dc(sp_dc: str) -> dict:
     }
 
     last_err = ""
+    # Kept so the raised failure carries its cause, otherwise a timed-out token request reads as a rejected cookie
+    last_exc: Optional[BaseException] = None
 
     alarm_state = _start_timeout_alarm(FUNCTION_TIMEOUT + 2)
     try:
@@ -4540,6 +4796,7 @@ def refresh_access_token_from_sp_dc(sp_dc: str) -> dict:
             raise SystemExit(1)
         transport = False
         last_err = str(e)
+        last_exc = e
         debug_print("HTTP GET", url=TOKEN_URL, context=f"sp_dc transport failed: {sanitize_error_text(e)}")
     finally:
         _restore_timeout_alarm(alarm_state)
@@ -4562,12 +4819,13 @@ def refresh_access_token_from_sp_dc(sp_dc: str) -> dict:
                 raise SystemExit(1)
             init = False
             last_err = str(e)
+            last_exc = e
             debug_print("HTTP GET", url=TOKEN_URL, context=f"sp_dc init failed: {sanitize_error_text(e)}")
         finally:
             _restore_timeout_alarm(alarm_state)
 
     if not init or not data or "accessToken" not in data:
-        raise Exception(f"refresh_access_token_from_sp_dc(): Unsuccessful token request{': ' + last_err if last_err else ''}")
+        raise Exception(f"refresh_access_token_from_sp_dc(): Unsuccessful token request{': ' + last_err if last_err else ''}") from last_exc
 
     expires_at_ms = data.get("accessTokenExpirationTimestampMs")
     if not isinstance(expires_at_ms, (int, float)) or isinstance(expires_at_ms, bool):
@@ -4595,6 +4853,7 @@ def spotify_get_access_token_from_sp_dc(sp_dc: str):
     retry = 0
 
     last_error = ""
+    last_exc: Optional[BaseException] = None
 
     while retry < max_retries:
         try:
@@ -4617,6 +4876,8 @@ def spotify_get_access_token_from_sp_dc(sp_dc: str):
                 break
         except Exception as e:
             last_error = str(e)
+            # Kept so the raised failure carries its cause, otherwise a blocked network reads as a rejected cookie
+            last_exc = e
             debug_print("Spotify access token refresh", outcome="failed", error=sanitize_error_text(e))
             retry += 1
             if retry < max_retries:
@@ -4626,7 +4887,7 @@ def spotify_get_access_token_from_sp_dc(sp_dc: str):
         error_msg = f"Failed to obtain a valid Spotify access token after {max_retries} attempts"
         if last_error:
             error_msg += f": {last_error}"
-        raise RuntimeError(error_msg)
+        raise RuntimeError(error_msg) from last_exc
 
     return SP_CACHED_ACCESS_TOKEN
 
@@ -5291,13 +5552,6 @@ def remove_key_from_list_of_dicts(list_of_dicts, del_key):
         for items in list_of_dicts:
             if del_key in items:
                 del items[del_key]
-
-
-# Removes the specified key from the list of dictionaries, but preserves the original list
-def remove_key_from_list_of_dicts_copy(list_of_dicts, del_key):
-    if not list_of_dicts:
-        return []
-    return [{k: v for k, v in d.items() if k != del_key} for d in list_of_dicts]
 
 
 # Displays one image inline through imgcat using an argument vector instead of a shell
@@ -6581,7 +6835,7 @@ def spotify_list_tracks_for_playlist(sp_accessToken, playlist_url, csv_file_name
                 added_at_dt_week_day = calendar.day_abbr[added_at_dt.weekday()]
                 if not CLEAN_OUTPUT and not EXPORT_ALL:
                     artist_track = artist_track[:75]
-                    line_new = '%75s    %20s    %3s     %10s' % (artist_track, added_at_dt_str, added_at_dt_week_day, added_by_name)
+                    line_new = format_track_listing_row(artist_track, 75, added_at_dt_str, added_at_dt_week_day, added_by_name)
                 else:
                     line_new = f"{artist_track}"
                     tracks_list.append(line_new)
@@ -6752,7 +7006,7 @@ def spotify_list_liked_tracks(sp_accessToken, csv_file_name, format_type=2):
                 added_at_dt_week_day = calendar.day_abbr[added_at_dt.weekday()]
                 if not CLEAN_OUTPUT:
                     artist_track = artist_track[:75]
-                    line_new = '%80s    %20s    %3s' % (artist_track, added_at_dt_str, added_at_dt_week_day)
+                    line_new = format_track_listing_row(artist_track, 80, added_at_dt_str, added_at_dt_week_day)
                 else:
                     line_new = f"{artist_track}"
                     tracks_list.append(line_new)
@@ -6804,6 +7058,53 @@ def compare_two_lists_of_dicts(list1: list, list2: list):
 
     signatures = {dict_signature(item) for item in list2}
     return [item for item in list1 if dict_signature(item) not in signatures]
+
+
+# Splits profile entries into a URI-keyed mapping and the entries that carry no URI to key on
+def index_profiles_by_uri(profiles):
+    indexed = {}
+    unkeyed = []
+    for profile in profiles or []:
+        if not isinstance(profile, dict):
+            unkeyed.append(profile)
+            continue
+        uri = profile.get("uri")
+        if uri:
+            indexed[uri] = profile
+        else:
+            unkeyed.append(profile)
+    return indexed, unkeyed
+
+
+# Compares two profile snapshots by URI so a display name change is reported as a rename instead of a departure and an arrival
+def split_profile_changes(current, previous):
+    current_by_uri, current_unkeyed = index_profiles_by_uri(current)
+    previous_by_uri, previous_unkeyed = index_profiles_by_uri(previous)
+
+    removed = [profile for uri, profile in previous_by_uri.items() if uri not in current_by_uri]
+    added = [profile for uri, profile in current_by_uri.items() if uri not in previous_by_uri]
+    renamed = []
+
+    # A rename needs a current name to report, so an entry that lost its name is left out rather than
+    # producing a heading with nothing under it
+    for uri, profile in current_by_uri.items():
+        earlier = previous_by_uri.get(uri)
+        if earlier is None or not profile.get("name") or earlier.get("name") == profile.get("name"):
+            continue
+        renamed.append({**profile, "old_name": earlier.get("name") or "Unknown"})
+
+    removed.extend(compare_two_lists_of_dicts(previous_unkeyed, current_unkeyed))
+    added.extend(compare_two_lists_of_dicts(current_unkeyed, previous_unkeyed))
+
+    return removed, added, renamed
+
+
+# Reports whether a follow snapshot changed its membership or a display name, treating an empty list beside a positive count as an unavailable list rather than an emptied one
+def follow_membership_changed(current, previous, count):
+    if count and (not current or not previous):
+        return False
+    removed, added, renamed = split_profile_changes(current, previous)
+    return bool(removed or added or renamed)
 
 
 # Searches for Spotify users (-s flag)
@@ -7817,6 +8118,10 @@ def get_playlist_details_for_notification(sp_accessToken, playlist_uri):
         }
 
 
+# Section heading and CSV event name used to report a follower or following who changed their display name
+RENAMED_FOLLOW_LABELS = {"Followers": ("Renamed followers", "Renamed Follower"), "Followings": ("Renamed followings", "Renamed Following")}
+
+
 # Prints and saves changed lists of followers, followings or playlists with enabled notifications
 def spotify_print_changed_followers_followings_playlists(username, f_list, f_list_old, f_count, f_old_count, f_str, f_str_by_or_from, f_added_str, f_added_csv, f_removed_str, f_removed_csv, f_file, csv_file_name, profile_notification, is_playlist, sp_accessToken=None, notification_image_url="", webhook_notification_allowed=None):
     if is_playlist:
@@ -7834,25 +8139,35 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
 
         f_list_stripped = _playlist_identity(f_list)
         f_list_old_stripped = _playlist_identity(f_list_old)
-    else:
-        f_list_stripped = remove_key_from_list_of_dicts_copy(f_list, "owner_name")
-        f_list_old_stripped = remove_key_from_list_of_dicts_copy(f_list_old, "owner_name")
 
-    removed_f_list = compare_two_lists_of_dicts(f_list_old_stripped, f_list_stripped)
-    added_f_list = compare_two_lists_of_dicts(f_list_stripped, f_list_old_stripped)
-    playlist_membership_only_change = is_playlist and f_diff == 0 and bool(added_f_list or removed_f_list)
+        removed_f_list = compare_two_lists_of_dicts(f_list_old_stripped, f_list_stripped)
+        added_f_list = compare_two_lists_of_dicts(f_list_stripped, f_list_old_stripped)
+        renamed_f_list = []
+    else:
+        # A person keeps their URI when they change their display name, so the two snapshots are paired on it
+        removed_f_list, added_f_list, renamed_f_list = split_profile_changes(f_list, f_list_old)
+
+    f_renamed_str, f_renamed_csv = RENAMED_FOLLOW_LABELS.get(f_str, ("", ""))
+    if not f_renamed_str:
+        renamed_f_list = []
+
+    membership_only_change = f_diff == 0 and bool(added_f_list or removed_f_list or renamed_f_list)
 
     list_of_added_f_list = ""
     list_of_removed_f_list = ""
+    list_of_renamed_f_list = ""
     added_f_list_mbody = ""
     removed_f_list_mbody = ""
+    renamed_f_list_mbody = ""
     list_of_added_f_list_html = ""
     list_of_removed_f_list_html = ""
+    list_of_renamed_f_list_html = ""
     added_f_list_mbody_html = ""
     removed_f_list_mbody_html = ""
+    renamed_f_list_mbody_html = ""
     playlist_notification_image_url = ""
 
-    if playlist_membership_only_change:
+    if membership_only_change:
         print(f"* {f_str} changed for user {username} while the total remained {f_count}\n")
     elif added_f_list or removed_f_list or ((f_str == "Followers" or f_str == "Followings") and TOKEN_SOURCE == "oauth_app"):
         print(f"* {f_str} number changed {f_str_by_or_from} user {username} from {f_old_count} to {f_count} ({f_diff_str})\n")
@@ -8204,9 +8519,38 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
         if removed_f_list:
             print()
 
-    # A playlist count moved without producing any renderable membership change, so there is nothing to
+    if renamed_f_list:
+        print(f"{f_renamed_str}:\n")
+        renamed_f_list_mbody = f"\n{f_renamed_str}:\n\n"
+        renamed_f_list_mbody_html = f"<br><b>{escape(f_renamed_str)}:</b><br><br>"
+        for idx, f_dict in enumerate(renamed_f_list):
+            if "name" not in f_dict or "uri" not in f_dict:
+                continue
+            f_url = spotify_convert_uri_to_url(f_dict["uri"])
+            old_name = f_dict["old_name"]
+            print(f"- {old_name} -> {f_dict['name']} [ {f_url} ]")
+            list_of_renamed_f_list += f"- {old_name} -> {f_dict['name']} [ {f_url} ]"
+            list_of_renamed_f_list_html += f"- {escape(old_name)} -&gt; <a href=\"{escape_html_attr(f_url)}\">{escape(f_dict['name'])}</a>"
+
+            # Add empty line between items if not the last one and there are multiple items
+            if len(renamed_f_list) > 1 and idx < len(renamed_f_list) - 1:
+                print()
+                list_of_renamed_f_list += "\n\n"
+                list_of_renamed_f_list_html += "<br><br>"
+            else:
+                list_of_renamed_f_list += "\n"
+                list_of_renamed_f_list_html += "<br>"
+
+            try:
+                if csv_file_name:
+                    write_csv_entry(csv_file_name, now_local_naive(), f_renamed_csv, username, old_name, f_dict["name"])
+            except Exception as e:
+                print_operation_error("A CSV event could not be written", e)
+        print()
+
+    # A count moved or a membership shifted without producing any renderable line, so there is nothing to
     # report. The baseline below is still written, otherwise the same delta is re-evaluated every check
-    nothing_to_report = is_playlist and f_diff != 0 and not list_of_added_f_list.strip() and not list_of_removed_f_list.strip()
+    nothing_to_report = not (list_of_added_f_list.strip() or list_of_removed_f_list.strip() or list_of_renamed_f_list.strip()) and (is_playlist or f_diff == 0)
 
     f_list_to_save = []
     f_list_to_save.append(f_count)
@@ -8234,14 +8578,17 @@ def spotify_print_changed_followers_followings_playlists(username, f_list, f_lis
     if not email_enabled and not webhook_enabled:
         return
 
-    if playlist_membership_only_change:
+    m_changes = f"{removed_f_list_mbody}{list_of_removed_f_list}{added_f_list_mbody}{list_of_added_f_list}{renamed_f_list_mbody}{list_of_renamed_f_list}"
+    m_changes_html = f"{removed_f_list_mbody_html}{list_of_removed_f_list_html}{added_f_list_mbody_html}{list_of_added_f_list_html}{renamed_f_list_mbody_html}{list_of_renamed_f_list_html}"
+
+    if membership_only_change:
         m_subject = f"Spotify user {username} {str(f_str).lower()} have changed! (total remains {f_count})"
-        m_body = f"{f_str} changed for user {username} while the total remained {f_count}\n{removed_f_list_mbody}{list_of_removed_f_list}{added_f_list_mbody}{list_of_added_f_list}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-        m_body_html = f"<html><head></head><body>{escape(f_str)} changed for user <b>{escape(username)}</b> while the total remained <b>{f_count}</b><br>{removed_f_list_mbody_html}{list_of_removed_f_list_html}{added_f_list_mbody_html}{list_of_added_f_list_html}<br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+        m_body = f"{f_str} changed for user {username} while the total remained {f_count}\n{m_changes}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+        m_body_html = f"<html><head></head><body>{escape(f_str)} changed for user <b>{escape(username)}</b> while the total remained <b>{f_count}</b><br>{m_changes_html}<br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}</body></html>"
     else:
         m_subject = f"Spotify user {username} {str(f_str).lower()} number has changed! ({f_diff_str}, {f_old_count} -> {f_count})"
-        m_body = f"{f_str} number changed {f_str_by_or_from} user {username} from {f_old_count} to {f_count} ({f_diff_str})\n{removed_f_list_mbody}{list_of_removed_f_list}{added_f_list_mbody}{list_of_added_f_list}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-        m_body_html = f"<html><head></head><body>{escape(f_str)} number changed {escape(f_str_by_or_from)} user <b>{escape(username)}</b> from <b>{f_old_count}</b> to <b>{f_count}</b> (<b>{escape(f_diff_str)}</b>)<br>{removed_f_list_mbody_html}{list_of_removed_f_list_html}{added_f_list_mbody_html}{list_of_added_f_list_html}<br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+        m_body = f"{f_str} number changed {f_str_by_or_from} user {username} from {f_old_count} to {f_count} ({f_diff_str})\n{m_changes}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+        m_body_html = f"<html><head></head><body>{escape(f_str)} number changed {escape(f_str_by_or_from)} user <b>{escape(username)}</b> from <b>{f_old_count}</b> to <b>{f_count}</b> (<b>{escape(f_diff_str)}</b>)<br>{m_changes_html}<br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}</body></html>"
 
     selected_notification_image_url = select_notification_image_url(playlist_notification_image_url, profile_image_url=notification_image_url)
     send_notification_channels(notification_type, m_subject, m_body, m_body_html, email_enabled=email_enabled, webhook_enabled=webhook_enabled, image_url=selected_notification_image_url, email_image_url=playlist_notification_image_url if is_playlist else "")
@@ -8541,6 +8888,11 @@ def read_collection_record(path):
         record = json.load(source)
     if not isinstance(record, list) or len(record) < 2:
         raise ValueError("expected a collection list containing a count and entries")
+    # Releases before 3.9 saved null for a count or list Spotify did not return, so a null count is no baseline and null entries are an empty list
+    if record[0] is None:
+        return []
+    if record[1] is None:
+        record[1] = []
     if not isinstance(record[0], int) or isinstance(record[0], bool) or record[0] < 0:
         raise ValueError("the saved collection count must be a nonnegative integer")
     if not isinstance(record[1], list) or any(not isinstance(item, dict) for item in record[1]):
@@ -9891,19 +10243,41 @@ def mask_email_address(address) -> str:
     return f"{masked}@{domain}"
 
 
+# Returns whether a mail server is set rather than left empty or still holding the placeholder the sample configuration ships
+def smtp_server_configured() -> bool:
+    return doctor_secret_is_set(SMTP_HOST) and bool(SMTP_PORT)
+
+
+# Returns whether an email alert has both a server to send through and an address to reach
+def email_channel_configured() -> bool:
+    return smtp_server_configured() and doctor_secret_is_set(RECEIVER_EMAIL)
+
+
+# Returns whether a webhook alert has a destination to post to
+def webhook_channel_configured() -> bool:
+    return bool(normalized_webhook_provider()) and doctor_secret_is_set(WEBHOOK_URL)
+
+
+# Rolls one channel's enabled alerts into the state its summary row reports, which is off while the channel has no destination
+def _startup_notification_state(categories: Sequence[str], configured: bool) -> str:
+    if not categories:
+        return "Off"
+    return "On (" + ", ".join(categories) + ")" if configured else "Off (not configured)"
+
+
 # Reports the mail server, the recipient and the image setting an alert would use, without the signing-in account
 def _startup_email_detail_rows() -> List[StartupSummaryRow]:
-    transport = f"{SMTP_HOST}:{SMTP_PORT} ({'STARTTLS' if SMTP_SSL else 'TLS off'})" if SMTP_HOST and SMTP_PORT else "Not configured"
+    transport = f"{SMTP_HOST}:{SMTP_PORT} ({'STARTTLS' if SMTP_SSL else 'TLS off'})" if smtp_server_configured() else "Not configured"
     return [
         StartupSummaryRow("Email transport", transport),
-        StartupSummaryRow("Email recipient", mask_email_address(RECEIVER_EMAIL) if RECEIVER_EMAIL else "Not configured"),
+        StartupSummaryRow("Email recipient", mask_email_address(RECEIVER_EMAIL) if doctor_secret_is_set(RECEIVER_EMAIL) else "Not configured"),
         StartupSummaryRow("Email images", str(EMAIL_IMAGES)),
     ]
 
 
 # Reports the webhook service alerts would reach and whether the delivery lines are printed at all
 def _startup_webhook_detail_rows() -> List[StartupSummaryRow]:
-    if not normalized_webhook_provider() or not str(WEBHOOK_URL or "").strip():
+    if not webhook_channel_configured():
         provider = "Not configured"
     else:
         provider = f"{webhook_provider_display_name()} ({'enabled' if WEBHOOK_ENABLED else 'disabled'})"
@@ -9940,8 +10314,8 @@ def build_startup_summary(target: str, config_path, env_path, output_path) -> Li
     authentication_names = {"cookie": "Cookie mode", "client": "Client mode, advanced", "oauth_app": "OAuth app mode", "oauth_user": "OAuth user mode"}
     enabled_email = _startup_email_notification_categories()
     enabled_webhook = _startup_webhook_notification_categories()
-    notification_state_email = "On (" + ", ".join(enabled_email) + ")" if enabled_email else "Off"
-    notification_state_webhook = "On (" + ", ".join(enabled_webhook) + ")" if enabled_webhook else "Off"
+    notification_state_email = _startup_notification_state(enabled_email, email_channel_configured())
+    notification_state_webhook = _startup_notification_state(enabled_webhook, webhook_channel_configured())
     output_state = str(output_path) if output_path else "Terminal only (logging disabled)"
     rows = [
         StartupSummaryRow("Target", str(target), concise=True),
@@ -9985,11 +10359,23 @@ def build_startup_summary(target: str, config_path, env_path, output_path) -> Li
 # Rows that detail the channel named right above them, indented so the block reads as one setting with its details
 _STARTUP_SUMMARY_NESTED_LABELS = ("Email transport", "Email recipient", "Email images", "Webhook provider", "ntfy images")
 
+# The column every summary value starts in, which also lets the colouriser recognize a summary row
+STARTUP_SUMMARY_VALUE_COLUMN = 32
+
+# Matches a summary row by that padded label column, since no log line puts a value there
+_STARTUP_SUMMARY_ROW_RE = re.compile(r"^\*(?: {1,3})[^:\s][^:]*: {2,}(?=\S)")
+
+
+# Returns whether a line is a startup summary row rather than ordinary output
+def is_startup_summary_row(line: str) -> bool:
+    match = _STARTUP_SUMMARY_ROW_RE.match(line)
+    return bool(match) and match.end() == STARTUP_SUMMARY_VALUE_COLUMN
+
 
 # Formats one startup summary row with aligned ASCII columns
 def _format_startup_summary_row(row: StartupSummaryRow) -> str:
     indent = "  " if row.label in _STARTUP_SUMMARY_NESTED_LABELS else ""
-    prefix = f"* {indent}{(row.label + ':'):<{30 - len(indent)}}"
+    prefix = f"* {indent}{(row.label + ':'):<{STARTUP_SUMMARY_VALUE_COLUMN - 2 - len(indent)}}"
     if row.label in ("Notifications (email)", "Notifications (webhook)"):
         return textwrap.fill(row.value, width=100, initial_indent=prefix, subsequent_indent=" " * len(prefix), break_long_words=False, break_on_hyphens=False) + "\n"
     return f"{prefix}{row.value}\n"
@@ -11896,7 +12282,7 @@ def prepare_json_directory(json_dir: Any) -> str:
 
 # Monitors profile changes of the specified Spotify user ID
 def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
-    global SP_CACHED_ACCESS_TOKEN, SP_CACHED_OAUTH_APP_TOKEN
+    global SP_CACHED_ACCESS_TOKEN, SP_CACHED_OAUTH_APP_TOKEN, LAST_CHECK_TS
     playlists_count = 0
     playlists_old_count = 0
     playlists = None
@@ -12104,7 +12490,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         followers_count, followers = followers_old_count, followers_old
     elif followers is None:
         followers = followers_old
-    if followers_count is not None and followers_old_count is not None and followers_count != followers_old_count:
+    if followers_count is not None and followers_old_count is not None and (followers_count != followers_old_count or follow_membership_changed(followers, followers_old, followers_count)):
         spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, False, False)
 
     print_cur_ts("Timestamp:\t\t\t")
@@ -12136,7 +12522,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         followings_count, followings = followings_old_count, followings_old
     elif followings is None:
         followings = followings_old
-    if followings_count is not None and followings_old_count is not None and followings_count != followings_old_count:
+    if followings_count is not None and followings_old_count is not None and (followings_count != followings_old_count or follow_membership_changed(followings, followings_old, followings_count)):
         spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, False, False)
 
     print_cur_ts("Timestamp:\t\t\t")
@@ -12229,6 +12615,9 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         playlists_old = playlists
         playlists_old_count = playlists_count
 
+    # The startup snapshot is what the first check compares against, so the window a change is reported in starts here
+    LAST_CHECK_TS = int(time.time())
+
     time.sleep(SPOTIFY_CHECK_INTERVAL)
     error_alert.reset()
     alive_since = int(time.time())
@@ -12256,25 +12645,15 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             monitor_recovery_tracker.reset()
             outage_lasted = outage.recovered()
             if outage_lasted is not None:
-                print_outage_recovery(user_uri_id, outage_lasted)
+                print_outage_recovery(profile_alert_target(user_uri_id, username), outage_lasted, error_alert)
             _restore_timeout_alarm(alarm_state)
         except TimeoutException as e:
             _restore_timeout_alarm(alarm_state)
             advice = classify_recovery_error(e, "runtime")
 
             # A halted request is one more failing check, so it shares the outage clock and the alert the other failures use
-            outage_outcome = outage.failed(advice)
-            if outage_outcome == "full":
-                print_recovery_error(e, "runtime", retry_note=f"retrying in {display_time(ALARM_RETRY)}", tracker=monitor_recovery_tracker)
-            elif outage_outcome == "changed":
-                print_outage_change(user_uri_id, advice)
-            elif outage_outcome == "reminder":
-                print_outage_liveness(user_uri_id, advice, outage.since, outage.failures)
+            report_failing_check(outage.failed(advice), profile_alert_target(user_uri_id, username), advice, e, outage, error_alert, retry_seconds=ALARM_RETRY, tracker=monitor_recovery_tracker)
 
-            dispatch_error_alert(error_alert, advice, e, user_uri_id, outage.since)
-
-            if outage_outcome in ("full", "changed"):
-                print_cur_ts("Timestamp:\t\t\t")
             time.sleep(ALARM_RETRY)
             continue
         except Exception as e:
@@ -12294,18 +12673,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
             outage_outcome = outage.failed(advice)
-            if outage_outcome == "full":
-                print_recovery_error(e, context, retry_note=f"retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}", tracker=monitor_recovery_tracker)
-            elif outage_outcome == "changed":
-                print_outage_change(user_uri_id, advice)
-            elif outage_outcome == "reminder":
-                print_outage_liveness(user_uri_id, advice, outage.since, outage.failures)
+            retry_seconds = failure_retry_seconds(advice, outage.failures)
+            report_failing_check(outage_outcome, profile_alert_target(user_uri_id, username), advice, e, outage, error_alert, retry_seconds=retry_seconds, context=context, tracker=monitor_recovery_tracker)
 
-            dispatch_error_alert(error_alert, advice, e, user_uri_id, outage.since)
-
-            if outage_outcome in ("full", "changed"):
-                print_cur_ts("Timestamp:\t\t\t")
-            time.sleep(SPOTIFY_ERROR_INTERVAL)
+            time.sleep(retry_seconds)
             continue
 
         username = sp_user_data["sp_username"]
@@ -12323,13 +12694,13 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
             if notification_channels_enabled("profile", PROFILE_NOTIFICATION):
                 m_subject = f"Spotify user {username_old} has changed username to {username}"
-                m_body = f"Spotify user '{username_old}' has changed username to '{username}'\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                m_body_html = f"<html><head></head><body>Spotify user '<b>{escape(username_old)}</b>' has changed username to '<b>{escape(username)}</b>'<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                m_body = f"Spotify user '{username_old}' has changed username to '{username}'\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                m_body_html = f"<html><head></head><body>Spotify user '<b>{escape(username_old)}</b>' has changed username to '<b>{escape(username)}</b>'<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}</body></html>"
                 send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=image_url)
 
             username_old = username
 
-            print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+            print(f"Check interval:\t\t\t{check_window_text()}")
             print_cur_ts("Timestamp:\t\t\t")
 
         try:
@@ -12338,24 +12709,16 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             follower_recovery_tracker.reset()
             follower_lasted = follower_outage.recovered()
             if follower_lasted is not None:
-                print_outage_recovery(user_uri_id, follower_lasted)
+                print_outage_recovery(profile_alert_target(user_uri_id, username), follower_lasted, error_alert)
         except Exception as e:
             follower_advice = classify_recovery_error(e, f"{TOKEN_SOURCE}_auth")
 
             # A failure that has not changed is left to the liveness cadence rather than repeated every check
             follower_outcome = follower_outage.failed(follower_advice)
-            if follower_outcome == "full":
-                print_recovery_error(e, f"{TOKEN_SOURCE}_auth", retry_note=f"retrying in {display_time(SPOTIFY_ERROR_INTERVAL)}", label="Error while getting followers and followings", tracker=follower_recovery_tracker)
-                print_cur_ts("Timestamp:\t\t\t")
-            elif follower_outcome == "changed":
-                print_outage_change(user_uri_id, follower_advice)
-                print_cur_ts("Timestamp:\t\t\t")
-            elif follower_outcome == "reminder":
-                print_outage_liveness(user_uri_id, follower_advice, follower_outage.since, follower_outage.failures)
+            follower_retry_seconds = failure_retry_seconds(follower_advice, follower_outage.failures)
+            report_failing_check(follower_outcome, profile_alert_target(user_uri_id, username), follower_advice, e, follower_outage, error_alert, retry_seconds=follower_retry_seconds, context=f"{TOKEN_SOURCE}_auth", label="Error while getting followers and followings", tracker=follower_recovery_tracker)
 
-            dispatch_error_alert(error_alert, follower_advice, e, user_uri_id, follower_outage.since)
-
-            time.sleep(SPOTIFY_ERROR_INTERVAL)
+            time.sleep(follower_retry_seconds)
             continue
 
         followers = sp_user_followers_data["sp_user_followers"]
@@ -12388,21 +12751,21 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 if followers_zeroed_counter == FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER:
                     print(f"* Spotify API: Followers count dropped from {followers_old_count} to 0 and has been 0 for {followers_zeroed_counter} checks; accepting 0 as the new baseline")
                     spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, PROFILE_NOTIFICATION, False, notification_image_url=image_url, webhook_notification_allowed=True)
-                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print(f"Check interval:\t\t\t{check_window_text()}")
                     print_cur_ts("Timestamp:\t\t\t")
                     followers_old_count = followers_count
                     followers_old = followers
                     followers_zeroed_counter = 0
                 elif followers_zeroed_counter < FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER:
                     print(f"* Spotify API: Followers count dropped from {followers_old_count} to 0, streak {followers_zeroed_counter}/{FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER}; old count and list retained")
-                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print(f"Check interval:\t\t\t{check_window_text()}")
                     print_cur_ts("Timestamp:\t\t\t")
             else:
                 if followers_old_count == 0 and followers_zeroed_counter >= FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER:
                     print(f"* Spotify API: Followers count recovered to {followers_count}; previously was 0 for {followers_zeroed_counter} checks (old baseline was {followers_old_count})")
 
                 spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, PROFILE_NOTIFICATION, False, notification_image_url=image_url, webhook_notification_allowed=True)
-                print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                print(f"Check interval:\t\t\t{check_window_text()}")
                 print_cur_ts("Timestamp:\t\t\t")
                 followers_old_count = followers_count
                 followers_old = followers
@@ -12415,9 +12778,13 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             else:
                 if followers_zeroed_counter > 0:
                     print(f"* Spotify API: Followers count recovered to {followers_count} (matching old baseline) after a streak of {followers_zeroed_counter} checks")
-                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print(f"Check interval:\t\t\t{check_window_text()}")
                     print_cur_ts("Timestamp:\t\t\t")
                 followers_zeroed_counter = 0
+                if follow_membership_changed(followers, followers_old, followers_count):
+                    spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, PROFILE_NOTIFICATION, False, notification_image_url=image_url, webhook_notification_allowed=True)
+                    print(f"Check interval:\t\t\t{check_window_text()}")
+                    print_cur_ts("Timestamp:\t\t\t")
                 followers_old = followers
 
         if followings_count is None:
@@ -12435,21 +12802,21 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 if followings_zeroed_counter == FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER:
                     print(f"* Spotify API: Followings count dropped from {followings_old_count} to 0 and has been 0 for {followings_zeroed_counter} checks; accepting 0 as the new baseline")
                     spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, PROFILE_NOTIFICATION, False, notification_image_url=image_url, webhook_notification_allowed=True)
-                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print(f"Check interval:\t\t\t{check_window_text()}")
                     print_cur_ts("Timestamp:\t\t\t")
                     followings_old_count = followings_count
                     followings_old = followings
                     followings_zeroed_counter = 0
                 elif followings_zeroed_counter < FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER:
                     print(f"* Spotify API: Followings count dropped from {followings_old_count} to 0, streak {followings_zeroed_counter}/{FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER}; old count and list retained")
-                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print(f"Check interval:\t\t\t{check_window_text()}")
                     print_cur_ts("Timestamp:\t\t\t")
             else:
                 if followings_old_count == 0 and followings_zeroed_counter >= FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER:
                     print(f"* Spotify API: Followings count recovered to {followings_count}; previously was 0 for {followings_zeroed_counter} checks (old baseline was {followings_old_count})")
 
                 spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, PROFILE_NOTIFICATION, False, notification_image_url=image_url, webhook_notification_allowed=True)
-                print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                print(f"Check interval:\t\t\t{check_window_text()}")
                 print_cur_ts("Timestamp:\t\t\t")
                 followings_old_count = followings_count
                 followings_old = followings
@@ -12462,9 +12829,13 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             else:
                 if followings_zeroed_counter > 0:
                     print(f"* Spotify API: Followings count recovered to {followings_count} (matching old baseline) after a streak of {followings_zeroed_counter} checks")
-                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print(f"Check interval:\t\t\t{check_window_text()}")
                     print_cur_ts("Timestamp:\t\t\t")
                 followings_zeroed_counter = 0
+                if follow_membership_changed(followings, followings_old, followings_count):
+                    spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, PROFILE_NOTIFICATION, False, notification_image_url=image_url, webhook_notification_allowed=True)
+                    print(f"Check interval:\t\t\t{check_window_text()}")
+                    print_cur_ts("Timestamp:\t\t\t")
                 followings_old = followings
 
         # profile pic
@@ -12485,11 +12856,11 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                 if notification_channels_enabled("profile", PROFILE_NOTIFICATION):
                     m_subject = f"Spotify user {username} has removed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
-                    m_body = f"Spotify user {username} has removed profile picture added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                    m_body_html = f"<html><head></head><body>Spotify user <b>{escape(username)}</b> has removed profile picture added on <b>{escape(get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True))}</b> (after <b>{escape(calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2))}</b>)<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                    m_body = f"Spotify user {username} has removed profile picture added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                    m_body_html = f"<html><head></head><body>Spotify user <b>{escape(username)}</b> has removed profile picture added on <b>{escape(get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True))}</b> (after <b>{escape(calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2))}</b>)<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}</body></html>"
                     send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION)
 
-                print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                print(f"Check interval:\t\t\t{check_window_text()}")
                 print_cur_ts("Timestamp:\t\t\t")
 
             # User has profile pic, but it does not exist in the filesystem
@@ -12517,15 +12888,15 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                     if notification_channels_enabled("profile", PROFILE_NOTIFICATION):
                         m_subject = f"Spotify user {username} has set profile picture ! ({get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)})"
-                        m_body = f"Spotify user {username} has set profile picture !\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                        m_body_html = f"<html><head></head><body>Spotify user <b>{escape(username)}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(SPOTIFY_CHECK_INTERVAL)}</b> ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                        m_body = f"Spotify user {username} has set profile picture !\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                        m_body_html = f"<html><head></head><body>Spotify user <b>{escape(username)}</b> has set profile picture !{m_body_html_pic_saved_text}<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}</body></html>"
                         send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=image_url, email_image_file=profile_pic_file, email_image_name="profile_pic")
 
                 else:
                     print_operation_error("The profile picture could not be saved", context="file_write")
                     print()
 
-                print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                print(f"Check interval:\t\t\t{check_window_text()}")
                 print_cur_ts("Timestamp:\t\t\t")
 
             # User has profile pic and it exists in the filesystem, but we check if it has not changed
@@ -12557,11 +12928,11 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                         if notification_channels_enabled("profile", PROFILE_NOTIFICATION):
                             m_body_html_pic_saved_text = f'<br><br><img src="cid:profile_pic">'
                             m_subject = f"Spotify user {username} has changed profile picture ! (after {calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)})"
-                            m_body = f"Spotify user {username} has changed profile picture !\n\nPrevious one added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                            m_body_html = f"<html><head></head><body>Spotify user <b>{escape(username)}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: <b>{display_time(SPOTIFY_CHECK_INTERVAL)}</b> ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                            m_body = f"Spotify user {username} has changed profile picture !\n\nPrevious one added on {get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)\n\nProfile picture has been added on {get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)} ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                            m_body_html = f"<html><head></head><body>Spotify user <b>{escape(username)}</b> has changed profile picture !{m_body_html_pic_saved_text}<br><br>Previous one added on <b>{get_short_date_from_ts(profile_pic_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_mdate_dt, show_seconds=False, granularity=2)} ago)<br><br>Profile picture has been added on <b>{get_short_date_from_ts(profile_pic_tmp_mdate_dt, always_show_year=True)}</b> ({calculate_timespan(now_local(), profile_pic_tmp_mdate_dt, show_seconds=False)} ago)<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}</body></html>"
                             send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=image_url, email_image_file=profile_pic_file, email_image_name="profile_pic")
 
-                        print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                        print(f"Check interval:\t\t\t{check_window_text()}")
                         print_cur_ts("Timestamp:\t\t\t")
                     else:
                         try:
@@ -12571,7 +12942,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 else:
                     print_operation_error("The profile picture could not be compared with the saved copy", context="file_read")
                     print()
-                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print(f"Check interval:\t\t\t{check_window_text()}")
                     print_cur_ts("Timestamp:\t\t\t")
 
         list_of_playlists = []
@@ -12658,10 +13029,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                         print_operation_error("A CSV event could not be written", e)
 
                                     m_subject = f"Spotify user {username} number of likes for playlist '{p_name}' has changed! ({p_likes_diff_str}, {likes_display_old} -> {likes_display_new})"
-                                    m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                    m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a></b>': number of likes changed from <b>{escape(str(likes_display_old))}</b> to <b>{escape(str(likes_display_new))}</b> (<b>{escape(p_likes_diff_str)}</b>)<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                                    m_body = f"{p_message}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                    m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a></b>': number of likes changed from <b>{escape(str(likes_display_old))}</b> to <b>{escape(str(likes_display_new))}</b> (<b>{escape(p_likes_diff_str)}</b>)<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}</body></html>"
                                     send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=select_notification_image_url(p_image_url, profile_image_url=image_url), email_image_url=p_image_url)
-                                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                                    print(f"Check interval:\t\t\t{check_window_text()}")
                                     print_cur_ts("Timestamp:\t\t\t")
 
                                 if restricted_pair:
@@ -12674,10 +13045,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                         except Exception as e:
                                             print_operation_error("A CSV event could not be written", e)
                                         m_subject = f"Spotify user {username} playlist '{p_name_old}' name changed to '{p_name}'! [RESTRICTED]"
-                                        m_body = f"{p_message}\nMetadata source: profile-view only\n\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                        m_body_html = f"<html><head></head><body>Playlist '<b>{escape(p_name_old)}</b>': name changed to new name '<b><a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a></b>' [<b>RESTRICTED</b>]<br><br>Metadata source: profile-view only<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                                        m_body = f"{p_message}\nMetadata source: profile-view only\n\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                        m_body_html = f"<html><head></head><body>Playlist '<b>{escape(p_name_old)}</b>': name changed to new name '<b><a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a></b>' [<b>RESTRICTED</b>]<br><br>Metadata source: profile-view only<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}</body></html>"
                                         send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=select_notification_image_url(p_image_url, profile_image_url=image_url), email_image_url=p_image_url)
-                                        print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                                        print(f"Check interval:\t\t\t{check_window_text()}")
                                         print_cur_ts("Timestamp:\t\t\t")
                                     continue
 
@@ -12726,7 +13097,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                                     if int(pending.get("streak", 0)) < int(COLLABORATORS_CHANGE_COUNTER):
                                         print(f"* Spotify API: suspected transient collaborator change for playlist '{p_name}' ({len(stable_ids)} -> {len(current_ids)}), streak {pending.get('streak')}/{COLLABORATORS_CHANGE_COUNTER}; will confirm next check")
-                                        print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                                        print(f"Check interval:\t\t\t{check_window_text()}")
                                         print_cur_ts("Timestamp:\t\t\t")
                                         suppress_collab_notification = True
                                     else:
@@ -12833,10 +13204,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                         continue
 
                                     m_subject = f"Spotify user {username} number of collaborators for playlist '{p_name}' has changed! ({p_collaborators_diff_str}, {p_collaborators_old} -> {p_collaborators})"
-                                    m_body = f"{p_message}\n{p_message_added_collaborators}{p_message_removed_collaborators}Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                    m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a></b>': number of collaborators changed from <b>{p_collaborators_old}</b> to <b>{p_collaborators}</b> (<b>{escape(p_collaborators_diff_str)}</b>)<br>{p_message_added_collaborators_html}{p_message_removed_collaborators_html}<br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                                    m_body = f"{p_message}\n{p_message_added_collaborators}{p_message_removed_collaborators}Check interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                    m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a></b>': number of collaborators changed from <b>{p_collaborators_old}</b> to <b>{p_collaborators}</b> (<b>{escape(p_collaborators_diff_str)}</b>)<br>{p_message_added_collaborators_html}{p_message_removed_collaborators_html}<br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}</body></html>"
                                     send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=select_notification_image_url(p_image_url, profile_image_url=image_url), email_image_url=p_image_url)
-                                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                                    print(f"Check interval:\t\t\t{check_window_text()}")
                                     print_cur_ts("Timestamp:\t\t\t")
 
                                 # Number of tracks changed (skipped on a backend switch to avoid switch-induced diffs)
@@ -13024,12 +13395,12 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                         if p_after_str:
                                             m_body_html_p_message += f" (after <b>{escape(calculate_timespan(p_update, p_update_old, show_seconds=False, granularity=2))}</b>; previous update: <b>{escape(get_short_date_from_ts(p_update_old, True))}</b>)"
                                         m_body_html_p_message += "<br>"
-                                    m_body = f"{p_message}\n{p_message_added_tracks}{p_message_removed_tracks}Check interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                    m_body_html = f"<html><head></head><body>{m_body_html_p_message}{p_message_added_tracks_html}{p_message_removed_tracks_html}Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                                    m_body = f"{p_message}\n{p_message_added_tracks}{p_message_removed_tracks}Check interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                    m_body_html = f"<html><head></head><body>{m_body_html_p_message}{p_message_added_tracks_html}{p_message_removed_tracks_html}Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}</body></html>"
                                     selected_track_image_url = select_notification_image_url(p_image_url, album_notification_image_url, image_url)
                                     selected_track_email_image_url = select_notification_image_url(p_image_url, album_notification_image_url)
                                     send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=selected_track_image_url, email_image_url=selected_track_email_image_url)
-                                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                                    print(f"Check interval:\t\t\t{check_window_text()}")
                                     print_cur_ts("Timestamp:\t\t\t")
 
                                 # Playlist name changed
@@ -13042,10 +13413,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                     except Exception as e:
                                         print_operation_error("A CSV event could not be written", e)
                                     m_subject = f"Spotify user {username} playlist '{p_name_old}' name changed to '{p_name}'!"
-                                    m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                    m_body_html = f"<html><head></head><body>Playlist '<b>{escape(p_name_old)}</b>': name changed to new name '<b><a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a></b>'<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                                    m_body = f"{p_message}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                    m_body_html = f"<html><head></head><body>Playlist '<b>{escape(p_name_old)}</b>': name changed to new name '<b><a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a></b>'<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}</body></html>"
                                     send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=select_notification_image_url(p_image_url, profile_image_url=image_url), email_image_url=p_image_url)
-                                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                                    print(f"Check interval:\t\t\t{check_window_text()}")
                                     print_cur_ts("Timestamp:\t\t\t")
 
                                 # Playlist description changed
@@ -13058,10 +13429,10 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                                     except Exception as e:
                                         print_operation_error("A CSV event could not be written", e)
                                     m_subject = f"Spotify user {username} playlist '{p_name}' description has changed !"
-                                    m_body = f"{p_message}\nCheck interval: {display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)}){get_cur_ts(nl_ch + 'Timestamp: ')}"
-                                    m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a></b>' description changed from:<br><br>'<i>{escape(p_descr_old)}</i>'<br><br>to:<br><br>'<i>{escape(p_descr)}</i>'<br><br>Check interval: <b>{escape(display_time(SPOTIFY_CHECK_INTERVAL))}</b> ({escape(get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True))}){get_cur_ts('<br>Timestamp: ')}</body></html>"
+                                    m_body = f"{p_message}\nCheck interval: {check_window_text()}{get_cur_ts(nl_ch + 'Timestamp: ')}"
+                                    m_body_html = f"<html><head></head><body>Playlist '<b><a href=\"{escape_html_attr(p_url)}\">{escape(p_name)}</a></b>' description changed from:<br><br>'<i>{escape(p_descr_old)}</i>'<br><br>to:<br><br>'<i>{escape(p_descr)}</i>'<br><br>Check interval: {check_window_html()}{get_cur_ts('<br>Timestamp: ')}</body></html>"
                                     send_notification_channels("profile", m_subject, m_body, m_body_html, email_enabled=PROFILE_NOTIFICATION, image_url=select_notification_image_url(p_image_url, profile_image_url=image_url), email_image_url=p_image_url)
-                                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                                    print(f"Check interval:\t\t\t{check_window_text()}")
                                     print_cur_ts("Timestamp:\t\t\t")
 
             # Suppress transient playlist glitches by confirming changes across multiple checks  and keep a stable
@@ -13103,7 +13474,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
 
                     if PLAYLISTS_CHANGE_COUNTER and int(pending.get("streak", 0)) < int(PLAYLISTS_CHANGE_COUNTER):
                         print(f"* Spotify API: suspected transient playlist change for user '{username}' ({stable_count} -> {len(current_uris)}), streak {pending.get('streak')}/{PLAYLISTS_CHANGE_COUNTER}; will confirm next check\n")
-                        print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                        print(f"Check interval:\t\t\t{check_window_text()}")
                         print_cur_ts("Timestamp:\t\t\t")
                         suppress_playlists_notification = True
                     else:
@@ -13136,7 +13507,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                     playlists_count = len(current_uris)
                     # playlists already contains current dict list, no change needed
                     print(f"* Spotify API: Playlists for user '{username}' reverted to baseline ({stable_count}) after transient glitch; suppressing notification\n")
-                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print(f"Check interval:\t\t\t{check_window_text()}")
                     print_cur_ts("Timestamp:\t\t\t")
                     try:
                         del PLAYLISTS_PENDING_CACHE[user_playlists_key]
@@ -13153,7 +13524,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                         print(f"* Spotify API: Playlists count dropped from {playlists_old_count} to 0 and has been 0 for {playlists_zeroed_counter} checks; accepting 0 as the new baseline\n")
                         spotify_print_changed_followers_followings_playlists(
                             username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists to profile", "Added Playlist", "Removed playlists from profile", "Removed Playlist", playlists_file, csv_file_name, PROFILE_NOTIFICATION, True, sp_accessToken, image_url, True)
-                        print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                        print(f"Check interval:\t\t\t{check_window_text()}")
                         print_cur_ts("Timestamp:\t\t\t")
                         playlists_old_count = playlists_count
                         playlists_old = playlists
@@ -13162,14 +13533,14 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                         PLAYLISTS_BASELINE_CACHE[user_playlists_key] = {"uris": frozenset(), "count": 0, "playlist_list": []}
                     elif playlists_zeroed_counter < PLAYLISTS_DISAPPEARED_COUNTER:
                         print(f"* Spotify API: Playlists count dropped from {playlists_old_count} to 0, streak {playlists_zeroed_counter}/{PLAYLISTS_DISAPPEARED_COUNTER}; old count and list retained\n")
-                        print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                        print(f"Check interval:\t\t\t{check_window_text()}")
                         print_cur_ts("Timestamp:\t\t\t")
                 else:
                     if playlists_old_count == 0 and playlists_zeroed_counter >= PLAYLISTS_DISAPPEARED_COUNTER:
                         print(f"* Spotify API: Playlists count recovered to {playlists_count}; previously was 0 for {playlists_zeroed_counter} checks (old baseline was {playlists_old_count})\n")
 
                     spotify_print_changed_followers_followings_playlists(username, playlists, playlists_old, playlists_count, playlists_old_count, "Playlists", "for", "Added playlists to profile", "Added Playlist", "Removed playlists from profile", "Removed Playlist", playlists_file, csv_file_name, PROFILE_NOTIFICATION, True, sp_accessToken, image_url, True)
-                    print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                    print(f"Check interval:\t\t\t{check_window_text()}")
                     print_cur_ts("Timestamp:\t\t\t")
                     playlists_old_count = playlists_count
                     playlists_old = playlists
@@ -13188,7 +13559,7 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
                 else:
                     if playlists_zeroed_counter > 0:
                         print(f"* Spotify API: Playlists count recovered to {playlists_count} (matching old baseline) after a streak of {playlists_zeroed_counter} checks\n")
-                        print(f"Check interval:\t\t\t{display_time(SPOTIFY_CHECK_INTERVAL)} ({get_range_of_dates_from_tss(int(time.time()) - SPOTIFY_CHECK_INTERVAL, int(time.time()), short=True)})")
+                        print(f"Check interval:\t\t\t{check_window_text()}")
                         print_cur_ts("Timestamp:\t\t\t")
                     playlists_zeroed_counter = 0
                     playlists_old = playlists
@@ -13201,31 +13572,34 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             playlist_error = playlist_errors[0] if playlist_errors else RuntimeError("One or more playlists could not be processed")
             playlist_advice = classify_recovery_error(playlist_error, "playlist")
             playlist_outcome = playlist_outage.failed(playlist_advice)
-            if playlist_outcome == "full":
-                print_recovery_error(playlist_error, "playlist", retry_note=f"retrying in {display_time(SPOTIFY_CHECK_INTERVAL)}", label="Error while processing playlists")
-                print_cur_ts("Timestamp:\t\t\t")
-            elif playlist_outcome == "changed":
-                print_outage_change(user_uri_id, playlist_advice)
-            elif playlist_outcome == "reminder":
-                print_outage_liveness(user_uri_id, playlist_advice, playlist_outage.since, playlist_outage.failures)
-            dispatch_error_alert(error_alert, playlist_advice, playlist_error, user_uri_id, playlist_outage.since)
+            # A sweep that could not finish is retried on the error cadence rather than after a full poll interval,
+            # which on a long interval would leave the run blind for hours over a rate limit that clears in minutes.
+            # A failure nothing here can retry away keeps the poll interval, since asking again sooner only repeats it
+            next_check_seconds = min(failure_retry_seconds(playlist_advice, playlist_outage.failures), SPOTIFY_CHECK_INTERVAL) if playlist_advice.retryable else SPOTIFY_CHECK_INTERVAL
+            report_failing_check(playlist_outcome, profile_alert_target(user_uri_id, username), playlist_advice, playlist_error, playlist_outage, error_alert, retry_seconds=next_check_seconds, context="playlist", label="Error while processing playlists")
         else:
-            error_alert.reset()
+            next_check_seconds = SPOTIFY_CHECK_INTERVAL
             playlist_lasted = playlist_outage.recovered()
             if playlist_lasted is not None:
-                print_outage_recovery(user_uri_id, playlist_lasted)
+                print_outage_recovery(profile_alert_target(user_uri_id, username), playlist_lasted, error_alert)
+            # Every poll of this check answered, so a failure that was noted but never confirmed must not shorten
+            # the alert delay of the next outage
+            error_alert.reset()
 
-        debug_print("Completed check", check=f"#{check_count}", user=user_uri_id, next=display_time(SPOTIFY_CHECK_INTERVAL))
+        debug_print("Completed check", check=f"#{check_count}", user=user_uri_id, next=display_time(next_check_seconds))
 
         # The banner speaks for a quiet, complete check, so anything this one reported or could not finish
         # restarts the clock instead of being contradicted by it
         if REPORTS_PRINTED != reports_before_check or error_while_processing:
             alive_since = int(time.time())
         elif LIVENESS_REMINDER_SECONDS and int(time.time()) - alive_since >= LIVENESS_REMINDER_SECONDS:
-            print_liveness_banner(f"Monitoring healthy for {user_uri_id}. No profile or playlist change since the last check")
+            print_liveness_banner(f"Monitoring healthy for {profile_alert_target(user_uri_id, username)}. No profile or playlist change since the last check")
             alive_since = int(time.time())
 
-        time.sleep(SPOTIFY_CHECK_INTERVAL)
+        # Only a check that got this far advanced the baselines, so a failing check leaves the window where it was
+        LAST_CHECK_TS = int(time.time())
+
+        time.sleep(next_check_seconds)
 
 
 # Applies validated one-run webhook command-line overrides to runtime settings
@@ -13511,7 +13885,7 @@ def main():
         dest="error_notification",
         action="store_false",
         default=None,
-        help="Disable emails on errors"
+        help="Disable email on errors and the recovery alert that follows"
     )
     notify.add_argument(
         "--send-test-email",
@@ -13569,14 +13943,14 @@ def main():
         dest="webhook_errors",
         action="store_true",
         default=None,
-        help="Send webhook alerts when monitoring has a problem"
+        help="Send webhook alerts when monitoring has a problem and the recovery alert that follows"
     )
     webhook_error_toggle.add_argument(
         "--no-webhook-error-notify",
         dest="webhook_errors",
         action="store_false",
         default=None,
-        help="Disable webhook alerts when monitoring has a problem"
+        help="Disable webhook alerts when monitoring has a problem and the recovery alert that follows"
     )
     webhook_notify.add_argument(
         "--send-test-webhook",

@@ -30,6 +30,7 @@ would see.
 
 | File | Area under test |
 | --- | --- |
+| `test_codeql_workflow.py` | Source suppression filtering, retained security findings, invalid reports and CodeQL upload ordering |
 | `test_notification_receipts.py` | SMTP acceptance despite cleanup failures, receipt controls and unchanged notification content |
 | `test_oauth_validation_boundaries.py` | Fresh OAuth validation and immediate resource failure with real HTTP clients |
 | `test_configuration_notification_boundaries.py` | Invalid output settings, CLI precedence and strict webhook fields with legacy JSON support |
@@ -56,10 +57,12 @@ would see.
 | `test_private_sp_dc.py` | `--set-sp-dc` validation, atomic dotenv updates and refusal to write on a bad cookie |
 | `test_browser_cookie_import.py` | Firefox and Chromium profile discovery, cookie selection, deceptive-domain rejection and dotenv preservation |
 | `test_follow_snapshot.py` | Unavailable follow data, restart history, first available baselines and confirmed zero counts |
+| `test_follower_renames.py` | Pairing follow snapshots on the Spotify URI, the rename report and the membership changes that keep the total |
 | `test_oauth_user_playlists.py` | Current playlist item shapes, pagination, older route compatibility and per-playlist OAuth restrictions |
 | `test_web_playlist_backend.py` | TOTP generation and config, plus the generated config's token-source guidance |
 | `test_playlist_snapshot_baseline.py` | Playlist baseline advancement on partial failure, removal confirmation and membership acceptance |
 | `test_webhook_notifications.py` | Webhook URL validation, provider detection, startup rollups and `SIGHUP` reload |
+| `test_email_html.py` | HTML notification bodies: escaping, the Discord markdown form and the plain-text match |
 | `test_monitoring_loop.py` | Error alert timing in the monitoring loop: a retryable outage alerts once it has lasted the alert delay and a failure that cannot clear itself alerts at once |
 | `test_notification_escaping.py` | Source-level sweep proving every HTML email body escapes Spotify-supplied text |
 | `test_untrusted_output.py` | Terminal control-character stripping across the logger, output streams and early-exit listing modes |

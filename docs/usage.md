@@ -275,7 +275,11 @@ To disable sending an email on errors (enabled by default):
 spotify_profile_monitor <spotify_target> -e
 ```
 
-Email and webhook error alerts are sent after **5 minutes** of a continuing failure. Problems that need your action, such as an expired `sp_dc` cookie, alert immediately. Each channel gets one alert until a full check succeeds, including the follower poll. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour.
+Email and webhook failure alerts are sent after **5 minutes** of a continuing failure. Problems that need your action, such as an expired `sp_dc` cookie, alert immediately. The subject reads `Spotify Profile Monitor error: <what went wrong> (user: <display name>, <user URI id>)`, falling back to the user URI id alone while the display name is unknown. Everywhere else the profile is written as `<display name> (<user URI id>)`, which is how the recovery alert and the console lines name it. The body gives the fix, a link to the page that covers it, how many checks failed in a row, since when the check has been failing and how long until the next attempt.
+
+A **recovery alert** follows on the same channels once the failure clears, naming how long it lasted and which failure it closes. A channel that could not receive the failure alert while the outage lasted is told about the failure and its recovery together, so a blocked channel is not left without any word of an outage. `-e` / `--no-error-notify` switches off the failure email and the recovery email together, and `--no-webhook-error-notify` does the same for webhooks.
+
+Each channel gets one alert until a full check succeeds, including the follower poll. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour.
 
 Make sure you defined your SMTP settings earlier (see [SMTP settings](configuration.md#smtp-settings)).
 
@@ -305,6 +309,8 @@ Webhook event settings mirror the email controls while remaining independent fro
 | Profile or playlist change | `WEBHOOK_PROFILE_NOTIFICATION` | `--webhook-profile` |
 | Followers or followings change | `WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION` | Disable with `--no-webhook-followers-followings-notify` |
 | Monitoring error | `WEBHOOK_ERROR_NOTIFICATION` | Enable with `--webhook-errors` or disable with `--no-webhook-error-notify` |
+
+The monitoring error event covers the failure alert and the recovery alert that follows it, with the same subject and text as the [email alerts](#email-notifications). The webhook message leaves out the timestamp line, since a chat message already shows when it arrived.
 
 Enable the master switch and the profile event setting in `spotify_profile_monitor.conf`:
 
@@ -340,6 +346,21 @@ spotify_profile_monitor <spotify_target> -b spotify_profile_changes_spotify_user
 The file will be automatically created if it does not exist.
 
 Spotify-supplied text (playlist names, track names, artist names, collaborator names and descriptions) that starts with `=`, `+`, `-`, `@`, a tab or a carriage return is written with a leading apostrophe, so opening the export in a spreadsheet cannot evaluate it as a formula. The same applies to the per-playlist files produced by `--export-all-playlists`. Timestamps and numeric values are unaffected.
+
+<a id="follower-and-following-changes"></a>
+## Follower and Following Changes
+
+Followers and followings are compared by their Spotify URI. Someone who only changes their display name appears under `Renamed followers` or `Renamed followings` with both names, instead of being reported as a departure and an arrival:
+
+```
+Renamed followers:
+
+- Miss Johnson -> Johnson [ https://open.spotify.com/user/USER_ID ]
+```
+
+The CSV export records that as a single `Renamed Follower` or `Renamed Following` row holding the old and the new name.
+
+A change that leaves the total untouched, such as a rename or one person leaving while another arrives in the same check, is reported as `Followers changed for user <name> while the total remained <count>`.
 
 <a id="unavailable-followers-and-followings"></a>
 ## Unavailable Followers and Followings
@@ -457,6 +478,18 @@ spotify_profile_monitor <spotify_target> -c 900
 ```
 
 An interval below 30 seconds invites the Spotify rate limiter, which stops the tool seeing anything. `--doctor` warns when the configured interval is that short.
+
+A check that could not finish does not wait out the full interval. It comes back after the error interval instead, set with the `-m` flag or the `SPOTIFY_ERROR_INTERVAL` configuration option (default: 300, i.e. 5 minutes), so a long polling interval does not leave the tool blind for hours over a failure that clears in minutes.
+
+Rate limiting is the exception. Spotify clears it on a timer of its own and it is easy to hit while sweeping a profile with many playlists, so a rate limited check is retried after 1 minute, then 2, 4, 8, 16 and 30 minutes while the limit lasts, never waiting longer than the polling interval. A complete check returns the tool to the polling interval. A failure the tool cannot retry away, such as a target that no longer exists, keeps the polling interval, since asking again sooner would only repeat it.
+
+The `Check interval:` line under a reported change names the window that change was observed in, measured from the previous successful check:
+
+```
+Check interval:			3 hours, 5 minutes (Sat 19 Sep 00:43 - 03:48)
+```
+
+When checks run on schedule this is the configured interval. After a failure it is longer, since the last successful read is further back, and after a shortened retry it is shorter.
 
 <a id="liveness-reminder"></a>
 ### Liveness Reminder
