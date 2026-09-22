@@ -2,6 +2,14 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 4.1.1 (TBD)
+
+Version **4.1.1** fixes webhook alerts that were dropped when a custom header used a placeholder such as `{title}` and the alert text held emoji or non-Latin letters.
+
+**Bug fixes**:
+
+- **BUGFIX:** **Custom headers with emoji no longer drop webhook alerts** - A **`WEBHOOK_HEADERS`** value built from a placeholder such as `{title}` failed the whole alert with `'latin-1' codec can't encode character` when the expanded text held emoji or letters outside Latin-1. Such values are now sent RFC 2047 encoded (`=?UTF-8?B?...?=`) and the alert is delivered. ntfy decodes them back to the original text. Other receivers see the encoded form. ASCII values, including ones you already encoded, are sent unchanged
+
 # Changes in 4.1 (22 Sep 2026)
 
 Version **4.1** fixes **browser cookie import**. It reads recently written cookies, finds the signed-in Firefox profile and discovers Firefox from the Microsoft Store plus Chrome, Brave or Chromium from Snap or Flatpak. The profile picker marks current Spotify logins, retries a mistyped choice and reports why an import failed. Selected notification channels show `Unavailable` when local settings prevent delivery. Automatic sends stay quiet until the settings are fixed.
