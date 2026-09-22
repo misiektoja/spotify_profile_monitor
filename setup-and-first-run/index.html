@@ -924,6 +924,9 @@
 </code></pre></div>
 <p>Supported sources are Firefox, Chrome, Brave and Chromium. Firefox works on macOS, Linux and Windows without an extra package. Chromium import works on macOS and Linux with the <code>browser</code> extra. If that extra is missing, setup can install it through the active Python interpreter after approval. Current Chromium app-bound encryption prevents reliable import on Windows, so use Firefox there.</p>
 <p>Select a browser profile if prompted. The importer validates its Spotify login and saves <code>SP_DC_COOKIE</code> to the selected dotenv file. Replacing a saved cookie needs confirmation or <code>--force</code> in a noninteractive script. Other dotenv settings are preserved.</p>
+<p>In guided setup, each browser choice reports how many of its profiles hold a current Spotify login, so you can pick
+one before opening the profile list. If an import does not complete, setup offers to retry, to import from a
+different browser, to enter the cookie privately or to finish and authenticate later.</p>
 <p>Useful overrides are <code>--browser-profile PROFILE</code>, <code>--cookie-file PATH</code> and <code>--env-file PATH</code>. For the browser table, profile selection and the browser extra, see <a href="../configuration/#which-browsers-are-supported">Which browsers are supported</a>.</p>
 <p>If browser import is not available, use the <a href="../configuration/#manual-cookie-extraction">manual cookie extraction</a> fallback.</p>
 <h3 id="save-a-manually-extracted-cookie">Save a manually extracted cookie<a class="headerlink" href="#save-a-manually-extracted-cookie" title="Permanent link">&para;</a></h3>
