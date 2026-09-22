@@ -1780,10 +1780,10 @@ def test_declining_the_switch_keeps_the_current_browser(monkeypatch, tmp_path):
     assert monitor._wizard_switch_import_browser("firefox") is None
 
 
-# Verifies the grouped Chromium menu entry carries the note rather than a fixed claim that a login is present.
-# Testing the note helper alone leaves the menu free to keep describing every browser as signed in
+# Verifies the grouped Chromium menu entry reports the detected login state
 def test_the_chromium_menu_entry_carries_the_login_note(monkeypatch):
     captured = {}
+    monkeypatch.setattr(monitor, "_wizard_import_browsers", lambda: list(monitor.IMPORT_BROWSERS))
     monkeypatch.setattr(monitor, "_wizard_chromium_dependency_available", lambda: True)
     monkeypatch.setattr(monitor, "_wizard_browser_login_counts", lambda browser: (0, 0))
     monkeypatch.setattr(monitor, "_wizard_ask_choice", lambda question, options, default_index=0: (captured.update({"options": options}) or 0))
@@ -1794,6 +1794,21 @@ def test_the_chromium_menu_entry_carries_the_login_note(monkeypatch):
     chromium_entry = next(description for label, description in descriptions.items() if "Chrome, Brave or Chromium" in label)
     assert chromium_entry == "No Chrome, Brave or Chromium profiles were found on this machine."
     assert "signed-in" not in chromium_entry
+
+
+# Verifies the menu omits Chromium import when only Firefox is supported
+def test_the_cookie_menu_omits_chromium_on_firefox_only_platforms(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(monitor, "_wizard_import_browsers", lambda: ["firefox"])
+    monkeypatch.setattr(monitor, "_wizard_chromium_dependency_available", lambda: True)
+    monkeypatch.setattr(monitor, "_wizard_browser_login_counts", lambda browser: (0, 0))
+    monkeypatch.setattr(monitor, "_wizard_ask_choice", lambda question, options, default_index=0: (captured.update({"options": options}) or 0))
+
+    monitor._wizard_collect_cookie_auth("manual", Path("unused.env"), {})
+
+    labels = [label for label, _ in captured["options"]]
+    assert any("Firefox" in label for label in labels)
+    assert not any("Chrome, Brave or Chromium" in label for label in labels)
 
 
 # Verifies the Firefox menu entry carries its own note for the same reason
