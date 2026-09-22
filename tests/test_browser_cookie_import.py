@@ -241,3 +241,93 @@ def test_firefox_reads_a_profile_whose_path_contains_uri_punctuation(tmp_path):
     create_firefox_database(cookie_file, [(".spotify.com", "sp_dc", "punctuated-path", 5000, 100)])
 
     assert monitor.read_firefox_sp_dc(cookie_file, now=1000) == "punctuated-path"
+
+
+# Verifies the expiry unit is taken from the magnitude, since the Firefox schema does not record which one it uses
+@pytest.mark.parametrize("stored,expected", [(0, 0.0), (1_790_000_000, 1_790_000_000.0), (1_790_000_000_000, 1_790_000_000.0), (99_999_999_999, 99_999_999_999.0), (100_000_000_000, 100_000_000.0)])
+def test_the_cookie_expiry_unit_follows_the_magnitude(stored, expected):
+    assert monitor._cookie_expiry_seconds(stored) == expected
+
+
+# Verifies an expired cookie cannot outrank a current one on either unit. Comparing a millisecond expiry against a
+# time in seconds puts every cookie in the future, so the ranking silently stops discriminating
+@pytest.mark.parametrize("scale", [1, 1000])
+def test_an_expired_cookie_never_outranks_a_current_one(tmp_path, scale):
+    now = 1790000000.0
+    cookie_file = tmp_path / "cookies.sqlite"
+    # The expired cookie was touched more recently, so it wins on last access unless expiry rules it out first
+    create_firefox_database(cookie_file, [(".spotify.com", "sp_dc", "expired", int((now - 86400 * 365) * scale), 999), (".spotify.com", "sp_dc", "current", int((now + 86400 * 90) * scale), 1)])
+
+    assert monitor.read_firefox_sp_dc(cookie_file, now=now) == "current"
+
+
+# Verifies a profile whose every Spotify cookie has lapsed is reported from the database, with the date it lapsed
+@pytest.mark.parametrize("scale", [1, 1000])
+def test_a_wholly_expired_profile_is_reported_without_a_spotify_request(tmp_path, scale):
+    now = 1790000000.0
+    cookie_file = tmp_path / "cookies.sqlite"
+    lapsed = now - 86400 * 400
+    create_firefox_database(cookie_file, [(".spotify.com", "sp_dc", "old", int(lapsed * scale), 1), (".spotify.com", "sp_dc", "older", int((now - 86400 * 800) * scale), 2)])
+
+    with pytest.raises(monitor.BrowserCookieImportError, match="expired on") as failure:
+        monitor.read_firefox_sp_dc(cookie_file, now=now)
+
+    assert monitor._cookie_expiry_date(lapsed) in str(failure.value)
+
+
+# Verifies the expired report reaches the user without spending a Spotify request to be told the same thing
+def test_an_expired_profile_import_never_reaches_spotify(tmp_path, monkeypatch):
+    now = time.time()
+    cookie_file = tmp_path / "cookies.sqlite"
+    create_firefox_database(cookie_file, [(".spotify.com", "sp_dc", "old", int((now - 86400 * 400) * 1000), 1)])
+    validator = Mock(return_value=True)
+    monkeypatch.setattr(monitor, "validate_sp_dc_cookie", validator)
+
+    with pytest.raises(monitor.BrowserCookieImportError, match="expired on"):
+        monitor.run_browser_cookie_import(cookie_file=cookie_file, env_file=tmp_path / ".env", interactive=False)
+
+    validator.assert_not_called()
+
+
+# Verifies a read failure names the profile that failed rather than "the selected profile"
+def test_a_failure_names_the_profile_it_happened_in(tmp_path, monkeypatch):
+    profile_dir = tmp_path / "abc.default-release"
+    profile_dir.mkdir()
+    cookie_file = profile_dir / "cookies.sqlite"
+    create_firefox_database(cookie_file, [])
+    monkeypatch.setattr(monitor, "discover_firefox_profiles", lambda *arguments, **keywords: [{"dir": "abc.default-release", "name": "default-release", "cookie_file": str(cookie_file)}])
+
+    with pytest.raises(monitor.BrowserCookieImportError) as failure:
+        monitor.read_firefox_sp_dc(cookie_file, now=1790000000.0)
+
+    assert "Firefox profile abc.default-release (default-release)" in str(failure.value)
+    assert "the selected Firefox profile" not in str(failure.value)
+
+
+# Verifies the other profiles are named but capped, since an unbounded list buries the failure on a machine carrying
+# a dozen of them
+def test_a_failure_lists_the_other_profiles_up_to_a_cap(tmp_path, monkeypatch):
+    cookie_file = tmp_path / "cookies.sqlite"
+    create_firefox_database(cookie_file, [])
+    others = [{"dir": f"id{index}.name{index}", "name": f"name{index}", "cookie_file": str(tmp_path / f"other{index}.sqlite")} for index in range(monitor.PROFILE_ALTERNATIVES_LISTED + 3)]
+    monkeypatch.setattr(monitor, "discover_firefox_profiles", lambda *arguments, **keywords: [{"dir": "chosen", "name": "chosen", "cookie_file": str(cookie_file)}] + others)
+
+    with pytest.raises(monitor.BrowserCookieImportError) as failure:
+        monitor.read_firefox_sp_dc(cookie_file, now=1790000000.0)
+
+    message = str(failure.value)
+    assert message.count("name") >= monitor.PROFILE_ALTERNATIVES_LISTED
+    assert f"id{monitor.PROFILE_ALTERNATIVES_LISTED}.name{monitor.PROFILE_ALTERNATIVES_LISTED}" not in message
+    assert "and 3 more" in message
+
+
+# Verifies a failure in a database outside the enumerated profiles still names the file it happened in
+def test_a_failure_outside_the_known_profiles_names_the_database(tmp_path, monkeypatch):
+    cookie_file = tmp_path / "loose.sqlite"
+    create_firefox_database(cookie_file, [])
+    monkeypatch.setattr(monitor, "discover_firefox_profiles", lambda *arguments, **keywords: [])
+
+    with pytest.raises(monitor.BrowserCookieImportError) as failure:
+        monitor.read_firefox_sp_dc(cookie_file, now=1790000000.0)
+
+    assert str(cookie_file) in str(failure.value)
