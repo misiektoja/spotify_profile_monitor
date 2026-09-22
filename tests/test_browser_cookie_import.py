@@ -331,3 +331,112 @@ def test_a_failure_outside_the_known_profiles_names_the_database(tmp_path, monke
         monitor.read_firefox_sp_dc(cookie_file, now=1790000000.0)
 
     assert str(cookie_file) in str(failure.value)
+
+
+# Verifies every configured Chromium root is relative to the home directory, derived from the table so a root added
+# there is covered without editing this test
+def test_chromium_roots_are_relative_and_named_per_platform(tmp_path):
+    for system_name, browsers in monitor.CHROMIUM_USER_DATA_DIRS.items():
+        for browser, relative_paths in browsers.items():
+            assert isinstance(relative_paths, tuple), f"{system_name}/{browser}"
+            for relative_path in relative_paths:
+                assert not Path(relative_path).is_absolute(), f"{system_name}/{browser}"
+            resolved = monitor.get_chromium_user_data_dir(browser, system_name=system_name, home=tmp_path)
+            assert resolved == tmp_path / relative_paths[0], f"{system_name}/{browser}"
+
+
+# Verifies the first root that exists is used, so a packaged install is found while the conventional one is named
+# when nothing exists at all
+def test_chromium_packaged_roots_are_searched_in_order(tmp_path):
+    browser = "chromium"
+    relative_paths = monitor.CHROMIUM_USER_DATA_DIRS["Linux"][browser]
+    assert len(relative_paths) > 1, "this test needs a browser with more than one candidate root"
+
+    assert monitor.get_chromium_user_data_dir(browser, system_name="Linux", home=tmp_path) == tmp_path / relative_paths[0]
+
+    packaged = tmp_path / relative_paths[-1]
+    packaged.mkdir(parents=True)
+    assert monitor.get_chromium_user_data_dir(browser, system_name="Linux", home=tmp_path) == packaged
+
+
+# Verifies the packaged Linux trees are reachable, which a single root per browser made impossible
+@pytest.mark.parametrize("browser", ["brave", "chromium"])
+def test_chromium_linux_reaches_snap_and_flatpak_trees(browser):
+    roots = monitor.CHROMIUM_USER_DATA_DIRS["Linux"][browser]
+
+    assert any(root.startswith("snap/") for root in roots), browser
+    assert any(root.startswith(".var/app/") for root in roots), browser
+
+
+# Verifies a system with no known location resolves to no root rather than a wrong one
+def test_chromium_unknown_platform_has_no_root(tmp_path):
+    assert monitor.get_chromium_user_data_dir("chrome", system_name="Plan9", home=tmp_path) is None
+
+
+# Verifies each keyring failure is attributed to the cause the user must actually fix. The strings are taken verbatim
+# from the installed keyring backends and from pycookiecheat, several of which name neither the keyring nor the service
+@pytest.mark.parametrize("error_text,expected", [
+    ("Failed to unlock the collection!", "Unlock the keyring"),
+    ("Failed to unlock the item!", "Unlock the keyring"),
+    ("Can't open a session to the secret service", "Unlock the keyring"),
+    ("Failed to unlock the keyring!", "Unlock the keyring"),
+    ("The Secret Service daemon is neither running nor activatable through D-Bus", "Unlock the keyring"),
+    ("Can't get password from keychain: Keychain Access Denied", "Unlock the keyring"),
+    ("Could not find a password for the pair (Chrome Safe Storage, Chrome)", "Unlock the keyring"),
+    ("No recommended backend was available. Install a recommended 3rd party backend package.", "Install one such as"),
+    ("Invalid padding, InvalidTag raised during decrypt", "Could not decrypt"),
+])
+def test_a_keyring_failure_names_the_cause_to_fix(error_text, expected):
+    message = monitor._safe_chromium_cookie_error("chrome", RuntimeError(error_text))
+
+    assert expected in message
+    # The generic fallback sends the user to sign in again, which is the wrong fix for every case above
+    assert "Confirm Spotify is signed in" not in message
+
+
+# Verifies a missing keyring backend is not reported as a locked one, since one must be installed and the other unlocked
+def test_a_missing_keyring_backend_is_not_reported_as_a_locked_one():
+    message = monitor._safe_chromium_cookie_error("chrome", RuntimeError("No recommended backend was available."))
+
+    assert "Install one such as" in message
+    assert "Unlock the keyring" not in message
+
+
+# Verifies an empty Chromium listing names which of its causes applies, since each needs a different fix
+def test_chromium_empty_listing_separates_its_causes(tmp_path):
+    absent = tmp_path / "not-installed"
+    assert "Install Chrome" in monitor.chromium_no_profiles_message("chrome", user_data_dir=absent)
+
+    bare_root = tmp_path / "installed"
+    bare_root.mkdir()
+    assert "Open Chrome once to create a profile" in monitor.chromium_no_profiles_message("chrome", user_data_dir=bare_root)
+
+    with_profile = tmp_path / "with-profile"
+    (with_profile / "Default").mkdir(parents=True)
+    fresh = monitor.chromium_no_profiles_message("chrome", user_data_dir=with_profile)
+    assert "none of its profiles (Default) holds a cookie database yet" in fresh
+    # An installed browser must never be reported as one the user has to install
+    assert "Install Chrome" not in fresh
+
+    assert "no known Chrome profile location" in monitor.chromium_no_profiles_message("chrome", system_name="Plan9", home=tmp_path)
+
+
+# Verifies an empty Firefox listing separates the same causes rather than repeating one message
+def test_firefox_empty_listing_separates_its_causes(tmp_path):
+    assert "no known Firefox profile location" in monitor.firefox_no_profiles_message(system_name="Plan9", home=tmp_path)
+
+    assert "Install Firefox" in monitor.firefox_no_profiles_message(system_name="Linux", home=tmp_path / "absent")
+
+    (tmp_path / ".mozilla/firefox").mkdir(parents=True)
+    installed = monitor.firefox_no_profiles_message(system_name="Linux", home=tmp_path)
+    assert "holds a cookie database yet" in installed
+    assert "Install Firefox" not in installed
+
+
+# Verifies the import surfaces the specific reason rather than the generic one when no profile can be offered
+def test_the_import_reports_the_specific_empty_reason(tmp_path, monkeypatch):
+    monkeypatch.setattr(monitor, "discover_chromium_profiles", lambda *arguments, **keywords: [])
+    monkeypatch.setattr(monitor, "chromium_no_profiles_message", lambda *arguments, **keywords: "the specific reason")
+
+    with pytest.raises(monitor.BrowserCookieImportError, match="the specific reason"):
+        monitor.run_browser_cookie_import(browser="chrome", env_file=tmp_path / ".env", interactive=False)
