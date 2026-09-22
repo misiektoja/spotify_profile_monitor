@@ -9271,9 +9271,15 @@ def discover_firefox_profiles(system_name=None, home=None, environ=None):
     return sorted(profiles_by_cookie.values(), key=lambda profile: (profile["name"].lower(), profile["dir"].lower(), profile["cookie_file"]))
 
 
+# Formats one profile choice without exposing cookie values
+def _format_profile_choice(profile):
+    described = f"{profile['dir']} ({profile['name']})" if profile["name"] != profile["dir"] else profile["dir"]
+    return f"{described} [{profile['install']}]" if profile.get("install") else described
+
+
 # Formats profile choices without exposing cookie values
 def _format_profile_choices(profiles):
-    return ", ".join(f"{profile['dir']} ({profile['name']})" if profile["name"] != profile["dir"] else profile["dir"] for profile in profiles)
+    return ", ".join(_format_profile_choice(profile) for profile in profiles)
 
 
 # Selects one browser profile explicitly or automatically or through a prompt
@@ -9353,12 +9359,65 @@ def _sqlite_identifier(identifier):
     return '"' + identifier.replace('"', '""') + '"'
 
 
+# Current Firefox records cookie expiry in milliseconds and older releases in seconds, and the schema does not say
+# which, so the unit is taken from the magnitude. The threshold sits far above any plausible seconds expiry and far
+# below any plausible milliseconds one, which also leaves small synthetic values in tests alone
+COOKIE_EXPIRY_MILLISECOND_THRESHOLD = 1e11
+
+# Enough alternatives to show where else to look without burying the failure itself, which a machine carrying a
+# dozen Firefox profiles otherwise does
+PROFILE_ALTERNATIVES_LISTED = 6
+
+
 # Converts an optional SQLite cookie field into a comparable number
 def _numeric_cookie_field(value):
     try:
         return float(value or 0)
     except (TypeError, ValueError):
         return 0.0
+
+
+# Formats one cookie expiry for a failure message, in system local time
+def _cookie_expiry_date(expiry):
+    # get_date_from_ts reads the configured LOCAL_TIMEZONE, which the import and setup commands both exit before
+    # startup resolves, so this reads the system clock instead and matches the format the sibling monitors print
+    moment = datetime.fromtimestamp(int(round(expiry)))
+    return f'{calendar.day_abbr[moment.weekday()]} {moment.strftime("%d %b %Y, %H:%M:%S")}'
+
+
+# Converts one cookie expiry field into epoch seconds whichever unit the profile stores it in
+def _cookie_expiry_seconds(value):
+    expiry = _numeric_cookie_field(value)
+    return expiry / 1000.0 if expiry >= COOKIE_EXPIRY_MILLISECOND_THRESHOLD else expiry
+
+
+# Describes one Firefox cookie database and the other profiles available, for a failure message that can be acted on
+def _firefox_profile_context(cookie_file):
+    fallback = f"the Firefox cookie database '{cookie_file}'", ""
+    try:
+        selected_path = Path(cookie_file).expanduser().resolve()
+        profiles = discover_firefox_profiles()
+    except OSError:
+        return fallback
+
+    selected = None
+    others = []
+    for profile in profiles:
+        try:
+            is_selected = Path(profile["cookie_file"]).resolve() == selected_path
+        except OSError:
+            is_selected = False
+        if is_selected and selected is None:
+            selected = profile
+        else:
+            others.append(_format_profile_choice(profile))
+
+    description = f"Firefox profile {_format_profile_choice(selected)}" if selected is not None else fallback[0]
+    if not others:
+        return description, ""
+    listed = ", ".join(others[:PROFILE_ALTERNATIVES_LISTED])
+    remaining = len(others) - PROFILE_ALTERNATIVES_LISTED
+    return description, f" Other Firefox profiles found: {listed}{f' and {remaining} more' if remaining > 0 else ''}."
 
 
 # Reads the best Spotify sp_dc cookie from a Firefox SQLite database
@@ -9389,9 +9448,11 @@ def read_firefox_sp_dc(cookie_file, now=None):
             query = f"SELECT {selected_columns} FROM moz_cookies WHERE {name_column} = ? AND {value_column} IS NOT NULL AND {value_column} != '' AND (lower(ltrim({domain_column}, '.')) = ? OR lower(ltrim({domain_column}, '.')) LIKE ?)"
             rows = connection.execute(query, ("sp_dc", "spotify.com", "%.spotify.com")).fetchall()
     except (sqlite3.DatabaseError, sqlite3.OperationalError, OSError):
-        raise BrowserCookieImportError("Could not read the Firefox cookie database. Close Firefox then retry or pass --cookie-file with a readable cookies.sqlite copy.") from None
+        description, alternatives = _firefox_profile_context(cookie_path)
+        raise BrowserCookieImportError(f"Could not read {description}. Close Firefox then retry or pass --cookie-file with a readable cookies.sqlite copy.{alternatives}") from None
     if not rows:
-        raise BrowserCookieImportError("No sp_dc cookie for spotify.com was found in the selected Firefox profile. Sign in to Spotify in Firefox then retry.")
+        description, alternatives = _firefox_profile_context(cookie_path)
+        raise BrowserCookieImportError(f"No sp_dc cookie for spotify.com was found in {description}. Sign in to Spotify in Firefox then retry.{alternatives}")
     now_value = time.time() if now is None else now
     last_access_index = selected_keys.index(last_access_key) if last_access_key else None
     expiry_index = selected_keys.index(expiry_key) if expiry_key else None
@@ -9399,9 +9460,19 @@ def read_firefox_sp_dc(cookie_file, now=None):
     # Ranks nonexpired cookies first then uses stable fields for deterministic selection
     def cookie_rank(row):
         last_accessed = _numeric_cookie_field(row[last_access_index]) if last_access_index is not None else 0.0
-        expiry = _numeric_cookie_field(row[expiry_index]) if expiry_index is not None else 0.0
+        expiry = _cookie_expiry_seconds(row[expiry_index]) if expiry_index is not None else 0.0
         nonexpired = 1 if expiry <= 0 or expiry > now_value else 0
         return nonexpired, last_accessed, expiry, str(row[1]).lower(), str(row[0])
+
+    # Firefox records when each cookie expires, so a profile whose every sp_dc has already lapsed is reported from the
+    # database rather than through a Spotify request that can only answer the same thing less precisely
+    if expiry_index is not None:
+        expiries = [_cookie_expiry_seconds(row[expiry_index]) for row in rows]
+        if all(0 < expiry <= now_value for expiry in expiries):
+            description, alternatives = _firefox_profile_context(cookie_path)
+            latest = _cookie_expiry_date(max(expiries))
+            raise BrowserCookieImportError(f"The Spotify sp_dc cookie in {description} expired on {latest}. Sign in to Spotify in Firefox again then retry.{alternatives}")
+
     return str(max(rows, key=cookie_rank)[0])
 
 
