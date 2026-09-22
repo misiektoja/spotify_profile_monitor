@@ -61,11 +61,35 @@ def test_sqlite_connection_is_closed_by_contextlib():
             connection.execute("SELECT 1")
 
 
-# Confirms the cookie importer uses the closing wrapper rather than a bare connect
-def test_cookie_import_closes_its_connection():
-    source = inspect.getsource(monitor)
-    assert "with contextlib.closing(sqlite3.connect(" in source
-    assert "with sqlite3.connect(" not in source
+# Confirms the cookie importer closes every database connection it opens, on the reading path and the failing one.
+# Asserting the source text instead would pass for a connection that is opened and never closed, and fail for a
+# correct reader that opens the database through a helper
+@pytest.mark.parametrize("break_database", [False, True])
+def test_cookie_import_closes_its_connection(tmp_path, monkeypatch, break_database):
+    cookie_file = tmp_path / "cookies.sqlite"
+    with contextlib.closing(sqlite3.connect(cookie_file)) as setup:
+        setup.execute("CREATE TABLE moz_cookies (host TEXT, name TEXT, value TEXT, expiry INTEGER, lastAccessed INTEGER)")
+        setup.execute("INSERT INTO moz_cookies VALUES ('.spotify.com', 'sp_dc', 'value', 5000, 100)")
+        setup.commit()
+    if break_database:
+        cookie_file.write_bytes(b"not a database")
+
+    opened = []
+    real_connect = sqlite3.connect
+    monkeypatch.setattr(monitor.sqlite3, "connect", lambda *arguments, **keywords: opened.append(real_connect(*arguments, **keywords)) or opened[-1])
+
+    with contextlib.suppress(monitor.BrowserCookieImportError):
+        monitor.read_firefox_sp_dc(cookie_file, now=1000)
+
+    assert opened, "the reader opened no database at all"
+    for connection in opened:
+        with pytest.raises(sqlite3.ProgrammingError):
+            connection.execute("SELECT 1")
+
+
+# Confirms no code path wraps a connection in a plain with block, which commits a transaction and leaves it open
+def test_no_connection_is_opened_in_a_bare_with_block():
+    assert "with sqlite3.connect(" not in inspect.getsource(monitor)
 
 
 @pytest.mark.parametrize("host", [None, 12345, ["x"], "your_smtp_server_ssl"])

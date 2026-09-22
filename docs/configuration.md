@@ -166,6 +166,8 @@ On Windows, Chrome 127 and newer prevent external programs from reading these co
 spotify_profile_monitor --import-browser-cookie --browser firefox
 ```
 
+On Windows, Firefox from the regular installer and from the Microsoft Store are both discovered. The Store package keeps its profiles under `%LOCALAPPDATA%\Packages\Mozilla.Firefox_*\LocalCache\Roaming\Mozilla\Firefox`, and its profiles are listed as `[Microsoft Store]` so the `default-release` that both installs create can be told apart. A redirected `APPDATA` or `LOCALAPPDATA` is followed as well as the home-relative location.
+
 On Linux, Firefox profiles installed natively, through Snap or through Flatpak are discovered automatically. On every platform, the importer reads `profiles.ini` and normal profile directories. If one usable profile exists it is selected automatically. If several profiles exist an interactive terminal shows a numbered choice. For scripts or other noninteractive runs select one by its friendly name or directory basename:
 
 ```sh
@@ -182,6 +184,10 @@ By default, import writes only `SP_DC_COOKIE` to `.env` in the current directory
 
 Import validates the login before saving and asks before replacing a saved cookie. For noninteractive replacement, pass `--force`. This still validates the cookie and preserves unrelated `.env` settings.
 
+When a browser holds several profiles, import lists them and asks which to use. A `*` marks each profile that holds a
+current Spotify login. When exactly one does, it is preselected and Enter accepts it. An invalid answer is asked
+again rather than ending the import. Answer `0` to cancel.
+
 Chrome, Brave and Chromium import is available on macOS and Linux through the optional browser extra:
 
 ```sh
@@ -190,6 +196,8 @@ spotify_profile_monitor --import-browser-cookie --browser chrome
 ```
 
 Select a Chromium browser profile by its directory name, such as `Default` or `Profile 1`. Friendly names are also accepted.
+
+On Linux, Brave and Chromium installed from Snap or Flatpak keep their profiles outside the usual `~/.config` location. Import searches those locations too, so no extra option is needed.
 
 <a id="manual-cookie-extraction"></a>
 #### Manual cookie extraction
@@ -390,6 +398,8 @@ python3 -c "import pytz; print('\n'.join(pytz.all_timezones))"
 ## SMTP Settings
 
 Email notifications need SMTP server details for the sending account. Add them to `spotify_profile_monitor.conf` or use the setup wizard. Setup checks the login without sending an email. To replace only the password, run `spotify_profile_monitor --set-smtp-password`. Password entry is hidden and preserves spaces.
+
+If email alerts are selected but local SMTP settings are missing or invalid, the startup summary shows `Unavailable` with the reason. Automatic email sends are skipped silently until the settings are fixed. `Off` means no email alert types are selected.
 
 Every alert is sent as both HTML and plain text in one message. Mail clients that render HTML show the monitored user, the changed value and the check interval in bold, with each follower, following, playlist and track linked to its Spotify page. Clients that do not fall back to the plain text, which is unchanged.
 

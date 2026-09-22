@@ -88,6 +88,10 @@ Supported sources are Firefox, Chrome, Brave and Chromium. Firefox works on macO
 
 Select a browser profile if prompted. The importer validates its Spotify login and saves `SP_DC_COOKIE` to the selected dotenv file. Replacing a saved cookie needs confirmation or `--force` in a noninteractive script. Other dotenv settings are preserved.
 
+In guided setup, each browser choice reports how many of its profiles hold a current Spotify login, so you can pick
+one before opening the profile list. If an import does not complete, setup offers to retry, to import from a
+different browser, to enter the cookie privately or to finish and authenticate later.
+
 Useful overrides are `--browser-profile PROFILE`, `--cookie-file PATH` and `--env-file PATH`. For the browser table, profile selection and the browser extra, see [Which browsers are supported](configuration.md#which-browsers-are-supported).
 
 If browser import is not available, use the [manual cookie extraction](configuration.md#manual-cookie-extraction) fallback.

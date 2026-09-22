@@ -1650,3 +1650,175 @@ def test_the_early_output_config_carries_the_help_theme(monkeypatch, tmp_path):
 # Starts each setup scenario without file ownership left by another test
 def isolated_dotenv_ownership(monkeypatch):
     monkeypatch.setattr(monitor, "DOTENV_RELOAD_STATE", {})
+
+
+# Answers a wizard choice menu by matching option label text, so adding an entry cannot silently shift the answer
+def choose_by_label(*wanted):
+    remaining = list(wanted)
+
+    def answer(question, options, default_index=0):
+        label = remaining.pop(0)
+        matches = [index for index, (text, _) in enumerate(options) if label in text]
+        assert len(matches) == 1, f"{label!r} matched {len(matches)} entries in {[text for text, _ in options]}"
+        return matches[0]
+
+    return answer
+
+
+# Verifies the browser menu reports what a browser actually holds instead of calling every one signed in
+@pytest.mark.parametrize("counts,expected", [
+    (None, "Built-in reader"),
+    ((0, 0), "No Firefox profiles were found on this machine."),
+    ((0, 3), "No Firefox profile here holds a current Spotify login yet."),
+    ((2, 5), "2 of 5 profiles here hold a current Spotify login."),
+    ((1, 1), "This profile holds a current Spotify login."),
+])
+def test_the_browser_description_reports_what_setup_can_see(monkeypatch, counts, expected):
+    monkeypatch.setattr(monitor, "_wizard_browser_login_counts", lambda browser: counts)
+
+    assert expected in monitor._wizard_browser_description("firefox")
+
+
+# Verifies a browser with no profile at all is never described as signed in, which the shipped text did for every one
+def test_an_absent_browser_is_not_called_signed_in(monkeypatch):
+    monkeypatch.setattr(monitor, "discover_chromium_profiles", lambda *arguments, **keywords: [])
+
+    description = monitor._wizard_browser_description("brave")
+
+    assert description == "No Brave profiles were found on this machine."
+    assert "signed-in" not in description
+
+
+# Verifies the grouped Chromium entry names the browser holding a login, or says none was found
+@pytest.mark.parametrize("counted,expected", [
+    ({"chrome": (1, 2), "brave": (0, 0), "chromium": (0, 0)}, "Signed in to Spotify in Chrome."),
+    ({"chrome": (0, 2), "brave": (0, 1), "chromium": (0, 0)}, "No current Spotify login found in Chrome or Brave."),
+    ({"chrome": (0, 0), "brave": (0, 0), "chromium": (0, 0)}, "No Chrome, Brave or Chromium profiles were found on this machine."),
+])
+def test_the_chromium_group_note_names_the_browser_with_a_login(monkeypatch, counted, expected):
+    # A Chromium browser added to the table without a count here would never reach the note
+    assert set(counted) == set(monitor.CHROMIUM_IMPORT_BROWSERS)
+    monkeypatch.setattr(monitor, "_wizard_browser_login_counts", lambda browser: counted[browser])
+
+    assert monitor._wizard_chromium_group_note(list(monitor.CHROMIUM_IMPORT_BROWSERS)) == expected
+
+
+# Leaves the browser login cache populated, so the next test proves the shared fixture empties it again. A cache
+# carried into a later test changes what that test sees and fails only in a full run, never when it runs alone
+def test_the_wizard_browser_cache_can_be_left_populated():
+    monitor._WIZARD_BROWSER_LOGIN_COUNTS["firefox"] = (1, 1)
+
+    assert monitor._WIZARD_BROWSER_LOGIN_COUNTS
+
+
+# Verifies the shared fixture resets the browser login cache, so the test above cannot bias this one
+def test_the_wizard_browser_cache_is_reset_between_tests():
+    assert monitor._WIZARD_BROWSER_LOGIN_COUNTS == {}
+
+
+# Verifies the counts are taken fresh, so a login made while a prompt was waiting is seen by the next menu
+def test_the_browser_counts_are_dropped_before_the_menu(monkeypatch):
+    calls = []
+    monkeypatch.setattr(monitor, "_wizard_chromium_dependency_available", lambda: True)
+    monkeypatch.setattr(monitor, "discover_firefox_profiles", lambda *arguments, **keywords: (calls.append("firefox"), [])[1])
+    monkeypatch.setattr(monitor, "discover_chromium_profiles", lambda *arguments, **keywords: (calls.append("chromium"), [])[1])
+    monkeypatch.setattr(monitor, "_wizard_ask_choice", lambda question, options, default_index=0: 0)
+    monitor._WIZARD_BROWSER_LOGIN_COUNTS["firefox"] = (9, 9)
+
+    monitor._wizard_collect_cookie_auth("manual", Path("unused.env"), {})
+
+    assert "firefox" in calls
+
+
+# Verifies a failed import can move to another browser rather than only retrying the same one, since a login missing
+# from one browser is very often present in another
+def test_a_failed_import_can_switch_browser(monkeypatch, tmp_path, capsys):
+    attempted = []
+
+    def failing_import(browser=None, **keywords):
+        attempted.append(browser)
+        if len(attempted) == 1:
+            raise monitor.BrowserCookieImportError("no cookie there")
+
+    monkeypatch.setattr(monitor, "run_browser_cookie_import", failing_import)
+    monkeypatch.setattr(monitor, "_wizard_browser_login_counts", lambda browser: (0, 0))
+    monkeypatch.setattr(monitor, "_wizard_chromium_dependency_available", lambda: True)
+    monkeypatch.setattr(monitor, "_wizard_import_browsers", lambda: ["firefox", "chrome"])
+    monkeypatch.setattr(monitor, "_wizard_ask_choice", choose_by_label("Import from a different browser", "Chrome"))
+
+    auth = monitor._wizard_finish_browser_import({"browser": "firefox"}, tmp_path / ".env", tmp_path / "c.conf", "target.user", "")
+
+    assert attempted == ["firefox", "chrome"]
+    assert auth["complete"] is True
+    assert auth["browser"] == "chrome"
+
+
+# Verifies the switch entry is hidden when only one browser is supported, so the menu offers nothing unavailable
+def test_the_switch_entry_is_hidden_when_one_browser_is_supported(monkeypatch, tmp_path):
+    offered = []
+    monkeypatch.setattr(monitor, "run_browser_cookie_import", Mock(side_effect=monitor.BrowserCookieImportError("no cookie there")))
+    monkeypatch.setattr(monitor, "_wizard_import_browsers", lambda: ["firefox"])
+
+    def answer(question, options, default_index=0):
+        offered.extend(label for label, _ in options)
+        return len(options) - 1
+
+    monkeypatch.setattr(monitor, "_wizard_ask_choice", answer)
+
+    monitor._wizard_finish_browser_import({"browser": "firefox"}, tmp_path / ".env", tmp_path / "c.conf", "target.user", "")
+
+    assert not any("different browser" in label for label in offered)
+    assert any("Retry the Firefox import" in label for label in offered)
+
+
+# Verifies declining the switch keeps the import going with the browser unchanged rather than ending it
+def test_declining_the_switch_keeps_the_current_browser(monkeypatch, tmp_path):
+    monkeypatch.setattr(monitor, "_wizard_import_browsers", lambda: ["firefox", "chrome"])
+    monkeypatch.setattr(monitor, "_wizard_browser_login_counts", lambda browser: (0, 0))
+    monkeypatch.setattr(monitor, "_wizard_ask_choice", choose_by_label("Keep trying Firefox"))
+
+    assert monitor._wizard_switch_import_browser("firefox") is None
+
+
+# Verifies the grouped Chromium menu entry reports the detected login state
+def test_the_chromium_menu_entry_carries_the_login_note(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(monitor, "_wizard_import_browsers", lambda: list(monitor.IMPORT_BROWSERS))
+    monkeypatch.setattr(monitor, "_wizard_chromium_dependency_available", lambda: True)
+    monkeypatch.setattr(monitor, "_wizard_browser_login_counts", lambda browser: (0, 0))
+    monkeypatch.setattr(monitor, "_wizard_ask_choice", lambda question, options, default_index=0: (captured.update({"options": options}) or 0))
+
+    monitor._wizard_collect_cookie_auth("manual", Path("unused.env"), {})
+
+    descriptions = {label: description for label, description in captured["options"]}
+    chromium_entry = next(description for label, description in descriptions.items() if "Chrome, Brave or Chromium" in label)
+    assert chromium_entry == "No Chrome, Brave or Chromium profiles were found on this machine."
+    assert "signed-in" not in chromium_entry
+
+
+# Verifies the menu omits Chromium import when only Firefox is supported
+def test_the_cookie_menu_omits_chromium_on_firefox_only_platforms(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(monitor, "_wizard_import_browsers", lambda: ["firefox"])
+    monkeypatch.setattr(monitor, "_wizard_chromium_dependency_available", lambda: True)
+    monkeypatch.setattr(monitor, "_wizard_browser_login_counts", lambda browser: (0, 0))
+    monkeypatch.setattr(monitor, "_wizard_ask_choice", lambda question, options, default_index=0: (captured.update({"options": options}) or 0))
+
+    monitor._wizard_collect_cookie_auth("manual", Path("unused.env"), {})
+
+    labels = [label for label, _ in captured["options"]]
+    assert any("Firefox" in label for label in labels)
+    assert not any("Chrome, Brave or Chromium" in label for label in labels)
+
+
+# Verifies the Firefox menu entry carries its own note for the same reason
+def test_the_firefox_menu_entry_carries_the_login_note(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(monitor, "_wizard_chromium_dependency_available", lambda: True)
+    monkeypatch.setattr(monitor, "_wizard_browser_login_counts", lambda browser: (1, 4))
+    monkeypatch.setattr(monitor, "_wizard_ask_choice", lambda question, options, default_index=0: (captured.update({"options": options}) or 0))
+
+    monitor._wizard_collect_cookie_auth("manual", Path("unused.env"), {})
+
+    firefox_entry = next(description for label, description in captured["options"] if "Firefox" in label)
+    assert firefox_entry == "1 of 4 profiles here hold a current Spotify login."

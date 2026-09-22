@@ -161,6 +161,12 @@ class PlaylistSnapshotBaselineTests(unittest.TestCase):
 
 # Verifies playlist membership changes are detected and described independently of count changes
 class PlaylistMembershipChangeTests(unittest.TestCase):
+    # Supplies valid local email settings for tests that replace the transport
+    def setUp(self):
+        settings = patch.multiple(monitor, SMTP_HOST="smtp.example.com", SMTP_PORT=587, SMTP_USER="sender@example.com", SMTP_PASSWORD="test-password", SENDER_EMAIL="sender@example.com", RECEIVER_EMAIL="receiver@example.com")
+        settings.start()
+        self.addCleanup(settings.stop)
+
     # Detects a removed and added playlist when the total count stays unchanged
     def test_same_count_uri_swap_is_a_change(self):
         previous = [{"uri": "spotify:playlist:a"}, {"uri": "spotify:playlist:b"}]

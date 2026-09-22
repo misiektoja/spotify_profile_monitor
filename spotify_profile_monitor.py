@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v4.0
+v4.1
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -22,7 +22,7 @@ pathvalidate (optional, needed by --export-all-playlists)
 Pillow (needed for email and ntfy artwork attachments)
 """
 
-VERSION = "4.0"
+VERSION = "4.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -875,16 +875,18 @@ SENSITIVE_CONFIG_KEYS = frozenset((*SECRET_KEYS, "WEBHOOK_HEADERS"))
 # Browsers supported by the private sp_dc importer
 IMPORT_BROWSERS = ("firefox", "chrome", "brave", "chromium")
 CHROMIUM_IMPORT_BROWSERS = ("chrome", "brave", "chromium")
+# Candidate user-data roots per browser, most conventional first. Snap and Flatpak keep their own trees, so a single
+# root would leave those users unable to import at all. The Firefox roots in this file already enumerate both
 CHROMIUM_USER_DATA_DIRS = {
     "Darwin": {
-        "chrome": "Library/Application Support/Google/Chrome",
-        "brave": "Library/Application Support/BraveSoftware/Brave-Browser",
-        "chromium": "Library/Application Support/Chromium",
+        "chrome": ("Library/Application Support/Google/Chrome",),
+        "brave": ("Library/Application Support/BraveSoftware/Brave-Browser",),
+        "chromium": ("Library/Application Support/Chromium",),
     },
     "Linux": {
-        "chrome": ".config/google-chrome",
-        "brave": ".config/BraveSoftware/Brave-Browser",
-        "chromium": ".config/chromium",
+        "chrome": (".config/google-chrome",),
+        "brave": (".config/BraveSoftware/Brave-Browser", "snap/brave/current/.config/BraveSoftware/Brave-Browser", ".var/app/com.brave.Browser/config/BraveSoftware/Brave-Browser"),
+        "chromium": (".config/chromium", "snap/chromium/common/chromium", ".var/app/org.chromium.Chromium/config/chromium"),
     },
 }
 
@@ -3730,8 +3732,9 @@ def send_webhook(title: str, description: str, notification_type: str = "profile
 
 # Sends one alert through the enabled email and webhook channels
 def send_notification_channels(notification_type: str, subject: str, body: str, body_html: str = "", email_enabled: bool = False, webhook_enabled: Optional[bool] = None, image_url: str = "", email_image_file: str = "", email_image_name: str = "image1", email_image_url: str = "", webhook_body: str = "", webhook_body_html: str = "") -> Tuple[bool, bool]:
-    email_attempted = bool(email_enabled)
-    webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    email_attempted = bool(email_enabled and email_settings_problem() is None)
+    webhook_selected = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    webhook_attempted = bool(webhook_selected and WEBHOOK_ENABLED and webhook_settings_problem() is None)
     email_delivered = False
     webhook_delivered = False
     if email_attempted:
@@ -3861,8 +3864,8 @@ def dispatch_error_alert(state: "ErrorAlertState", advice: "RecoveryAdvice", tar
     # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
     if advice.retryable and now - state.since < ERROR_ALERT_AFTER_SECONDS:
         return False
-    email_pending = state.pending("email", ERROR_NOTIFICATION, now)
-    webhook_pending = state.pending("webhook", webhook_event_enabled("error"), now)
+    email_pending = state.pending("email", ERROR_NOTIFICATION and email_settings_problem() is None, now)
+    webhook_pending = state.pending("webhook", webhook_event_enabled("error") and webhook_settings_problem() is None, now)
     if not email_pending and not webhook_pending:
         return False
     fields = (advice, retry_seconds, outage.failures, outage.since)
@@ -3875,12 +3878,14 @@ def dispatch_error_alert(state: "ErrorAlertState", advice: "RecoveryAdvice", tar
 # Tells each channel whose failure alert went out that the failure cleared, then forgets the alert so the next
 # outage earns every channel a new one
 def dispatch_recovery_alert(state: "ErrorAlertState", target: str, lasted: int) -> bool:
-    email_owed = state.email_sent and bool(ERROR_NOTIFICATION)
-    webhook_owed = state.webhook_sent and webhook_event_enabled("error")
+    email_ready = bool(ERROR_NOTIFICATION and email_settings_problem() is None)
+    webhook_ready = bool(webhook_event_enabled("error") and webhook_settings_problem() is None)
+    email_owed = state.email_sent and email_ready
+    webhook_owed = state.webhook_sent and webhook_ready
     # A channel whose failure alert never got through hears about the outage and its end together, rather than
     # nothing at all, which is what a channel blocked for the length of the outage would otherwise receive
-    email_missed = state.missed("email", ERROR_NOTIFICATION)
-    webhook_missed = state.missed("webhook", webhook_event_enabled("error"))
+    email_missed = state.missed("email", email_ready)
+    webhook_missed = state.missed("webhook", webhook_ready)
     # A state that alerted nobody can still be timing a degradation the other polls of this check are in, so it is
     # left for the completed check to clear rather than reset by the first poll that answers again
     if not (email_owed or webhook_owed or email_missed or webhook_missed):
@@ -9217,16 +9222,55 @@ def _firefox_profile_roots(system_name=None, home=None, environ=None):
     if selected_system == "Darwin":
         return [home_path / "Library/Application Support/Firefox"]
     if selected_system == "Windows":
-        appdata = environment.get("APPDATA")
-        return [Path(appdata) / "Mozilla/Firefox"] if appdata else [home_path / "AppData/Roaming/Mozilla/Firefox"]
+        return _windows_firefox_profile_roots(home_path, environment)
     if selected_system == "Linux":
         return [home_path / ".mozilla/firefox", home_path / "snap/firefox/common/.mozilla/firefox", home_path / ".var/app/org.mozilla.firefox/.mozilla/firefox"]
     return []
 
 
+# Returns the Windows Firefox profile roots, covering a redirected application-data directory and Store packages
+def _windows_firefox_profile_roots(home_path, environment):
+    roaming = environment.get("APPDATA")
+    roots = [Path(roaming) / "Mozilla/Firefox"] if roaming else []
+    roots.append(home_path / "AppData/Roaming/Mozilla/Firefox")
+    local = environment.get("LOCALAPPDATA")
+    package_parents = [Path(local) / "Packages"] if local else []
+    package_parents.append(home_path / "AppData/Local/Packages")
+    for package_parent in _unique_paths(package_parents):
+        # A Store build redirects its application data into its own package directory, whose name carries a
+        # publisher suffix, so the installed package is looked up rather than named
+        try:
+            roots.extend(sorted(package_parent.glob("Mozilla.Firefox_*/LocalCache/Roaming/Mozilla/Firefox")))
+        except OSError:
+            continue
+    return _unique_paths(roots)
+
+
+# Drops repeated paths, keeping the first, since a redirected root routinely names the home-relative one
+def _unique_paths(paths):
+    unique = {}
+    for path in paths:
+        unique.setdefault(os.path.normcase(os.path.normpath(str(path))), path)
+    return list(unique.values())
+
+
+# Names the packaging a profile tree belongs to, since Snap, Flatpak, Microsoft Store and distribution installs share friendly names
+def packaging_label(profile_path):
+    # Backslashes are normalized rather than os.sep, since the path classified here can come from another
+    # platform than the host running the check
+    lowered = str(profile_path).replace("\\", "/").lower()
+    if "/snap/" in lowered:
+        return "Snap"
+    if "/.var/app/" in lowered:
+        return "Flatpak"
+    if "/packages/mozilla.firefox_" in lowered:
+        return "Microsoft Store"
+    return ""
+
+
 # Builds one normalized browser profile record
 def _browser_profile_record(profile_dir, friendly_name, cookie_file):
-    return {"dir": profile_dir.name, "name": friendly_name or profile_dir.name, "path": str(profile_dir), "cookie_file": str(cookie_file)}
+    return {"dir": profile_dir.name, "name": friendly_name or profile_dir.name, "path": str(profile_dir), "cookie_file": str(cookie_file), "install": packaging_label(profile_dir)}
 
 
 # Adds one usable profile record without duplicating its cookie database
@@ -9271,16 +9315,24 @@ def discover_firefox_profiles(system_name=None, home=None, environ=None):
     return sorted(profiles_by_cookie.values(), key=lambda profile: (profile["name"].lower(), profile["dir"].lower(), profile["cookie_file"]))
 
 
+# Formats one profile choice without exposing cookie values
+def _format_profile_choice(profile):
+    described = f"{profile['dir']} ({profile['name']})" if profile["name"] != profile["dir"] else profile["dir"]
+    return f"{described} [{profile['install']}]" if profile.get("install") else described
+
+
 # Formats profile choices without exposing cookie values
 def _format_profile_choices(profiles):
-    return ", ".join(f"{profile['dir']} ({profile['name']})" if profile["name"] != profile["dir"] else profile["dir"] for profile in profiles)
+    return ", ".join(_format_profile_choice(profile) for profile in profiles)
 
 
 # Selects one browser profile explicitly or automatically or through a prompt
-def select_browser_profile(profiles, browser, requested_profile=None, interactive=None, input_func=None):
+def select_browser_profile(profiles, browser, requested_profile=None, interactive=None, input_func=None, empty_reason=None):
     label = browser_label(browser)
     if not profiles:
-        raise BrowserCookieImportError(f"No usable {label} profiles found. Sign in to Spotify in {label} or pass --cookie-file PATH.")
+        raise BrowserCookieImportError(empty_reason or f"No usable {label} profiles found. Sign in to Spotify in {label} or pass --cookie-file PATH.")
+
+    is_firefox = browser == "firefox"
     if requested_profile:
         requested = requested_profile.casefold()
         directory_matches = [profile for profile in profiles if profile["dir"].casefold() == requested]
@@ -9290,32 +9342,104 @@ def select_browser_profile(profiles, browser, requested_profile=None, interactiv
             return matches[0]
         choices = _format_profile_choices(profiles)
         if len(matches) > 1:
+            # Two installs can hold the same profile directory name, and then no --browser-profile value can separate
+            # them, so the only advice that works is to name the database itself
+            if directory_matches:
+                raise BrowserCookieImportError(f"{label} profile directory '{requested_profile}' exists in {len(matches)} separate {label} installs. Pass --cookie-file PATH to choose one. Choices: {choices}")
             raise BrowserCookieImportError(f"{label} profile name '{requested_profile}' is ambiguous. Pass one profile directory with --browser-profile. Choices: {choices}")
         raise BrowserCookieImportError(f"Unknown {label} profile '{requested_profile}'. Choices: {choices}")
+
     if len(profiles) == 1:
+        # There is no other profile to offer instead, so the import goes ahead and only warns
+        if profile_has_live_spotify_cookie(profiles[0]["cookie_file"], firefox=is_firefox) is False:
+            print(f"* Warning: the only {label} profile, {_format_profile_choice(profiles[0])}, holds no current Spotify login, so the import will most likely fail. Sign in to Spotify in {label} then retry.")
         return profiles[0]
+
     terminal_is_interactive = sys.stdin.isatty() if interactive is None else interactive
     choices = _format_profile_choices(profiles)
     if not terminal_is_interactive:
         raise BrowserCookieImportError(f"Multiple {label} profiles found: {choices}. Pass --browser-profile PROFILE to select one in a noninteractive environment.")
-    print(f"\nMultiple {label} profiles found:")
+
+    live = [index for index, profile in enumerate(profiles) if profile_has_live_spotify_cookie(profile["cookie_file"], firefox=is_firefox)]
+    default_index = live[0] if len(live) == 1 else None
+    width = len(str(len(profiles)))
+    print()
+    print(f"Multiple {label} profiles found:")
+    # Only the profiles worth choosing are marked. Labelling the rest as well buries the few that matter, and a
+    # database that could not be read is left unmarked rather than called signed out
+    if live:
+        print("  * marks a profile holding a current Spotify login")
     for index, profile in enumerate(profiles, start=1):
-        print(f"  {index}) {profile['name']} [{profile['dir']}] - {profile['cookie_file']}")
+        marker = "* " if index - 1 in live else ("  " if live else "")
+        install = f" ({profile['install']})" if profile.get("install") else ""
+        default_note = "  (default)" if index - 1 == default_index else ""
+        print(f"  {str(index).rjust(width)}) {marker}{profile['name']}{install} [{profile['dir']}] - {profile['cookie_file']}{default_note}")
+
     prompt = input if input_func is None else input_func
-    try:
-        choice = int(prompt("Select profile number (0 to cancel): "))
-    except (EOFError, ValueError):
-        raise BrowserCookieImportError("Browser cookie import cancelled because the profile selection was invalid.") from None
-    if choice == 0:
-        raise BrowserCookieImportError("Browser cookie import cancelled.")
-    if choice < 1 or choice > len(profiles):
-        raise BrowserCookieImportError("Browser cookie import cancelled because the profile selection was invalid.")
-    return profiles[choice - 1]
+    prompt_text = f"Select profile number (0 to cancel{', Enter for default' if default_index is not None else ''}): "
+    while True:
+        try:
+            answer = prompt(prompt_text).strip()
+        except (EOFError, KeyboardInterrupt):
+            raise BrowserCookieImportError("Browser cookie import cancelled.") from None
+        if not answer and default_index is not None:
+            return profiles[default_index]
+        if answer == "0":
+            raise BrowserCookieImportError("Browser cookie import cancelled.")
+        # isdigit also rejects a negative number, which int would accept and then index backwards from the end
+        if answer.isdigit() and 1 <= int(answer) <= len(profiles):
+            return profiles[int(answer) - 1]
+        print(f"  Enter a number between 1 and {len(profiles)}, or 0 to cancel.")
+
+
+# A running browser holds its cookie database locked, so a plain read-only open waits out the busy timeout before it
+# fails, and that wait is paid once for every profile that has a write-ahead log
+COOKIE_DATABASE_BUSY_TIMEOUT = 0.25
+
+
+# Builds one read-only SQLite URI for a cookie database
+def _sqlite_cookie_uri(cookie_path, parameters):
+    # as_uri percent-encodes the path, so a '?' or '#' inside it cannot displace the parameters appended here
+    return cookie_path.as_uri() + "?" + parameters
+
+
+# Opens one browser cookie database read-only, preferring the access mode that can see uncommitted log entries
+def open_cookie_database(cookie_file):
+    # Firefox keeps recently saved cookies in a write-ahead log until it checks them in and an immutable open ignores
+    # that log, so a session saved moments ago looks absent. The read-only open that does see the log is attempted
+    # only when a log is present, since it is the slower of the two and fails outright on read-only media
+    cookie_path = Path(cookie_file).expanduser().resolve()
+    uris = [_sqlite_cookie_uri(cookie_path, "immutable=1")]
+    if cookie_path.with_name(cookie_path.name + "-wal").exists():
+        uris.insert(0, _sqlite_cookie_uri(cookie_path, "mode=ro"))
+
+    first_error = None
+    for uri in uris:
+        connection = None
+        try:
+            connection = sqlite3.connect(uri, uri=True, timeout=COOKIE_DATABASE_BUSY_TIMEOUT)
+            connection.execute("PRAGMA schema_version").fetchone()
+            return connection
+        except sqlite3.DatabaseError as error:
+            if connection is not None:
+                connection.close()
+            first_error = first_error or error
+    raise first_error if first_error is not None else sqlite3.DatabaseError(f"could not open '{cookie_path}'")
 
 
 # Quotes a SQLite identifier obtained from database schema metadata
 def _sqlite_identifier(identifier):
     return '"' + identifier.replace('"', '""') + '"'
+
+
+# Current Firefox records cookie expiry in milliseconds and older releases in seconds, and the schema does not say
+# which, so the unit is taken from the magnitude. The threshold sits far above any plausible seconds expiry and far
+# below any plausible milliseconds one, which also leaves small synthetic values in tests alone
+COOKIE_EXPIRY_MILLISECOND_THRESHOLD = 1e11
+
+# Enough alternatives to show where else to look without burying the failure itself, which a machine carrying a
+# dozen Firefox profiles otherwise does
+PROFILE_ALTERNATIVES_LISTED = 6
 
 
 # Converts an optional SQLite cookie field into a comparable number
@@ -9326,13 +9450,105 @@ def _numeric_cookie_field(value):
         return 0.0
 
 
+# Formats one cookie expiry for a failure message, in system local time
+def _cookie_expiry_date(expiry):
+    # get_date_from_ts reads the configured LOCAL_TIMEZONE, which the import and setup commands both exit before
+    # startup resolves, so this reads the system clock instead and matches the format the sibling monitors print
+    moment = datetime.fromtimestamp(int(round(expiry)))
+    return f'{calendar.day_abbr[moment.weekday()]} {moment.strftime("%d %b %Y, %H:%M:%S")}'
+
+
+# Converts one cookie expiry field into epoch seconds whichever unit the profile stores it in
+def _cookie_expiry_seconds(value):
+    expiry = _numeric_cookie_field(value)
+    return expiry / 1000.0 if expiry >= COOKIE_EXPIRY_MILLISECOND_THRESHOLD else expiry
+
+
+# Chromium records cookie expiry as microseconds since 1601, the epoch its own storage layer uses
+CHROMIUM_EPOCH_OFFSET_SECONDS = 11644473600
+
+# Cookie hosts a Spotify session is stored under, matched so a lookalike domain cannot satisfy the check
+SPOTIFY_COOKIE_HOST_PATTERNS = ("spotify.com", "%.spotify.com")
+
+
+# Converts one Chromium cookie expiry field into epoch seconds, treating a session cookie as never expiring
+def _chromium_expiry_seconds(value):
+    expiry = _numeric_cookie_field(value)
+    return 0.0 if expiry <= 0 else expiry / 1_000_000 - CHROMIUM_EPOCH_OFFSET_SECONDS
+
+
+# Reports whether one cookie database holds an unexpired Spotify login, or None when it cannot be answered
+def profile_has_live_spotify_cookie(cookie_file, firefox=False, now=None):
+    # Only the cookie name, host and expiry are read, and those are stored in the clear on both schemas, so a Chromium
+    # profile answers this without its encryption key and without any value leaving the database
+    if not cookie_file or not Path(cookie_file).expanduser().is_file():
+        return None
+    try:
+        connection = open_cookie_database(cookie_file)
+    except (sqlite3.DatabaseError, OSError):
+        return None
+
+    table = "moz_cookies" if firefox else "cookies"
+    host_keys = ("host", "basedomain") if firefox else ("host_key",)
+    expiry_keys = ("expiry", "expires", "expirationdate") if firefox else ("expires_utc",)
+    try:
+        column_names = {str(row[1]).lower(): str(row[1]) for row in connection.execute(f"PRAGMA table_info({_sqlite_identifier(table)})").fetchall()}
+        host_key = next((key for key in host_keys if key in column_names), None)
+        expiry_key = next((key for key in expiry_keys if key in column_names), None)
+        if "name" not in column_names or host_key is None:
+            return None
+        host_column = _sqlite_identifier(column_names[host_key])
+        expiry_column = _sqlite_identifier(column_names[expiry_key]) if expiry_key else "0"
+        query = f"SELECT {expiry_column} FROM {_sqlite_identifier(table)} WHERE {_sqlite_identifier(column_names['name'])} = ? AND (lower(ltrim({host_column}, '.')) = ? OR lower(ltrim({host_column}, '.')) LIKE ?)"
+        rows = connection.execute(query, ("sp_dc", *SPOTIFY_COOKIE_HOST_PATTERNS)).fetchall()
+    except sqlite3.DatabaseError:
+        return None
+    finally:
+        connection.close()
+
+    if not rows:
+        return False
+    now_value = time.time() if now is None else now
+    to_seconds = _cookie_expiry_seconds if firefox else _chromium_expiry_seconds
+    return any(to_seconds(row[0]) <= 0 or to_seconds(row[0]) > now_value for row in rows)
+
+
+# Describes one Firefox cookie database and the other profiles available, for a failure message that can be acted on
+def _firefox_profile_context(cookie_file):
+    fallback = f"the Firefox cookie database '{cookie_file}'", ""
+    try:
+        selected_path = Path(cookie_file).expanduser().resolve()
+        profiles = discover_firefox_profiles()
+    except OSError:
+        return fallback
+
+    selected = None
+    others = []
+    for profile in profiles:
+        try:
+            is_selected = Path(profile["cookie_file"]).resolve() == selected_path
+        except OSError:
+            is_selected = False
+        if is_selected and selected is None:
+            selected = profile
+        else:
+            others.append(_format_profile_choice(profile))
+
+    description = f"Firefox profile {_format_profile_choice(selected)}" if selected is not None else fallback[0]
+    if not others:
+        return description, ""
+    listed = ", ".join(others[:PROFILE_ALTERNATIVES_LISTED])
+    remaining = len(others) - PROFILE_ALTERNATIVES_LISTED
+    return description, f" Other Firefox profiles found: {listed}{f' and {remaining} more' if remaining > 0 else ''}."
+
+
 # Reads the best Spotify sp_dc cookie from a Firefox SQLite database
 def read_firefox_sp_dc(cookie_file, now=None):
     cookie_path = Path(cookie_file).expanduser()
     if not cookie_path.is_file():
         raise BrowserCookieImportError(f"Firefox cookie database '{cookie_path}' was not found. Pass a valid cookies.sqlite path with --cookie-file.")
     try:
-        with contextlib.closing(sqlite3.connect(cookie_path.resolve().as_uri() + "?immutable=1", uri=True)) as connection:
+        with contextlib.closing(open_cookie_database(cookie_path)) as connection:
             columns = connection.execute("PRAGMA table_info(moz_cookies)").fetchall()
             column_names = {str(row[1]).lower(): str(row[1]) for row in columns}
             if "name" not in column_names or "value" not in column_names:
@@ -9354,9 +9570,11 @@ def read_firefox_sp_dc(cookie_file, now=None):
             query = f"SELECT {selected_columns} FROM moz_cookies WHERE {name_column} = ? AND {value_column} IS NOT NULL AND {value_column} != '' AND (lower(ltrim({domain_column}, '.')) = ? OR lower(ltrim({domain_column}, '.')) LIKE ?)"
             rows = connection.execute(query, ("sp_dc", "spotify.com", "%.spotify.com")).fetchall()
     except (sqlite3.DatabaseError, sqlite3.OperationalError, OSError):
-        raise BrowserCookieImportError("Could not read the Firefox cookie database. Close Firefox then retry or pass --cookie-file with a readable cookies.sqlite copy.") from None
+        description, alternatives = _firefox_profile_context(cookie_path)
+        raise BrowserCookieImportError(f"Could not read {description}. Close Firefox then retry or pass --cookie-file with a readable cookies.sqlite copy.{alternatives}") from None
     if not rows:
-        raise BrowserCookieImportError("No sp_dc cookie for spotify.com was found in the selected Firefox profile. Sign in to Spotify in Firefox then retry.")
+        description, alternatives = _firefox_profile_context(cookie_path)
+        raise BrowserCookieImportError(f"No sp_dc cookie for spotify.com was found in {description}. Sign in to Spotify in Firefox then retry.{alternatives}")
     now_value = time.time() if now is None else now
     last_access_index = selected_keys.index(last_access_key) if last_access_key else None
     expiry_index = selected_keys.index(expiry_key) if expiry_key else None
@@ -9364,20 +9582,32 @@ def read_firefox_sp_dc(cookie_file, now=None):
     # Ranks nonexpired cookies first then uses stable fields for deterministic selection
     def cookie_rank(row):
         last_accessed = _numeric_cookie_field(row[last_access_index]) if last_access_index is not None else 0.0
-        expiry = _numeric_cookie_field(row[expiry_index]) if expiry_index is not None else 0.0
+        expiry = _cookie_expiry_seconds(row[expiry_index]) if expiry_index is not None else 0.0
         nonexpired = 1 if expiry <= 0 or expiry > now_value else 0
         return nonexpired, last_accessed, expiry, str(row[1]).lower(), str(row[0])
+
+    # Firefox records when each cookie expires, so a profile whose every sp_dc has already lapsed is reported from the
+    # database rather than through a Spotify request that can only answer the same thing less precisely
+    if expiry_index is not None:
+        expiries = [_cookie_expiry_seconds(row[expiry_index]) for row in rows]
+        if all(0 < expiry <= now_value for expiry in expiries):
+            description, alternatives = _firefox_profile_context(cookie_path)
+            latest = _cookie_expiry_date(max(expiries))
+            raise BrowserCookieImportError(f"The Spotify sp_dc cookie in {description} expired on {latest}. Sign in to Spotify in Firefox again then retry.{alternatives}")
+
     return str(max(rows, key=cookie_rank)[0])
 
 
 # Returns the standard Chromium user-data directory for one browser and platform
 def get_chromium_user_data_dir(browser, system_name=None, home=None):
     selected_system = platform.system() if system_name is None else system_name
-    relative_path = CHROMIUM_USER_DATA_DIRS.get(selected_system, {}).get(browser)
-    if relative_path is None:
+    relative_paths = CHROMIUM_USER_DATA_DIRS.get(selected_system, {}).get(browser)
+    if not relative_paths:
         return None
     home_path = Path.home() if home is None else Path(home)
-    return home_path / relative_path
+    candidates = [home_path / relative_path for relative_path in relative_paths]
+    # Naming the conventional root when none of them exists keeps a failure able to say where it looked
+    return next((candidate for candidate in candidates if candidate.is_dir()), candidates[0])
 
 
 # Resolves a Chromium profile cookie database with modern layout preference
@@ -9388,6 +9618,44 @@ def resolve_chromium_cookie_file(user_data_dir, profile_dir):
         if candidate.is_file():
             return candidate
     return None
+
+
+# Lists the profile directories one Chromium user-data root holds, whether or not they carry a cookie database yet
+def _chromium_profile_dirs(base_path):
+    try:
+        entries = sorted(base_path.iterdir(), key=lambda entry: entry.name.lower())
+    except OSError:
+        return []
+    return [entry.name for entry in entries if entry.is_dir() and (entry.name == "Default" or entry.name.startswith("Profile "))]
+
+
+# Explains why no profile can be offered for one Chromium browser
+def chromium_no_profiles_message(browser, system_name=None, home=None, user_data_dir=None):
+    # A profile that has never stored a cookie is dropped from the listing, so an installed browser holding only new
+    # profiles must not be reported as a browser that is not installed. Each cause needs a different fix
+    label = browser_label(browser)
+    base_path = Path(user_data_dir) if user_data_dir is not None else get_chromium_user_data_dir(browser, system_name=system_name, home=home)
+    if base_path is None:
+        return f"No {label} profiles found. This system has no known {label} profile location. Import from Firefox instead or pass --cookie-file PATH."
+    if not base_path.is_dir():
+        return f"No {label} profiles found. Looked in '{base_path}'. Install {label} and sign in to Spotify in it, import from Firefox instead or pass --cookie-file PATH."
+    new_profiles = _chromium_profile_dirs(base_path)
+    if new_profiles:
+        return f"{label} is installed but none of its profiles ({', '.join(new_profiles)}) holds a cookie database yet. Open {SPOTIFY_WEB_LOGIN_URL} in {label}, sign in then retry."
+    return f"No {label} profiles found in '{base_path}'. Open {label} once to create a profile, sign in to Spotify then retry."
+
+
+# Explains why no Firefox profile can be offered
+def firefox_no_profiles_message(system_name=None, home=None, environ=None):
+    # A profile that has never stored a cookie is dropped from the listing, so the three causes need separating the
+    # same way the Chromium listing separates its own
+    roots = _firefox_profile_roots(system_name=system_name, home=home, environ=environ)
+    if not roots:
+        return "No Firefox profiles found. This system has no known Firefox profile location. Pass --cookie-file PATH with a readable cookies.sqlite."
+    existing = [root for root in roots if root.is_dir()]
+    if not existing:
+        return f"No Firefox profiles found. Looked in {', '.join(repr(str(root)) for root in roots)}. Install Firefox and sign in to Spotify in it, or pass --cookie-file PATH."
+    return f"Firefox is installed but none of its profiles in {', '.join(repr(str(root)) for root in existing)} holds a cookie database yet. Open {SPOTIFY_WEB_LOGIN_URL} in Firefox, sign in then retry."
 
 
 # Discovers usable Chrome or Brave or Chromium profiles and display names
@@ -9412,7 +9680,7 @@ def discover_chromium_profiles(browser, system_name=None, home=None, user_data_d
             continue
         cookie_path = resolve_chromium_cookie_file(base_path, entry.name)
         if cookie_path is not None:
-            profiles.append({"dir": entry.name, "name": friendly_names.get(entry.name, entry.name), "path": str(entry), "cookie_file": str(cookie_path)})
+            profiles.append({"dir": entry.name, "name": friendly_names.get(entry.name, entry.name), "path": str(entry), "cookie_file": str(cookie_path), "install": packaging_label(entry)})
     return profiles
 
 
@@ -9429,11 +9697,21 @@ def _pycookiecheat_spotify_cookies(browser, cookie_file):
 
 
 # Converts a Chromium cookie failure into a secret-safe actionable message
+# Text the keyring libraries use when no backend is installed at all, which needs one installed rather than unlocked
+KEYRING_MISSING_TERMS = ("no recommended backend", "no such keyring backend", "no backend available")
+
+# Text the keyring libraries use when a backend exists but will not release the key. Several of these name neither the
+# keyring nor the service, so matching on the wording they do use is what keeps the advice correct
+KEYRING_LOCKED_TERMS = ("keyring", "keychain", "safe storage", "secretservice", "secret service", "libsecret", "kwallet", "failed to unlock", "collection", "password")
+
+
 def _safe_chromium_cookie_error(browser, error):
     label = browser_label(browser)
     error_text = str(error).lower()
-    if any(term in error_text for term in ("keyring", "secretservice", "secret service", "password")):
-        return f"Could not access the OS keyring needed to decrypt {label} cookies. Unlock the keyring then retry or use Firefox."
+    if any(term in error_text for term in KEYRING_MISSING_TERMS):
+        return f"No OS keyring backend is available to decrypt {label} cookies. Install one such as gnome-keyring or kwallet then retry, or import from Firefox which needs none."
+    if any(term in error_text for term in KEYRING_LOCKED_TERMS):
+        return f"Could not access the OS keyring needed to decrypt {label} cookies. Unlock the keyring, allow the access prompt then retry or use Firefox."
     if any(term in error_text for term in ("decrypt", "invalidtag", "encryption")):
         return f"Could not decrypt {label} cookies. Close {label} then retry or import from Firefox."
     if any(term in error_text for term in ("permission", "denied", "locked", "readonly", "unable to open")):
@@ -9486,10 +9764,12 @@ def run_browser_cookie_import(browser="firefox", browser_profile=None, cookie_fi
         if browser_profile:
             print("* Note: --cookie-file takes precedence over --browser-profile")
     elif browser == "firefox":
-        selected_profile = select_browser_profile(discover_firefox_profiles(), browser, requested_profile=browser_profile, interactive=interactive, input_func=input_func)
+        firefox_profiles = discover_firefox_profiles()
+        selected_profile = select_browser_profile(firefox_profiles, browser, requested_profile=browser_profile, interactive=interactive, input_func=input_func, empty_reason=None if firefox_profiles else firefox_no_profiles_message())
         selected_cookie_file = Path(selected_profile["cookie_file"])
     else:
-        selected_profile = select_browser_profile(discover_chromium_profiles(browser), browser, requested_profile=browser_profile, interactive=interactive, input_func=input_func)
+        chromium_profiles = discover_chromium_profiles(browser)
+        selected_profile = select_browser_profile(chromium_profiles, browser, requested_profile=browser_profile, interactive=interactive, input_func=input_func, empty_reason=None if chromium_profiles else chromium_no_profiles_message(browser))
         selected_cookie_file = Path(selected_profile["cookie_file"])
     if selected_profile is not None:
         print(f"* Browser profile: {selected_profile['name']} [{selected_profile['dir']}]")
@@ -10258,11 +10538,25 @@ def webhook_channel_configured() -> bool:
     return bool(normalized_webhook_provider()) and doctor_secret_is_set(WEBHOOK_URL)
 
 
-# Rolls one channel's enabled alerts into the state its summary row reports, which is off while the channel has no destination
-def _startup_notification_state(categories: Sequence[str], configured: bool) -> str:
+# Names the first local webhook setting that prevents automatic alert delivery
+def webhook_settings_problem():
+    if not doctor_secret_is_set(WEBHOOK_URL):
+        return "WEBHOOK_URL is empty or still set to its placeholder"
+    if not validate_webhook_url():
+        return "WEBHOOK_URL must contain a complete HTTPS link"
+    provider = normalized_webhook_provider()
+    if not provider:
+        return "WEBHOOK_PROVIDER must be discord or ntfy"
+    if validate_webhook_customization(provider) is not None:
+        return "Webhook customization is invalid"
+    return validate_webhook_headers(provider)
+
+
+# Rolls selected alerts into the startup state and names an unusable local setting
+def _startup_notification_state(categories: Sequence[str], problem: Optional[str]) -> str:
     if not categories:
         return "Off"
-    return "On (" + ", ".join(categories) + ")" if configured else "Off (not configured)"
+    return f"Unavailable ({problem})" if problem else "On (" + ", ".join(categories) + ")"
 
 
 # Reports the mail server, the recipient and the image setting an alert would use, without the signing-in account
@@ -10314,8 +10608,9 @@ def build_startup_summary(target: str, config_path, env_path, output_path) -> Li
     authentication_names = {"cookie": "Cookie mode", "client": "Client mode, advanced", "oauth_app": "OAuth app mode", "oauth_user": "OAuth user mode"}
     enabled_email = _startup_email_notification_categories()
     enabled_webhook = _startup_webhook_notification_categories()
-    notification_state_email = _startup_notification_state(enabled_email, email_channel_configured())
-    notification_state_webhook = _startup_notification_state(enabled_webhook, webhook_channel_configured())
+    email_problem = email_settings_problem() if enabled_email else None
+    notification_state_email = _startup_notification_state(enabled_email, email_problem[0] if email_problem else None)
+    notification_state_webhook = _startup_notification_state(enabled_webhook, webhook_settings_problem() if enabled_webhook else None)
     output_state = str(output_path) if output_path else "Terminal only (logging disabled)"
     rows = [
         StartupSummaryRow("Target", str(target), concise=True),
@@ -11315,8 +11610,54 @@ def _wizard_import_browsers() -> List[str]:
     return ["firefox"] if platform.system() == "Windows" else list(IMPORT_BROWSERS)
 
 
+# Counts per browser, kept for one menu so a listing is not rebuilt for every entry drawn
+_WIZARD_BROWSER_LOGIN_COUNTS: Dict[str, Optional[Tuple[int, int]]] = {}
+
+
+# Counts one browser's profiles and how many hold a current Spotify login, or None when they could not be read
+def _wizard_browser_login_counts(browser: str) -> Optional[Tuple[int, int]]:
+    # The cookie name, host and expiry are stored in the clear, so this answers before pycookiecheat is installed
+    if browser not in _WIZARD_BROWSER_LOGIN_COUNTS:
+        try:
+            is_firefox = browser == "firefox"
+            profiles = discover_firefox_profiles() if is_firefox else discover_chromium_profiles(browser)
+            states = [profile_has_live_spotify_cookie(profile["cookie_file"], firefox=is_firefox) for profile in profiles]
+            _WIZARD_BROWSER_LOGIN_COUNTS[browser] = (len([state for state in states if state]), len(states))
+        except Exception:
+            _WIZARD_BROWSER_LOGIN_COUNTS[browser] = None
+    return _WIZARD_BROWSER_LOGIN_COUNTS[browser]
+
+
+# Reports what one browser actually holds, rather than describing every browser as signed in
+def _wizard_browser_login_note(browser: str) -> str:
+    counts = _wizard_browser_login_counts(browser)
+    if counts is None:
+        return ""
+    with_login, total = counts
+    if not total:
+        return f"No {browser_label(browser)} profiles were found on this machine."
+    if not with_login:
+        return f"No {browser_label(browser)} profile here holds a current Spotify login yet."
+    return f"{with_login} of {total} profiles here hold a current Spotify login." if total > 1 else "This profile holds a current Spotify login."
+
+
+# Summarises where a current Spotify login can be seen across the Chromium browsers offered as one menu entry
+def _wizard_chromium_group_note(browsers: List[str]) -> str:
+    counted = {browser: _wizard_browser_login_counts(browser) or (0, 0) for browser in browsers}
+    with_login = [browser_label(browser) for browser, counts in counted.items() if counts[0]]
+    if with_login:
+        return f"Signed in to Spotify in {' and '.join(with_login)}."
+    installed = [browser_label(browser) for browser, counts in counted.items() if counts[1]]
+    if installed:
+        return f"No current Spotify login found in {' or '.join(installed)}."
+    return "No Chrome, Brave or Chromium profiles were found on this machine."
+
+
 # Describes one browser import choice without exposing browser data
 def _wizard_browser_description(browser: str) -> str:
+    note = _wizard_browser_login_note(browser)
+    if note:
+        return note
     if browser == "firefox":
         return "Built-in reader for macOS, Linux and Windows with no extra package."
     return f"Import from the signed-in {browser_label(browser)} profile."
@@ -11451,14 +11792,36 @@ def _wizard_target(initial_target: Optional[str] = None) -> str:
             default = ""
 
 
+# Offers the other supported browsers after a failed import, since a login missing from one is often in another
+def _wizard_switch_import_browser(current: str) -> Optional[str]:
+    others = [browser for browser in _wizard_import_browsers() if browser != current]
+    if not others:
+        return None
+    options = [(browser_label(browser), _wizard_browser_description(browser)) for browser in others]
+    options.append((f"Keep trying {browser_label(current)}", "Returns to the import with the browser unchanged."))
+    choice = _wizard_ask_choice("Which browser should setup import from instead?", options)
+    if choice == len(others):
+        return None
+    selected = others[choice]
+    if selected in CHROMIUM_IMPORT_BROWSERS and not _wizard_chromium_dependency_available():
+        print()
+        if not _wizard_ask_yes_no("Chromium browser import requires pycookiecheat. Install it now?", default=True):
+            return None
+        if not _wizard_install_chromium_dependency(_wizard_install_method()):
+            return None
+    return selected
+
+
 # Collects cookie authentication with browser dependency and validation guidance
 def _wizard_collect_cookie_auth(method: str, env_path: Path, secret_updates: dict) -> dict:
     existing_cookie = _wizard_existing_secret("SP_DC_COOKIE", env_path, ("your_sp_dc_cookie_value",), secret_updates=secret_updates)
-    options = [("Import from Firefox, recommended", "Uses Firefox directly with no additional package.")]
+    # The counts are taken fresh each time the menu is drawn, since the user may have signed in while a prompt waited
+    _WIZARD_BROWSER_LOGIN_COUNTS.clear()
+    options = [("Import from Firefox, recommended", _wizard_browser_login_note("firefox") or "Uses Firefox directly with no additional package.")]
     actions = ["firefox"]
     chromium_browsers = [browser for browser in _wizard_import_browsers() if browser in CHROMIUM_IMPORT_BROWSERS]
     if chromium_browsers:
-        chromium_description = "Import from a signed-in Chrome, Brave or Chromium profile." if _wizard_chromium_dependency_available() else "Setup can install the required pycookiecheat package now."
+        chromium_description = _wizard_chromium_group_note(chromium_browsers) if _wizard_chromium_dependency_available() else "Setup can install the required pycookiecheat package now."
         options.append(("Import from Chrome, Brave or Chromium", chromium_description))
         actions.append("chromium")
     options.extend((("Use an existing SP_DC_COOKIE", "Retains a non-placeholder value without displaying or rewriting it."), ("Paste an existing sp_dc value privately", "Reads it through getpass and saves it in the selected dotenv file."), ("Finish without credentials", "Saves an incomplete setup and lets you authenticate later.")))
@@ -12099,10 +12462,27 @@ def _wizard_finish_browser_import(auth: dict, env_path: Path, config_path: Path,
             return auth
         except BrowserCookieImportError as exc:
             print(render_recovery_error(exc, "browser_import"))
-        recovery = _wizard_ask_choice("Browser import did not complete. What next?", [("Retry browser import", "Try discovery, extraction and validation again."), ("Enter sp_dc privately", "Validate and save a manually extracted value through getpass."), ("Finish without authentication", "Keep the generated config and authenticate later.")])
-        if recovery == 0:
+        # The counts shown by the switch menu are taken fresh, since the user may have signed in while this prompt waited
+        _WIZARD_BROWSER_LOGIN_COUNTS.clear()
+        label = browser_label(browser)
+        others = [candidate for candidate in _wizard_import_browsers() if candidate != browser]
+        options = [(f"Retry the {label} import", "Pick another profile, or sign in to Spotify in that browser first.")]
+        actions = ["retry"]
+        if others:
+            options.append(("Import from a different browser", f"Setup can import from {' or '.join(browser_label(candidate) for candidate in others)} instead."))
+            actions.append("switch")
+        options.extend((("Enter sp_dc privately", "Validate and save a manually extracted value through getpass."), ("Finish without authentication", "Keep the generated config and authenticate later.")))
+        actions.extend(("manual", "finish"))
+        recovery = actions[_wizard_ask_choice(f"The {label} import did not complete. What next?", options)]
+        if recovery == "retry":
             continue
-        if recovery == 1:
+        if recovery == "switch":
+            selected = _wizard_switch_import_browser(browser)
+            if selected:
+                browser = selected
+                auth.update({"browser": selected, "source": f"browser import ({browser_label(selected)})"})
+            continue
+        if recovery == "manual":
             cookie = _wizard_ask_secret("Existing sp_dc value")
             try:
                 validate_sp_dc_cookie(cookie)
@@ -14910,14 +15290,11 @@ def main():
     if PROFILE_NOTIFICATION is False:
         FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
 
-    if str(SMTP_HOST).startswith("your_smtp_server_"):
+    if str(SMTP_HOST).startswith("your_smtp_server_") and set(_startup_email_notification_categories()) <= {"errors"}:
         verbose_print("Email notifications are off because SMTP_HOST is still the shipped placeholder")
         PROFILE_NOTIFICATION = False
         FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
-    if WEBHOOK_ENABLED and not validate_webhook_url():
-        verbose_print("Webhook notifications are off because WEBHOOK_URL is not a complete HTTPS link")
-        WEBHOOK_ENABLED = False
 
     try:
         JSON_DIR = prepare_json_directory(JSON_DIR)

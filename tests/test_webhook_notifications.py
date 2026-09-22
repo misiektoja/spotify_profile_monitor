@@ -90,6 +90,12 @@ def configure_webhook(monkeypatch):
     monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", True)
 
 
+# Gives email alerts valid local settings without opening an SMTP connection
+def configure_email(monkeypatch):
+    for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "receiver@example.com")):
+        monkeypatch.setattr(monitor, name, value)
+
+
 # Verifies startup email and webhook summaries use compact single-line category rollups
 def test_startup_notification_summaries_use_compact_rollups(monkeypatch):
     monkeypatch.setattr(monitor, "PROFILE_NOTIFICATION", True)
@@ -454,8 +460,24 @@ def test_webhook_failure_redacts_private_url(monkeypatch, capsys):
     assert "To fix:" in output
 
 
+# Verifies unavailable automatic channels make no attempt or status line
+def test_unavailable_channels_are_silent(monkeypatch, capsys):
+    email = Mock()
+    webhook = Mock()
+    monkeypatch.setattr(monitor, "SMTP_PASSWORD", "")
+    monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", True)
+    monkeypatch.setattr(monitor, "WEBHOOK_URL", "")
+    monkeypatch.setattr(monitor, "send_email", email)
+    monkeypatch.setattr(monitor, "send_webhook", webhook)
+    assert monitor.send_notification_channels("error", "Subject", "Body", email_enabled=True, webhook_enabled=True) == (False, False)
+    email.assert_not_called()
+    webhook.assert_not_called()
+    assert capsys.readouterr().out == ""
+
+
 # Verifies email and webhook delivery remain independent
 def test_notification_channels_are_independent(monkeypatch):
+    configure_email(monkeypatch)
     configure_webhook(monkeypatch)
     email = Mock(return_value=1)
     webhook = Mock(return_value=0)
@@ -468,6 +490,7 @@ def test_notification_channels_are_independent(monkeypatch):
 
 # Verifies playlist artwork is embedded in the HTML email as an inline attachment
 def test_notification_channels_embed_email_artwork(monkeypatch):
+    configure_email(monkeypatch)
     email = Mock(return_value=0)
     monkeypatch.setattr(monitor, "EMAIL_IMAGES", True)
     monkeypatch.setattr(monitor, "send_email", email)
@@ -482,6 +505,7 @@ def test_notification_channels_embed_email_artwork(monkeypatch):
 
 # Verifies email artwork can be disabled without affecting webhook artwork
 def test_email_images_setting_disables_remote_artwork_only(monkeypatch):
+    configure_email(monkeypatch)
     configure_webhook(monkeypatch)
     email = Mock(return_value=0)
     webhook = Mock(return_value=0)
@@ -498,6 +522,7 @@ def test_email_images_setting_disables_remote_artwork_only(monkeypatch):
 
 # Verifies disabling playlist artwork preserves profile-picture file attachments
 def test_email_images_setting_preserves_profile_picture_attachment(monkeypatch):
+    configure_email(monkeypatch)
     email = Mock(return_value=0)
     monkeypatch.setattr(monitor, "EMAIL_IMAGES", False)
     monkeypatch.setattr(monitor, "send_email", email)
@@ -532,6 +557,7 @@ def test_send_email_builds_related_inline_artwork_message(monkeypatch):
 
 # Verifies the dedicated profile-picture file remains the preferred email attachment
 def test_notification_channels_preserve_profile_picture_attachment(monkeypatch):
+    configure_email(monkeypatch)
     email = Mock(return_value=0)
     monkeypatch.setattr(monitor, "send_email", email)
     monkeypatch.setattr(monitor, "build_email_artwork", Mock(side_effect=AssertionError("remote artwork attempted")))
