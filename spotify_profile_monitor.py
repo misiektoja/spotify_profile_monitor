@@ -3732,8 +3732,9 @@ def send_webhook(title: str, description: str, notification_type: str = "profile
 
 # Sends one alert through the enabled email and webhook channels
 def send_notification_channels(notification_type: str, subject: str, body: str, body_html: str = "", email_enabled: bool = False, webhook_enabled: Optional[bool] = None, image_url: str = "", email_image_file: str = "", email_image_name: str = "image1", email_image_url: str = "", webhook_body: str = "", webhook_body_html: str = "") -> Tuple[bool, bool]:
-    email_attempted = bool(email_enabled)
-    webhook_attempted = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    email_attempted = bool(email_enabled and email_settings_problem() is None)
+    webhook_selected = webhook_event_enabled(notification_type) if webhook_enabled is None else bool(webhook_enabled)
+    webhook_attempted = bool(webhook_selected and WEBHOOK_ENABLED and webhook_settings_problem() is None)
     email_delivered = False
     webhook_delivered = False
     if email_attempted:
@@ -3863,8 +3864,8 @@ def dispatch_error_alert(state: "ErrorAlertState", advice: "RecoveryAdvice", tar
     # A failure the tool can retry away is alerted once the outage has lasted ERROR_ALERT_AFTER_SECONDS, one it cannot at once
     if advice.retryable and now - state.since < ERROR_ALERT_AFTER_SECONDS:
         return False
-    email_pending = state.pending("email", ERROR_NOTIFICATION, now)
-    webhook_pending = state.pending("webhook", webhook_event_enabled("error"), now)
+    email_pending = state.pending("email", ERROR_NOTIFICATION and email_settings_problem() is None, now)
+    webhook_pending = state.pending("webhook", webhook_event_enabled("error") and webhook_settings_problem() is None, now)
     if not email_pending and not webhook_pending:
         return False
     fields = (advice, retry_seconds, outage.failures, outage.since)
@@ -3877,12 +3878,14 @@ def dispatch_error_alert(state: "ErrorAlertState", advice: "RecoveryAdvice", tar
 # Tells each channel whose failure alert went out that the failure cleared, then forgets the alert so the next
 # outage earns every channel a new one
 def dispatch_recovery_alert(state: "ErrorAlertState", target: str, lasted: int) -> bool:
-    email_owed = state.email_sent and bool(ERROR_NOTIFICATION)
-    webhook_owed = state.webhook_sent and webhook_event_enabled("error")
+    email_ready = bool(ERROR_NOTIFICATION and email_settings_problem() is None)
+    webhook_ready = bool(webhook_event_enabled("error") and webhook_settings_problem() is None)
+    email_owed = state.email_sent and email_ready
+    webhook_owed = state.webhook_sent and webhook_ready
     # A channel whose failure alert never got through hears about the outage and its end together, rather than
     # nothing at all, which is what a channel blocked for the length of the outage would otherwise receive
-    email_missed = state.missed("email", ERROR_NOTIFICATION)
-    webhook_missed = state.missed("webhook", webhook_event_enabled("error"))
+    email_missed = state.missed("email", email_ready)
+    webhook_missed = state.missed("webhook", webhook_ready)
     # A state that alerted nobody can still be timing a degradation the other polls of this check are in, so it is
     # left for the completed check to clear rather than reset by the first poll that answers again
     if not (email_owed or webhook_owed or email_missed or webhook_missed):
@@ -10535,11 +10538,25 @@ def webhook_channel_configured() -> bool:
     return bool(normalized_webhook_provider()) and doctor_secret_is_set(WEBHOOK_URL)
 
 
-# Rolls one channel's enabled alerts into the state its summary row reports, which is off while the channel has no destination
-def _startup_notification_state(categories: Sequence[str], configured: bool) -> str:
+# Names the first local webhook setting that prevents automatic alert delivery
+def webhook_settings_problem():
+    if not doctor_secret_is_set(WEBHOOK_URL):
+        return "WEBHOOK_URL is empty or still set to its placeholder"
+    if not validate_webhook_url():
+        return "WEBHOOK_URL must contain a complete HTTPS link"
+    provider = normalized_webhook_provider()
+    if not provider:
+        return "WEBHOOK_PROVIDER must be discord or ntfy"
+    if validate_webhook_customization(provider) is not None:
+        return "Webhook customization is invalid"
+    return validate_webhook_headers(provider)
+
+
+# Rolls selected alerts into the startup state and names an unusable local setting
+def _startup_notification_state(categories: Sequence[str], problem: Optional[str]) -> str:
     if not categories:
         return "Off"
-    return "On (" + ", ".join(categories) + ")" if configured else "Off (not configured)"
+    return f"Unavailable ({problem})" if problem else "On (" + ", ".join(categories) + ")"
 
 
 # Reports the mail server, the recipient and the image setting an alert would use, without the signing-in account
@@ -10591,8 +10608,9 @@ def build_startup_summary(target: str, config_path, env_path, output_path) -> Li
     authentication_names = {"cookie": "Cookie mode", "client": "Client mode, advanced", "oauth_app": "OAuth app mode", "oauth_user": "OAuth user mode"}
     enabled_email = _startup_email_notification_categories()
     enabled_webhook = _startup_webhook_notification_categories()
-    notification_state_email = _startup_notification_state(enabled_email, email_channel_configured())
-    notification_state_webhook = _startup_notification_state(enabled_webhook, webhook_channel_configured())
+    email_problem = email_settings_problem() if enabled_email else None
+    notification_state_email = _startup_notification_state(enabled_email, email_problem[0] if email_problem else None)
+    notification_state_webhook = _startup_notification_state(enabled_webhook, webhook_settings_problem() if enabled_webhook else None)
     output_state = str(output_path) if output_path else "Terminal only (logging disabled)"
     rows = [
         StartupSummaryRow("Target", str(target), concise=True),
@@ -15272,14 +15290,11 @@ def main():
     if PROFILE_NOTIFICATION is False:
         FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
 
-    if str(SMTP_HOST).startswith("your_smtp_server_"):
+    if str(SMTP_HOST).startswith("your_smtp_server_") and set(_startup_email_notification_categories()) <= {"errors"}:
         verbose_print("Email notifications are off because SMTP_HOST is still the shipped placeholder")
         PROFILE_NOTIFICATION = False
         FOLLOWERS_FOLLOWINGS_NOTIFICATION = False
         ERROR_NOTIFICATION = False
-    if WEBHOOK_ENABLED and not validate_webhook_url():
-        verbose_print("Webhook notifications are off because WEBHOOK_URL is not a complete HTTPS link")
-        WEBHOOK_ENABLED = False
 
     try:
         JSON_DIR = prepare_json_directory(JSON_DIR)
