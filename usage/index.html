@@ -524,6 +524,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#follower-and-following-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Follower and Following Changes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#unavailable-followers-and-followings" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -893,6 +904,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#follower-and-following-changes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Follower and Following Changes
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#unavailable-followers-and-followings" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -1225,7 +1247,9 @@
 - or use the <code>-e</code> flag</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-e
 </code></pre></div>
-<p>Email and webhook error alerts are sent after <strong>5 minutes</strong> of a continuing failure. Problems that need your action, such as an expired <code>sp_dc</code> cookie, alert immediately. Each channel gets one alert until a full check succeeds, including the follower poll. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour.</p>
+<p>Email and webhook failure alerts are sent after <strong>5 minutes</strong> of a continuing failure. Problems that need your action, such as an expired <code>sp_dc</code> cookie, alert immediately. The subject reads <code>Spotify Profile Monitor error: &lt;what went wrong&gt; (user: &lt;display name&gt;, &lt;user URI id&gt;)</code>, falling back to the user URI id alone while the display name is unknown. Everywhere else the profile is written as <code>&lt;display name&gt; (&lt;user URI id&gt;)</code>, which is how the recovery alert and the console lines name it. The body gives the fix, a link to the page that covers it, how many checks failed in a row, since when the check has been failing and how long until the next attempt.</p>
+<p>A <strong>recovery alert</strong> follows on the same channels once the failure clears, naming how long it lasted and which failure it closes. A channel that could not receive the failure alert while the outage lasted is told about the failure and its recovery together, so a blocked channel is not left without any word of an outage. <code>-e</code> / <code>--no-error-notify</code> switches off the failure email and the recovery email together, and <code>--no-webhook-error-notify</code> does the same for webhooks.</p>
+<p>Each channel gets one alert until a full check succeeds, including the follower poll. Failed deliveries are retried after 5 minutes, with increasing waits up to an hour.</p>
 <p>Make sure you defined your SMTP settings earlier (see <a href="../configuration/#smtp-settings">SMTP settings</a>).</p>
 <p>Playlist change emails include inline artwork when Spotify provides it. Track-change alerts prefer playlist artwork when both playlist and album images are available, then fall back to album artwork when the playlist has no image. Artwork is accepted only from Spotify HTTPS CDN hosts and is resized to fit within 320 x 320 pixels. Download or image preparation failures do not block the email. Dedicated profile-picture events continue to attach the saved profile picture.</p>
 <p>Playlist and album artwork are disabled by default and need the optional artwork extra (<code>pip install "spotify_profile_monitor[notification-images]"</code>). To include them in email notifications:</p>
@@ -1266,6 +1290,7 @@
 </tr>
 </tbody>
 </table>
+<p>The monitoring error event covers the failure alert and the recovery alert that follows it, with the same subject and text as the <a href="#email-notifications">email alerts</a>. The webhook message leaves out the timestamp line, since a chat message already shows when it arrived.</p>
 <p>Enable the master switch and the profile event setting in <code>spotify_profile_monitor.conf</code>:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="na">WEBHOOK_ENABLED</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">True</span>
 <a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a><span class="na">WEBHOOK_PROVIDER</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="s">"discord"</span>
@@ -1286,6 +1311,15 @@
 </code></pre></div>
 <p>The file will be automatically created if it does not exist.</p>
 <p>Spotify-supplied text (playlist names, track names, artist names, collaborator names and descriptions) that starts with <code>=</code>, <code>+</code>, <code>-</code>, <code>@</code>, a tab or a carriage return is written with a leading apostrophe, so opening the export in a spreadsheet cannot evaluate it as a formula. The same applies to the per-playlist files produced by <code>--export-all-playlists</code>. Timestamps and numeric values are unaffected.</p>
+<p><a id="follower-and-following-changes"></a></p>
+<h2 id="follower-and-following-changes">Follower and Following Changes<a class="headerlink" href="#follower-and-following-changes" title="Permanent link">&para;</a></h2>
+<p>Followers and followings are compared by their Spotify URI. Someone who only changes their display name appears under <code>Renamed followers</code> or <code>Renamed followings</code> with both names, instead of being reported as a departure and an arrival:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>Renamed followers:
+<a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a>
+<a id="__codelineno-29-3" name="__codelineno-29-3" href="#__codelineno-29-3"></a>- Miss Johnson -&gt; Johnson [ https://open.spotify.com/user/USER_ID ]
+</code></pre></div>
+<p>The CSV export records that as a single <code>Renamed Follower</code> or <code>Renamed Following</code> row holding the old and the new name.</p>
+<p>A change that leaves the total untouched, such as a rename or one person leaving while another arrives in the same check, is reported as <code>Followers changed for user &lt;name&gt; while the total remained &lt;count&gt;</code>.</p>
 <p><a id="unavailable-followers-and-followings"></a></p>
 <h2 id="unavailable-followers-and-followings">Unavailable Followers and Followings<a class="headerlink" href="#unavailable-followers-and-followings" title="Permanent link">&para;</a></h2>
 <p>Missing follower or following data is shown as <code>n/a</code>. It does not replace saved history or trigger removal alerts, including after a restart. The first available snapshot establishes a baseline if no history exists.</p>
@@ -1318,25 +1352,25 @@
 <p>By default, all Spotify-owned playlists are skipped from processing, i.e. the tool won't fetch or report changed tracks and the number of likes for them. This is because they are typically dynamically generated with a high volume of changes in terms of likes and sometimes tracks as well. You can change this behavior by setting <code>IGNORE_SPOTIFY_PLAYLISTS</code> to <code>False</code>.</p>
 <p>On top of that, you can also use the <code>PLAYLISTS_TO_SKIP_FILE</code> / <code>-t</code> flag which allows you to indicate a file with additional playlists to be blacklisted.</p>
 <p>The file may include lines referencing playlist URIs and URLs, as well as the playlist owner's name, URI and URL. Below is an example of an <code>ignored_playlists</code> file with acceptable entries:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>PLAYLIST_ID
-<a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a>spotify:playlist:PLAYLIST_ID
-<a id="__codelineno-29-3" name="__codelineno-29-3" href="#__codelineno-29-3"></a>https://open.spotify.com/playlist/PLAYLIST_ID
-<a id="__codelineno-29-4" name="__codelineno-29-4" href="#__codelineno-29-4"></a>https://open.spotify.com/playlist/PLAYLIST_ID?si<span class="o">=</span><span class="m">1</span>
-<a id="__codelineno-29-5" name="__codelineno-29-5" href="#__codelineno-29-5"></a>Some<span class="w"> </span>User<span class="w"> </span>Name
-<a id="__codelineno-29-6" name="__codelineno-29-6" href="#__codelineno-29-6"></a>USER_ID
-<a id="__codelineno-29-7" name="__codelineno-29-7" href="#__codelineno-29-7"></a>spotify:user:USER_ID
-<a id="__codelineno-29-8" name="__codelineno-29-8" href="#__codelineno-29-8"></a>https://open.spotify.com/user/USER_ID?si<span class="o">=</span><span class="m">1</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>PLAYLIST_ID
+<a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a>spotify:playlist:PLAYLIST_ID
+<a id="__codelineno-30-3" name="__codelineno-30-3" href="#__codelineno-30-3"></a>https://open.spotify.com/playlist/PLAYLIST_ID
+<a id="__codelineno-30-4" name="__codelineno-30-4" href="#__codelineno-30-4"></a>https://open.spotify.com/playlist/PLAYLIST_ID?si<span class="o">=</span><span class="m">1</span>
+<a id="__codelineno-30-5" name="__codelineno-30-5" href="#__codelineno-30-5"></a>Some<span class="w"> </span>User<span class="w"> </span>Name
+<a id="__codelineno-30-6" name="__codelineno-30-6" href="#__codelineno-30-6"></a>USER_ID
+<a id="__codelineno-30-7" name="__codelineno-30-7" href="#__codelineno-30-7"></a>spotify:user:USER_ID
+<a id="__codelineno-30-8" name="__codelineno-30-8" href="#__codelineno-30-8"></a>https://open.spotify.com/user/USER_ID?si<span class="o">=</span><span class="m">1</span>
 </code></pre></div>
 <p>You can comment out specific lines with # if needed.</p>
 <p>Entries are matched case sensitively, because Spotify identifiers are case sensitive and two IDs differing only in case are different playlists. Copy each ID, name or URL exactly as Spotify shows it.</p>
 <p>If certain playlists are blacklisted, there will be an appropriate message. For example:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a>- 'Afternoon Acoustic' [ IGNORED ]
-<a id="__codelineno-30-2" name="__codelineno-30-2" href="#__codelineno-30-2"></a>[ https://open.spotify.com/playlist/37i9dQZF1DX4E3UdUs7fUx?si=1 ]
-<a id="__codelineno-30-3" name="__codelineno-30-3" href="#__codelineno-30-3"></a>[ songs: 100, likes: 2164491, collaborators: 0 ]
-<a id="__codelineno-30-4" name="__codelineno-30-4" href="#__codelineno-30-4"></a>[ owner: Spotify ]
-<a id="__codelineno-30-5" name="__codelineno-30-5" href="#__codelineno-30-5"></a>[ date: Fri 23 Aug 2024, 17:05:15 - 7 months, 10 hours, 27 minutes ago ]
-<a id="__codelineno-30-6" name="__codelineno-30-6" href="#__codelineno-30-6"></a>[ update: Fri 23 Aug 2024, 17:05:15 - 7 months, 10 hours, 27 minutes ago ]
-<a id="__codelineno-30-7" name="__codelineno-30-7" href="#__codelineno-30-7"></a>'Unwind and let the afternoon unfold.'
+<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>- 'Afternoon Acoustic' [ IGNORED ]
+<a id="__codelineno-31-2" name="__codelineno-31-2" href="#__codelineno-31-2"></a>[ https://open.spotify.com/playlist/37i9dQZF1DX4E3UdUs7fUx?si=1 ]
+<a id="__codelineno-31-3" name="__codelineno-31-3" href="#__codelineno-31-3"></a>[ songs: 100, likes: 2164491, collaborators: 0 ]
+<a id="__codelineno-31-4" name="__codelineno-31-4" href="#__codelineno-31-4"></a>[ owner: Spotify ]
+<a id="__codelineno-31-5" name="__codelineno-31-5" href="#__codelineno-31-5"></a>[ date: Fri 23 Aug 2024, 17:05:15 - 7 months, 10 hours, 27 minutes ago ]
+<a id="__codelineno-31-6" name="__codelineno-31-6" href="#__codelineno-31-6"></a>[ update: Fri 23 Aug 2024, 17:05:15 - 7 months, 10 hours, 27 minutes ago ]
+<a id="__codelineno-31-7" name="__codelineno-31-7" href="#__codelineno-31-7"></a>'Unwind and let the afternoon unfold.'
 </code></pre></div>
 <p><a id="restricted-playlists-spotify-api-403404"></a></p>
 <h2 id="restricted-playlists-spotify-api-403404">Restricted Playlists (Spotify API 403/404)<a class="headerlink" href="#restricted-playlists-spotify-api-403404" title="Permanent link">&para;</a></h2>
@@ -1359,14 +1393,20 @@
 <p><a id="check-intervals"></a></p>
 <h2 id="check-intervals">Check Intervals<a class="headerlink" href="#check-intervals" title="Permanent link">&para;</a></h2>
 <p>If you want to customize the polling interval, use the <code>-c</code> flag (or the <code>SPOTIFY_CHECK_INTERVAL</code> configuration option):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-c<span class="w"> </span><span class="m">900</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>-c<span class="w"> </span><span class="m">900</span>
 </code></pre></div>
 <p>An interval below 30 seconds invites the Spotify rate limiter, which stops the tool seeing anything. <code>--doctor</code> warns when the configured interval is that short.</p>
+<p>A check that could not finish does not wait out the full interval. It comes back after the error interval instead, set with the <code>-m</code> flag or the <code>SPOTIFY_ERROR_INTERVAL</code> configuration option (default: 300, i.e. 5 minutes), so a long polling interval does not leave the tool blind for hours over a failure that clears in minutes.</p>
+<p>Rate limiting is the exception. Spotify clears it on a timer of its own and it is easy to hit while sweeping a profile with many playlists, so a rate limited check is retried after 1 minute, then 2, 4, 8, 16 and 30 minutes while the limit lasts, never waiting longer than the polling interval. A complete check returns the tool to the polling interval. A failure the tool cannot retry away, such as a target that no longer exists, keeps the polling interval, since asking again sooner would only repeat it.</p>
+<p>The <code>Check interval:</code> line under a reported change names the window that change was observed in, measured from the previous successful check:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>Check interval:         3 hours, 5 minutes (Sat 19 Sep 00:43 - 03:48)
+</code></pre></div>
+<p>When checks run on schedule this is the configured interval. After a failure it is longer, since the last successful read is further back, and after a shortened retry it is shorter.</p>
 <p><a id="liveness-reminder"></a></p>
 <h3 id="liveness-reminder">Liveness Reminder<a class="headerlink" href="#liveness-reminder" title="Permanent link">&para;</a></h3>
 <p>While nothing changes, the tool prints one reminder that it is still running:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a>* Monitoring healthy for &lt;spotify_target&gt;. No profile or playlist change since the last check
-<a id="__codelineno-32-2" name="__codelineno-32-2" href="#__codelineno-32-2"></a>Liveness check, timestamp:  Mon 08 Sep 2026, 09:15:05
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a>* Monitoring healthy for &lt;spotify_target&gt;. No profile or playlist change since the last check
+<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a>Liveness check, timestamp:  Mon 08 Sep 2026, 09:15:05
 </code></pre></div>
 <p>Set <code>LIVENESS_CHECK_INTERVAL</code> to change it (default: 86400, i.e. 24 hours) or to 0 to switch it off.</p>
 <p>Anything the tool prints about the target restarts the countdown, so a busy run stays quiet.</p>
@@ -1402,7 +1442,7 @@
 </table>
 <p><code>SIGHUP</code> keeps command-line credentials and nonempty environment values exported before startup. Change those values and restart to replace them.</p>
 <p>Send signals with <code>kill</code> or <code>pkill</code>, e.g.:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a>pkill<span class="w"> </span>-USR1<span class="w"> </span>-f<span class="w"> </span><span class="s2">"spotify_profile_monitor &lt;spotify_target&gt;"</span>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a>pkill<span class="w"> </span>-USR1<span class="w"> </span>-f<span class="w"> </span><span class="s2">"spotify_profile_monitor &lt;spotify_target&gt;"</span>
 </code></pre></div>
 <p>As Windows supports limited number of signals, this functionality is available only on Linux/Unix/macOS.</p>
 <p><a id="coloring-log-output-with-grc"></a></p>
@@ -1410,13 +1450,13 @@
 <p>Spotify Profile Monitor colours live terminal output through <code>COLORED_OUTPUT</code> and <code>COLOR_THEME</code>. To colour saved log files when you view them later, you can use <a href="https://github.com/garabik/grc">GRC</a>.</p>
 <p>The bundled recipe follows the same colours as the live output. It also covers the other monitors in the family, so one copy in <code>~/.grc/</code> colours every tool's logs.</p>
 <p>Add to your GRC config (<code>~/.grc/grc.conf</code>):</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a># monitoring log file
-<a id="__codelineno-34-2" name="__codelineno-34-2" href="#__codelineno-34-2"></a>.*_monitor_.*\.log
-<a id="__codelineno-34-3" name="__codelineno-34-3" href="#__codelineno-34-3"></a>conf.monitor_logs
+<div class="highlight"><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a># monitoring log file
+<a id="__codelineno-36-2" name="__codelineno-36-2" href="#__codelineno-36-2"></a>.*_monitor_.*\.log
+<a id="__codelineno-36-3" name="__codelineno-36-3" href="#__codelineno-36-3"></a>conf.monitor_logs
 </code></pre></div>
 <p>Now copy the <a href="https://raw.githubusercontent.com/misiektoja/spotify_profile_monitor/refs/heads/main/grc/conf.monitor_logs">conf.monitor_logs</a> to your <code>~/.grc/</code> and log files should be nicely colored when using <code>grc</code> tool.</p>
 <p>Example:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a>grc<span class="w"> </span>tail<span class="w"> </span>-F<span class="w"> </span>-n<span class="w"> </span><span class="m">100</span><span class="w"> </span>spotify_profile_monitor_&lt;user_id/file_suffix&gt;.log
+<div class="highlight"><pre><span></span><code><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a>grc<span class="w"> </span>tail<span class="w"> </span>-F<span class="w"> </span>-n<span class="w"> </span><span class="m">100</span><span class="w"> </span>spotify_profile_monitor_&lt;user_id/file_suffix&gt;.log
 </code></pre></div>
 
 

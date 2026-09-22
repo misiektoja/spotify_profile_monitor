@@ -479,6 +479,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#connection-problems" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connection Problems
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#too-many-open-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Too Many Open Files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#terminal-colours-look-wrong" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -671,6 +693,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#connection-problems" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Connection Problems
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#too-many-open-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Too Many Open Files
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#terminal-colours-look-wrong" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -824,9 +868,29 @@
 <td>The terminal cannot display ANSI colour or colour was switched off</td>
 <td><a href="#terminal-colours-look-wrong">Terminal Colours Look Wrong</a></td>
 </tr>
+<tr>
+<td><code>Spotify did not answer in time</code>, <code>Spotify could not be reached</code> or <code>Spotify is temporarily unavailable</code></td>
+<td>A network problem between this machine and Spotify or a Spotify outage</td>
+<td><a href="#connection-problems">Connection Problems</a></td>
+</tr>
+<tr>
+<td><code>This process ran out of file descriptors</code></td>
+<td>The operating system limit on open files was reached</td>
+<td><a href="#too-many-open-files">Too Many Open Files</a></td>
+</tr>
 </tbody>
 </table>
 <p>A continuing outage produces a <code>* Monitoring degraded</code> reminder once an hour, even when the <a href="../usage/#liveness-reminder">liveness reminder</a> is switched off. <code>* Monitoring recovered</code> marks recovery. Use <code>--verbose</code> to see the first failed check.</p>
+<p><a id="connection-problems"></a></p>
+<h2 id="connection-problems">Connection Problems<a class="headerlink" href="#connection-problems" title="Permanent link">&para;</a></h2>
+<p><code>Spotify did not answer in time</code> and <code>Spotify could not be reached</code> mean a check got no answer from Spotify. <code>Spotify is temporarily unavailable</code> means Spotify answered with a server error. The report names the interval after which the check is retried, so a short outage needs no action. A failure that lasts produces the hourly <code>Monitoring degraded</code> reminder and <code>Monitoring recovered</code> when it clears.</p>
+<p>If the failure continues, check the internet connection, DNS and any firewall or proxy between this machine and Spotify. <code>A secure connection could not be established</code> is a TLS problem, see <a href="../configuration/#tls-verification">TLS Verification</a>. A server error that lasts is a Spotify outage, so wait for it to end.</p>
+<p>To confirm that Spotify is reachable from this machine, run:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>spotify_profile_monitor<span class="w"> </span>--doctor
+</code></pre></div>
+<p><a id="too-many-open-files"></a></p>
+<h2 id="too-many-open-files">Too Many Open Files<a class="headerlink" href="#too-many-open-files" title="Permanent link">&para;</a></h2>
+<p><code>This process ran out of file descriptors</code> means the operating system limit on open files was reached. It is a local limit and not a Spotify problem. Raise it with <code>ulimit -n 4096</code> in the shell that starts the tool or set <code>LimitNOFILE=</code> in the systemd unit, then restart the tool.</p>
 <p><a id="terminal-colours-look-wrong"></a></p>
 <h2 id="terminal-colours-look-wrong">Terminal Colours Look Wrong<a class="headerlink" href="#terminal-colours-look-wrong" title="Permanent link">&para;</a></h2>
 <p>If escape sequences such as <code>[36m</code> appear as literal text, the terminal does not understand ANSI colour. Start the tool with <code>--no-color</code> or set <code>COLORED_OUTPUT = False</code> in the configuration file. On Windows, <code>pip install colorama</code> fixes the classic Command Prompt.</p>
@@ -846,10 +910,10 @@
 <p><a id="verbose-and-debug-output"></a></p>
 <h2 id="verbose-and-debug-output">Verbose and Debug Output<a class="headerlink" href="#verbose-and-debug-output" title="Permanent link">&para;</a></h2>
 <p><code>--verbose</code> adds the decisions a run made, in the same <code>*</code> lines as the rest of the output:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>--verbose
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>--verbose
 </code></pre></div>
 <p><code>--debug</code> traces what the tool is doing in timestamped <code>[DEBUG HH:MM:SS]</code> lines:</p>
-<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>--debug
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>spotify_profile_monitor<span class="w"> </span>&lt;spotify_target&gt;<span class="w"> </span>--debug
 </code></pre></div>
 <p>Lines with details read <code>Operation: key=value, key=value</code>. Fields depend on the operation. Some results report <code>outcome=OK</code>, <code>failed</code>, <code>degraded</code> or <code>skipped</code>.</p>
 <p><a id="installation-and-command-problems"></a></p>
@@ -862,7 +926,7 @@
 <p><a id="invalid-saved-settings-and-state"></a></p>
 <h2 id="invalid-saved-settings-and-state">Invalid saved settings and state<a class="headerlink" href="#invalid-saved-settings-and-state" title="Permanent link">&para;</a></h2>
 <p>Timing values must be finite and within the documented range. Normal startup checks effective timing settings before monitoring. A configuration syntax error reports its file, line number and parser message without echoing source text that may contain credentials.</p>
-<p>If a saved playlist, follower or following file has an invalid structure, monitoring stops before replacing it. Correct the named file or move it aside to start a fresh baseline. Keep a copy if you need the old history. Older valid records and extra trailing metadata remain accepted.</p>
+<p>If a saved playlist, follower or following file has an invalid structure, monitoring stops before replacing it. Correct the named file or move it aside to start a fresh baseline. Keep a copy if you need the old history. Older valid records and extra trailing metadata remain accepted, including files from releases before 3.9 that hold <code>null</code> where the count or the list was unavailable.</p>
 <p>Malformed path settings and color-theme values are reported by Doctor with the setting name. Invalid color values are ignored while rendering help so you can still find the configuration commands.</p>
 
 
