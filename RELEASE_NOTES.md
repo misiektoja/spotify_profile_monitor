@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 4.1 (TBD)
+# Changes in 4.1 (22 Sep 2026)
 
 Version **4.1** fixes **browser cookie import**. It reads recently written cookies, finds the signed-in Firefox profile and discovers Firefox from the Microsoft Store plus Chrome, Brave or Chromium from Snap or Flatpak. The profile picker marks current Spotify logins, retries a mistyped choice and reports why an import failed. Selected notification channels show `Unavailable` when local settings prevent delivery. Automatic sends stay quiet until the settings are fixed.
 
