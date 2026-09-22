@@ -2,6 +2,22 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 4.1 (TBD)
+
+Version **4.1** fixes **browser cookie import**. A cookie your browser had just written is no longer reported as missing, Firefox picks the profile you are actually signed in to, and Chrome, Brave and Chromium installed from Snap or Flatpak are found. The profile picker marks which profile holds a current Spotify login, re-asks after a mistyped answer instead of cancelling, and failed imports name the cause you have to fix.
+
+**Features and improvements**:
+
+- **IMPROVE:** **The profile picker shows which profile is signed in** - `--import-browser-cookie` marks every profile that **holds a current Spotify login** and preselects it when only one does, so Enter accepts it. Profiles are tagged with the install they came from, such as Snap or Flatpak. Guided setup wizard reports how many profiles each browser has and how many hold a login, so you can pick a browser before opening the list
+
+**Bug fixes**:
+
+- **BUGFIX:** **Import reads the profile your browser is using** - A cookie your browser had not yet written out looked missing, so signing in to Spotify and importing right away reported **no cookie found**. The import now reads the pending entries too. Profiles on read-only media still work, and a locked database no longer holds up the whole profile list
+- **BUGFIX:** **Firefox imports the profile you are signed in to** - Current Firefox records cookie expiry in milliseconds, which always compared as far in the future, so **every profile looked equally current** and an old one could win. Expiry is now read in either unit. A profile whose cookie has expired says so and gives the date, instead of spending a Spotify request to fail
+- **BUGFIX:** **Chrome, Brave and Chromium from Snap or Flatpak are found** - Only the distribution package locations were searched, so users of the **Snap or Flatpak builds had no profiles listed at all** and could not import
+- **BUGFIX:** **Failed imports name what to fix** - A locked Linux keyring reported that Spotify was not signed in, sending you to the wrong place. It now says the **keyring is locked or unavailable** and names the package to install. An empty profile list distinguishes a browser that is not installed from one with no profile, a missing dependency and an unsupported system. Failures name the profile that failed and list the others available
+- **BUGFIX:** **A mistyped profile number no longer cancels the import** - Any invalid answer, including a stray Enter, ended the import and meant starting over. The picker now **re-asks**, with `0` to cancel and Ctrl+C to stop cleanly. After a failed import, setup offers to **try another browser** rather than only the same one
+
 # Changes in 4.0 (22 Sep 2026)
 
 Version **4.0** reports a follower or following who changed their display name as a **rename** rather than as an addition and a removal, and no longer stays silent about follower changes that leave the total unchanged. It also brings a check that could not finish back on the **error interval** instead of waiting out the full polling interval, retries **rate limiting** on its own short backoff. Alert delivery messages stay within the correct check report and alert channels that still use placeholder configuration values are shown as not configured.
