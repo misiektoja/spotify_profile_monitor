@@ -1131,6 +1131,8 @@ def test_the_failure_alert_html_body_matches_the_plain_one(monkeypatch):
 # Verifies the recovery alert reaches only the channel whose failure alert was delivered and then forgets the
 # alert, so the next outage earns every channel a new one
 def test_the_recovery_alert_reaches_only_the_alerted_channel(monkeypatch):
+    for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "receiver@example.com")):
+        monkeypatch.setattr(monitor, name, value)
     monkeypatch.setattr(monitor, "LOCAL_TIMEZONE", "UTC")
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
     monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", True)
@@ -1161,6 +1163,8 @@ def test_the_recovery_alert_reaches_only_the_alerted_channel(monkeypatch):
 # Verifies a channel whose failure alert never landed is told about the outage and its end together, since a channel
 # blocked for the length of the outage would otherwise hear nothing at all
 def test_a_channel_that_missed_the_failure_alert_is_told_about_the_whole_outage(monkeypatch):
+    for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "receiver@example.com"), ("WEBHOOK_ENABLED", True), ("WEBHOOK_PROVIDER", "discord"), ("WEBHOOK_URL", "https://discord.com/api/webhooks/123/private-token")):
+        monkeypatch.setattr(monitor, name, value)
     sent = []
 
     # Records the alert the dispatcher hands the channels instead of delivering it
@@ -1200,6 +1204,8 @@ def test_a_failure_nobody_was_told_about_ends_quietly(monkeypatch):
 # Verifies the dispatcher reports what each transport actually delivered, since a failed send that reads as delivered
 # would mark the channel done and cancel its retry
 def test_the_dispatcher_separates_an_attempt_from_a_delivery(monkeypatch):
+    for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "receiver@example.com"), ("WEBHOOK_ENABLED", True), ("WEBHOOK_PROVIDER", "discord"), ("WEBHOOK_URL", "https://discord.com/api/webhooks/123/private-token")):
+        monkeypatch.setattr(monitor, name, value)
     monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "receiver@example.com")
     monkeypatch.setattr(monitor, "send_email", lambda *arguments, **keywords: 1)
     monkeypatch.setattr(monitor, "send_webhook", lambda *arguments, **keywords: 0)

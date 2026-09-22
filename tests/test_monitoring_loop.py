@@ -95,7 +95,8 @@ def error_alerts_for(monkeypatch, tmp_path, answers, stop_after, follower_answer
     monkeypatch.setattr(monitor, "SPOTIFY_ERROR_INTERVAL", 300)
     monkeypatch.setattr(monitor, "LIVENESS_REMINDER_SECONDS", liveness_seconds if liveness_seconds is not None else 100 * check_interval)
     monkeypatch.setattr(monitor, "ERROR_NOTIFICATION", True)
-    monkeypatch.setattr(monitor, "RECEIVER_EMAIL", "watcher@example.invalid")
+    for name, value in (("SMTP_HOST", "smtp.example.com"), ("SMTP_PORT", 587), ("SMTP_USER", "sender@example.com"), ("SMTP_PASSWORD", "test-password"), ("SENDER_EMAIL", "sender@example.com"), ("RECEIVER_EMAIL", "watcher@example.com"), ("WEBHOOK_PROVIDER", "discord"), ("WEBHOOK_URL", "https://discord.com/api/webhooks/123/private-token")):
+        monkeypatch.setattr(monitor, name, value)
     monkeypatch.setattr(monitor, "WEBHOOK_ENABLED", True)
     monkeypatch.setattr(monitor, "WEBHOOK_ERROR_NOTIFICATION", True)
     monkeypatch.setattr(monitor, "DETECT_CHANGES_IN_PLAYLISTS", playlist_checks)

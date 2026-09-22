@@ -200,8 +200,8 @@ def test_json_history_paths_follow_the_configured_directory(tmp_path):
     assert monitor.build_json_history_paths("alice", prepared) == (str(json_dir / "spotify_profile_alice_followers.json"), str(json_dir / "spotify_profile_alice_followings.json"), str(json_dir / "spotify_profile_alice_playlists.json"))
 
 
-# Confirms an unedited webhook destination switches the channel off while a real one keeps it on
-@pytest.mark.parametrize(("webhook_url", "expected"), (("your_webhook_url", "False"), ("https://ntfy.sh/some-topic", "True")))
+# Confirms an unedited webhook destination stays selected but is reported as unavailable
+@pytest.mark.parametrize(("webhook_url", "expected"), (("your_webhook_url", "True"), ("https://ntfy.sh/some-topic", "True")))
 def test_a_placeholder_webhook_url_switches_the_channel_off(webhook_url, expected):
     with make_temp_directory() as directory_name:
         config_path = write_config(directory_name, f'WEBHOOK_ENABLED = True\nWEBHOOK_PROVIDER = "ntfy"\nWEBHOOK_URL = "{webhook_url}"\n')
