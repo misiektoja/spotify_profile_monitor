@@ -4,17 +4,18 @@ This is a high-level summary of the most important changes.
 
 # Changes in 4.1 (TBD)
 
-Version **4.1** fixes **browser cookie import**. A cookie your browser had just written is no longer reported as missing, Firefox picks the profile you are actually signed in to, and Chrome, Brave and Chromium installed from Snap or Flatpak are found. The profile picker marks which profile holds a current Spotify login, re-asks after a mistyped answer instead of cancelling, and failed imports name the cause you have to fix.
+Version **4.1** fixes **browser cookie import**. A cookie your browser had just written is no longer reported as missing, Firefox picks the profile you are actually signed in to, and Firefox from the Microsoft Store plus Chrome, Brave and Chromium installed from Snap or Flatpak are found. The profile picker marks which profile holds a current Spotify login, re-asks after a mistyped answer instead of cancelling, and failed imports name the cause you have to fix.
 
 **Features and improvements**:
 
-- **IMPROVE:** **The profile picker shows which profile is signed in** - `--import-browser-cookie` marks every profile that **holds a current Spotify login** and preselects it when only one does, so Enter accepts it. Profiles are tagged with the install they came from, such as Snap or Flatpak. Guided setup wizard reports how many profiles each browser has and how many hold a login, so you can pick a browser before opening the list
+- **IMPROVE:** **The profile picker shows which profile is signed in** - `--import-browser-cookie` marks every profile that **holds a current Spotify login** and preselects it when only one does, so Enter accepts it. Profiles are tagged with the install they came from, such as Snap, Flatpak or Microsoft Store. Guided setup wizard reports how many profiles each browser has and how many hold a login, so you can pick a browser before opening the list
 
 **Bug fixes**:
 
 - **BUGFIX:** **Import reads the profile your browser is using** - A cookie your browser had not yet written out looked missing, so signing in to Spotify and importing right away reported **no cookie found**. The import now reads the pending entries too. Profiles on read-only media still work, and a locked database no longer holds up the whole profile list
 - **BUGFIX:** **Firefox imports the profile you are signed in to** - Current Firefox records cookie expiry in milliseconds, which always compared as far in the future, so **every profile looked equally current** and an old one could win. Expiry is now read in either unit. A profile whose cookie has expired says so and gives the date, instead of spending a Spotify request to fail
 - **BUGFIX:** **Chrome, Brave and Chromium from Snap or Flatpak are found** - Only the distribution package locations were searched, so users of the **Snap or Flatpak builds had no profiles listed at all** and could not import
+- **BUGFIX:** **Firefox from the Microsoft Store is found on Windows** - Only `%APPDATA%\Mozilla\Firefox` was searched, so a machine whose only Firefox came from the Store was told to **install Firefox** when it already had it. The Store package's own profile folder under `%LOCALAPPDATA%\Packages` is now searched too, and a redirected `APPDATA` or `LOCALAPPDATA` no longer hides the profiles under your home directory
 - **BUGFIX:** **Failed imports name what to fix** - A locked Linux keyring reported that Spotify was not signed in, sending you to the wrong place. It now says the **keyring is locked or unavailable** and names the package to install. An empty profile list distinguishes a browser that is not installed from one with no profile, a missing dependency and an unsupported system. Failures name the profile that failed and list the others available
 - **BUGFIX:** **A mistyped profile number no longer cancels the import** - Any invalid answer, including a stray Enter, ended the import and meant starting over. The picker now **re-asks**, with `0` to cancel and Ctrl+C to stop cleanly. After a failed import, setup offers to **try another browser** rather than only the same one
 
