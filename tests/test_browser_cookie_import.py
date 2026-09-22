@@ -1,3 +1,4 @@
+import contextlib
 import json
 import sqlite3
 import stat
@@ -440,3 +441,175 @@ def test_the_import_reports_the_specific_empty_reason(tmp_path, monkeypatch):
 
     with pytest.raises(monitor.BrowserCookieImportError, match="the specific reason"):
         monitor.run_browser_cookie_import(browser="chrome", env_file=tmp_path / ".env", interactive=False)
+
+
+# Builds three interchangeable profile records for the picker tests
+def picker_profiles(count=3, cookie_root="/p"):
+    return [{"dir": f"p{index}", "name": f"name{index}", "cookie_file": f"{cookie_root}/p{index}/cookies.sqlite", "install": ""} for index in range(1, count + 1)]
+
+
+# Verifies an invalid answer re-asks instead of ending the import, so a typo does not mean starting over
+@pytest.mark.parametrize("answers,expected", [(["tow", "2"], "p2"), (["", "1"], "p1"), (["9", "3"], "p3"), (["-1", "2"], "p2"), (["1.5", "1"], "p1"), (["  2  "], "p2")])
+def test_the_picker_re_asks_on_invalid_input(answers, expected, monkeypatch):
+    monkeypatch.setattr(monitor, "profile_has_live_spotify_cookie", lambda *arguments, **keywords: None)
+    supplied = iter(answers)
+
+    chosen = monitor.select_browser_profile(picker_profiles(), "firefox", interactive=True, input_func=lambda prompt: next(supplied))
+
+    assert chosen["dir"] == expected
+
+
+# Verifies a negative number is refused rather than indexing backwards from the end of the list
+def test_the_picker_never_indexes_backwards(monkeypatch):
+    monkeypatch.setattr(monitor, "profile_has_live_spotify_cookie", lambda *arguments, **keywords: None)
+    supplied = iter(["-1", "-3", "1"])
+
+    chosen = monitor.select_browser_profile(picker_profiles(), "firefox", interactive=True, input_func=lambda prompt: next(supplied))
+
+    assert chosen["dir"] == "p1"
+
+
+# Verifies the documented cancel answer and an interrupted prompt both end the import cleanly
+@pytest.mark.parametrize("behaviour", ["zero", "eof", "interrupt"])
+def test_the_picker_cancels_without_a_traceback(behaviour, monkeypatch):
+    monkeypatch.setattr(monitor, "profile_has_live_spotify_cookie", lambda *arguments, **keywords: None)
+    supplied = iter(["0"])
+
+    def answer(prompt):
+        if behaviour == "eof":
+            raise EOFError
+        if behaviour == "interrupt":
+            raise KeyboardInterrupt
+        return next(supplied)
+
+    with pytest.raises(monitor.BrowserCookieImportError, match="cancelled"):
+        monitor.select_browser_profile(picker_profiles(), "firefox", interactive=True, input_func=answer)
+
+
+# Verifies the one profile holding a current login is marked and preselected, so Enter accepts it
+def test_the_picker_marks_and_preselects_the_only_live_profile(monkeypatch, capsys):
+    profiles = picker_profiles()
+    monkeypatch.setattr(monitor, "profile_has_live_spotify_cookie", lambda cookie_file, **keywords: cookie_file.endswith("p2/cookies.sqlite"))
+    prompts = []
+    supplied = iter([""])
+
+    chosen = monitor.select_browser_profile(profiles, "firefox", interactive=True, input_func=lambda prompt: (prompts.append(prompt), next(supplied))[1])
+
+    assert chosen["dir"] == "p2"
+    listing = capsys.readouterr().out
+    assert "* marks a profile holding a current Spotify login" in listing
+    assert "* name2" in listing and "(default)" in listing
+    # Only the profile worth choosing carries the mark
+    assert listing.count("*") == 2
+    assert "Enter for default" in prompts[0]
+
+
+# Verifies nothing is marked or preselected when no profile holds a current login
+def test_the_picker_marks_nothing_when_no_profile_is_live(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "profile_has_live_spotify_cookie", lambda *arguments, **keywords: False)
+    prompts = []
+    supplied = iter(["2"])
+
+    chosen = monitor.select_browser_profile(picker_profiles(), "firefox", interactive=True, input_func=lambda prompt: (prompts.append(prompt), next(supplied))[1])
+
+    assert chosen["dir"] == "p2"
+    assert "marks a profile holding" not in capsys.readouterr().out
+    assert "Enter for default" not in prompts[0]
+
+
+# Verifies no default is offered when several profiles qualify, since there is no basis to choose between them
+def test_the_picker_preselects_nothing_when_several_are_live(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "profile_has_live_spotify_cookie", lambda *arguments, **keywords: True)
+    prompts = []
+    supplied = iter(["3"])
+
+    chosen = monitor.select_browser_profile(picker_profiles(), "firefox", interactive=True, input_func=lambda prompt: (prompts.append(prompt), next(supplied))[1])
+
+    assert chosen["dir"] == "p3"
+    assert "(default)" not in capsys.readouterr().out
+    assert "Enter for default" not in prompts[0]
+
+
+# Verifies a database that could not be read is left unmarked rather than reported as signed out
+def test_an_unreadable_profile_is_left_unmarked(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "profile_has_live_spotify_cookie", lambda *arguments, **keywords: None)
+    supplied = iter(["1"])
+
+    monitor.select_browser_profile(picker_profiles(), "firefox", interactive=True, input_func=lambda prompt: next(supplied))
+
+    listing = capsys.readouterr().out
+    assert "marks a profile holding" not in listing
+    assert "signed out" not in listing
+
+
+# Verifies the only profile is warned about when it holds no current login, since there is no alternative to offer
+def test_a_single_signed_out_profile_is_warned_about(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "profile_has_live_spotify_cookie", lambda *arguments, **keywords: False)
+
+    chosen = monitor.select_browser_profile(picker_profiles(count=1), "firefox", interactive=True, input_func=lambda prompt: "")
+
+    assert chosen["dir"] == "p1"
+    assert "holds no current Spotify login" in capsys.readouterr().out
+
+
+# Verifies an unreadable single profile is not called signed out, which the import cannot know
+def test_a_single_unreadable_profile_is_not_warned_about(monkeypatch, capsys):
+    monkeypatch.setattr(monitor, "profile_has_live_spotify_cookie", lambda *arguments, **keywords: None)
+
+    monitor.select_browser_profile(picker_profiles(count=1), "firefox", interactive=True, input_func=lambda prompt: "")
+
+    assert "holds no current Spotify login" not in capsys.readouterr().out
+
+
+# Verifies two installs sharing a profile directory name are told apart, and that the advice given can be followed.
+# Naming the directory cannot resolve it, since the directory is what they share
+def test_a_directory_name_shared_by_two_installs_names_the_cookie_file():
+    duplicate = [{"dir": "Default", "name": "Person 1", "cookie_file": "/a/Default/Cookies", "install": ""}, {"dir": "Default", "name": "Person 1", "cookie_file": "/b/Default/Cookies", "install": "Snap"}]
+
+    with pytest.raises(monitor.BrowserCookieImportError) as failure:
+        monitor.select_browser_profile(duplicate, "chrome", requested_profile="Default", interactive=False)
+
+    message = str(failure.value)
+    assert "--cookie-file PATH" in message
+    assert "Pass one profile directory" not in message
+    # The two choices must be distinguishable in the listing, which is what the packaging tag is for
+    assert "[Snap]" in message
+
+
+# Verifies the packaging a profile came from is recognized, since Snap, Flatpak and distribution trees share names
+@pytest.mark.parametrize("path,expected", [("/home/u/.config/chromium/Default", ""), ("/home/u/snap/chromium/common/chromium/Default", "Snap"), ("/home/u/.var/app/com.brave.Browser/config/BraveSoftware/Brave-Browser/Default", "Flatpak"), ("/home/u/.mozilla/firefox/abc.default", "")])
+def test_the_packaging_of_a_profile_tree_is_recognized(path, expected):
+    assert monitor.packaging_label(Path(path)) == expected
+
+
+# Verifies the live-login probe answers on both cookie schemas, neither of which needs a decryption key to read the
+# cookie name, host and expiry
+@pytest.mark.parametrize("firefox", [True, False])
+def test_the_live_cookie_probe_reads_both_schemas(tmp_path, firefox):
+    now = 1790000000.0
+    cookie_file = tmp_path / ("cookies.sqlite" if firefox else "Cookies")
+    with contextlib.closing(sqlite3.connect(cookie_file)) as connection:
+        if firefox:
+            connection.execute("CREATE TABLE moz_cookies (host TEXT, name TEXT, value TEXT, expiry INTEGER, lastAccessed INTEGER)")
+            connection.execute("INSERT INTO moz_cookies VALUES ('.spotify.com', 'sp_dc', 'v', ?, 1)", (int((now + 86400) * 1000),))
+        else:
+            connection.execute("CREATE TABLE cookies (host_key TEXT, name TEXT, encrypted_value BLOB, expires_utc INTEGER)")
+            connection.execute("INSERT INTO cookies VALUES ('.spotify.com', 'sp_dc', X'00', ?)", (int((now + 86400 + monitor.CHROMIUM_EPOCH_OFFSET_SECONDS) * 1_000_000),))
+        connection.commit()
+
+    assert monitor.profile_has_live_spotify_cookie(cookie_file, firefox=firefox, now=now) is True
+    assert monitor.profile_has_live_spotify_cookie(cookie_file, firefox=firefox, now=now + 86400 * 2) is False
+
+
+# Verifies a database the probe cannot read answers "unknown" rather than "signed out"
+@pytest.mark.parametrize("content", [b"not a database", b""])
+def test_the_live_cookie_probe_returns_unknown_for_an_unreadable_database(tmp_path, content):
+    cookie_file = tmp_path / "cookies.sqlite"
+    cookie_file.write_bytes(content)
+
+    assert monitor.profile_has_live_spotify_cookie(cookie_file, firefox=True) is None
+
+
+# Verifies a missing database answers "unknown" as well, since absence is not evidence of being signed out
+def test_the_live_cookie_probe_returns_unknown_for_a_missing_database(tmp_path):
+    assert monitor.profile_has_live_spotify_cookie(tmp_path / "absent.sqlite", firefox=True) is None
