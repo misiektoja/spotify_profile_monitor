@@ -322,7 +322,7 @@ WEBHOOK_FOLLOWERS_FOLLOWINGS_NOTIFICATION = True
 WEBHOOK_ERROR_NOTIFICATION = True
 ```
 
-A `WEBHOOK_URL` left unset, or left at its `your_webhook_url` placeholder, switches webhook alerts off at startup instead of failing at the first alert. `--verbose` reports why.
+If webhook alerts are selected but the URL, provider or other local settings are invalid, the startup summary shows `Unavailable` with the reason. Automatic webhook sends are skipped silently until the settings are fixed. `Off` means the master switch or all webhook alert types are off.
 
 You can also enable profile webhooks for one run:
 
