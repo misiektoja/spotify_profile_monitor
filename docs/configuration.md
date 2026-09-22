@@ -182,6 +182,10 @@ By default, import writes only `SP_DC_COOKIE` to `.env` in the current directory
 
 Import validates the login before saving and asks before replacing a saved cookie. For noninteractive replacement, pass `--force`. This still validates the cookie and preserves unrelated `.env` settings.
 
+When a browser holds several profiles, import lists them and asks which to use. A `*` marks each profile that holds a
+current Spotify login. When exactly one does, it is preselected and Enter accepts it. An invalid answer is asked
+again rather than ending the import. Answer `0` to cancel.
+
 Chrome, Brave and Chromium import is available on macOS and Linux through the optional browser extra:
 
 ```sh
