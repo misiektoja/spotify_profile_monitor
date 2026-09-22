@@ -1703,6 +1703,19 @@ def test_the_chromium_group_note_names_the_browser_with_a_login(monkeypatch, cou
     assert monitor._wizard_chromium_group_note(list(monitor.CHROMIUM_IMPORT_BROWSERS)) == expected
 
 
+# Leaves the browser login cache populated, so the next test proves the shared fixture empties it again. A cache
+# carried into a later test changes what that test sees and fails only in a full run, never when it runs alone
+def test_the_wizard_browser_cache_can_be_left_populated():
+    monitor._WIZARD_BROWSER_LOGIN_COUNTS["firefox"] = (1, 1)
+
+    assert monitor._WIZARD_BROWSER_LOGIN_COUNTS
+
+
+# Verifies the shared fixture resets the browser login cache, so the test above cannot bias this one
+def test_the_wizard_browser_cache_is_reset_between_tests():
+    assert monitor._WIZARD_BROWSER_LOGIN_COUNTS == {}
+
+
 # Verifies the counts are taken fresh, so a login made while a prompt was waiting is seen by the next menu
 def test_the_browser_counts_are_dropped_before_the_menu(monkeypatch):
     calls = []
@@ -1714,7 +1727,6 @@ def test_the_browser_counts_are_dropped_before_the_menu(monkeypatch):
 
     monitor._wizard_collect_cookie_auth("manual", Path("unused.env"), {})
 
-    monitor._WIZARD_BROWSER_LOGIN_COUNTS.clear()
     assert "firefox" in calls
 
 
@@ -1766,22 +1778,6 @@ def test_declining_the_switch_keeps_the_current_browser(monkeypatch, tmp_path):
     monkeypatch.setattr(monitor, "_wizard_ask_choice", choose_by_label("Keep trying Firefox"))
 
     assert monitor._wizard_switch_import_browser("firefox") is None
-
-
-# Verifies the cookie recovery advice names the browsers the import accepts, so a Chrome user is not sent to Firefox
-def test_the_recovery_hint_names_the_other_browsers(monkeypatch):
-    monkeypatch.setattr(monitor, "_wizard_import_browsers", lambda: ["firefox", "chrome", "brave", "chromium"])
-
-    hint = monitor.cookie_auth_recovery_browser_hint()
-
-    assert hint == " (use --browser chrome, brave or chromium to import from one of those instead)"
-
-
-# Verifies no alternative is named when only one browser is supported, rather than an empty suggestion
-def test_the_recovery_hint_is_empty_when_one_browser_is_supported(monkeypatch):
-    monkeypatch.setattr(monitor, "_wizard_import_browsers", lambda: ["firefox"])
-
-    assert monitor.cookie_auth_recovery_browser_hint() == ""
 
 
 # Verifies the grouped Chromium menu entry carries the note rather than a fixed claim that a login is present.

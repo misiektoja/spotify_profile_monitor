@@ -39,7 +39,7 @@ def test_firefox_rejects_deceptive_domains(tmp_path):
 
 
 # Verifies Chromium discovery uses supported directories and friendly profile names
-def test_chromium_profile_discovery(tmp_path):
+def test_chromium_profile_discovery(tmp_path, real_browser_profiles):
     base_path = tmp_path / "user-data"
     (base_path / "Default/Network").mkdir(parents=True)
     (base_path / "Default/Network/Cookies").touch()
@@ -613,3 +613,34 @@ def test_the_live_cookie_probe_returns_unknown_for_an_unreadable_database(tmp_pa
 # Verifies a missing database answers "unknown" as well, since absence is not evidence of being signed out
 def test_the_live_cookie_probe_returns_unknown_for_a_missing_database(tmp_path):
     assert monitor.profile_has_live_spotify_cookie(tmp_path / "absent.sqlite", firefox=True) is None
+
+
+# Verifies the suite never enumerates the browser profiles of whoever runs it. Without the shared stub the listing
+# differs per machine, costs a SQLite open per profile and makes a failure depend on which browsers are installed
+def test_browser_profile_discovery_is_stubbed_by_default(tmp_path, monkeypatch):
+    firefox_root = tmp_path / "firefox"
+    (firefox_root / "abc.default").mkdir(parents=True)
+    (firefox_root / "abc.default" / "cookies.sqlite").touch()
+    chromium_root = tmp_path / "chromium"
+    (chromium_root / "Default").mkdir(parents=True)
+    (chromium_root / "Default" / "Cookies").touch()
+    monkeypatch.setattr(monitor, "_firefox_profile_roots", lambda *arguments, **keywords: [firefox_root])
+    monkeypatch.setattr(monitor, "get_chromium_user_data_dir", lambda *arguments, **keywords: chromium_root)
+
+    assert monitor.discover_firefox_profiles() == []
+    assert monitor.discover_chromium_profiles("chrome") == []
+
+
+# Verifies the real enumerators are one fixture away, so stubbing them by default does not leave them untested
+def test_the_real_enumerators_are_available_on_request(tmp_path, monkeypatch, real_browser_profiles):
+    firefox_root = tmp_path / "firefox"
+    (firefox_root / "abc.default").mkdir(parents=True)
+    (firefox_root / "abc.default" / "cookies.sqlite").touch()
+    chromium_root = tmp_path / "chromium"
+    (chromium_root / "Default").mkdir(parents=True)
+    (chromium_root / "Default" / "Cookies").touch()
+    monkeypatch.setattr(monitor, "_firefox_profile_roots", lambda *arguments, **keywords: [firefox_root])
+    monkeypatch.setattr(monitor, "get_chromium_user_data_dir", lambda *arguments, **keywords: chromium_root)
+
+    assert [profile["dir"] for profile in monitor.discover_firefox_profiles()] == ["abc.default"]
+    assert [profile["dir"] for profile in monitor.discover_chromium_profiles("chrome")] == ["Default"]
