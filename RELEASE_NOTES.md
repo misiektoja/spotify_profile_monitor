@@ -4,7 +4,7 @@ This is a high-level summary of the most important changes.
 
 # Changes in 4.1 (TBD)
 
-Version **4.1** fixes **browser cookie import**. A cookie your browser had just written is no longer reported as missing, Firefox picks the profile you are actually signed in to, and Firefox from the Microsoft Store plus Chrome, Brave and Chromium installed from Snap or Flatpak are found. The profile picker marks which profile holds a current Spotify login, re-asks after a mistyped answer instead of cancelling, and failed imports name the cause you have to fix.
+Version **4.1** fixes **browser cookie import**. It reads recently written cookies, finds the signed-in Firefox profile and discovers Firefox from the Microsoft Store plus Chrome, Brave or Chromium from Snap or Flatpak. The profile picker marks current Spotify logins, retries a mistyped choice and reports why an import failed. Selected notification channels show `Unavailable` when local settings prevent delivery. Automatic sends stay quiet until the settings are fixed.
 
 **Features and improvements**:
 
@@ -12,6 +12,7 @@ Version **4.1** fixes **browser cookie import**. A cookie your browser had just 
 
 **Bug fixes**:
 
+- **BUGFIX:** **Unavailable notification channels stay quiet** - The startup summary shows **`Unavailable`** and names the missing or invalid email or webhook setting. Automatic sends make no attempt and print no delivery line until that channel is configured. **`Off`** means alerts are disabled for that channel
 - **BUGFIX:** **Import reads the profile your browser is using** - A cookie your browser had not yet written out looked missing, so signing in to Spotify and importing right away reported **no cookie found**. The import now reads the pending entries too. Profiles on read-only media still work, and a locked database no longer holds up the whole profile list
 - **BUGFIX:** **Firefox imports the profile you are signed in to** - Current Firefox records cookie expiry in milliseconds, which always compared as far in the future, so **every profile looked equally current** and an old one could win. Expiry is now read in either unit. A profile whose cookie has expired says so and gives the date, instead of spending a Spotify request to fail
 - **BUGFIX:** **Chrome, Brave and Chromium from Snap or Flatpak are found** - Only the distribution package locations were searched, so users of the **Snap or Flatpak builds had no profiles listed at all** and could not import
