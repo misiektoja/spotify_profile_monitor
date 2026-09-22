@@ -1,6 +1,8 @@
 import json
 import sqlite3
+import stat
 import sys
+import time
 import types
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -164,3 +166,78 @@ PROGRESS_LINES = (
 @pytest.mark.parametrize("line", PROGRESS_LINES)
 def test_the_progress_lines_use_the_shared_checking_wording(line):
     assert line in Path(monitor.__file__).read_text(encoding="utf-8"), line
+
+
+# Creates a Firefox cookie database whose schema is checked in but whose last cookie is only in the write-ahead log,
+# which is the state a running Firefox leaves behind between checkpoints
+def create_logged_firefox_database(path, rows, logged_row):
+    connection = sqlite3.connect(path)
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.execute("CREATE TABLE moz_cookies (host TEXT, name TEXT, value TEXT, expiry INTEGER, lastAccessed INTEGER)")
+    connection.executemany("INSERT INTO moz_cookies VALUES (?, ?, ?, ?, ?)", rows)
+    connection.commit()
+    connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    holder = sqlite3.connect(path)
+    holder.execute("INSERT INTO moz_cookies VALUES (?, ?, ?, ?, ?)", logged_row)
+    holder.commit()
+    connection.close()
+    return holder
+
+
+# Verifies a cookie a running Firefox has saved but not yet checked in is found rather than reported missing
+def test_firefox_reads_a_cookie_still_in_the_write_ahead_log(tmp_path):
+    cookie_file = tmp_path / "cookies.sqlite"
+    holder = create_logged_firefox_database(cookie_file, [(".spotify.com", "sp_dc", "checkpointed", 5000, 100)], (".spotify.com", "sp_dc", "still-in-the-log", 5000, 900))
+    try:
+        assert cookie_file.with_name(cookie_file.name + "-wal").exists()
+
+        assert monitor.read_firefox_sp_dc(cookie_file, now=1000) == "still-in-the-log"
+    finally:
+        holder.close()
+
+
+# Verifies a database a running browser holds locked is still read, and without waiting out a busy timeout per profile
+def test_firefox_reads_a_locked_database_promptly(tmp_path):
+    cookie_file = tmp_path / "cookies.sqlite"
+    create_firefox_database(cookie_file, [(".spotify.com", "sp_dc", "locked-profile", 5000, 100)])
+    holder = sqlite3.connect(cookie_file, isolation_level="EXCLUSIVE")
+    holder.execute("BEGIN EXCLUSIVE")
+    try:
+        started = time.monotonic()
+
+        assert monitor.read_firefox_sp_dc(cookie_file, now=1000) == "locked-profile"
+
+        assert time.monotonic() - started < monitor.COOKIE_DATABASE_BUSY_TIMEOUT * 4
+    finally:
+        holder.close()
+
+
+# Verifies a profile on read-only media is read, which the access mode that sees the log cannot do
+def test_firefox_reads_a_profile_on_read_only_media(tmp_path):
+    profile = tmp_path / "profile"
+    profile.mkdir()
+    cookie_file = profile / "cookies.sqlite"
+    connection = sqlite3.connect(cookie_file)
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.execute("CREATE TABLE moz_cookies (host TEXT, name TEXT, value TEXT, expiry INTEGER, lastAccessed INTEGER)")
+    connection.execute("INSERT INTO moz_cookies VALUES ('.spotify.com', 'sp_dc', 'read-only-media', 5000, 100)")
+    connection.commit()
+    connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    connection.close()
+    cookie_file.chmod(stat.S_IRUSR)
+    profile.chmod(stat.S_IRUSR | stat.S_IXUSR)
+    try:
+        assert monitor.read_firefox_sp_dc(cookie_file, now=1000) == "read-only-media"
+    finally:
+        profile.chmod(stat.S_IRWXU)
+        cookie_file.chmod(stat.S_IRUSR | stat.S_IWUSR)
+
+
+# Verifies punctuation in a profile path cannot displace the read-only parameters appended to the database URI
+def test_firefox_reads_a_profile_whose_path_contains_uri_punctuation(tmp_path):
+    profile = tmp_path / "why? this#one"
+    profile.mkdir()
+    cookie_file = profile / "cookies.sqlite"
+    create_firefox_database(cookie_file, [(".spotify.com", "sp_dc", "punctuated-path", 5000, 100)])
+
+    assert monitor.read_firefox_sp_dc(cookie_file, now=1000) == "punctuated-path"
