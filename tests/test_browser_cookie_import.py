@@ -576,10 +576,49 @@ def test_a_directory_name_shared_by_two_installs_names_the_cookie_file():
     assert "[Snap]" in message
 
 
-# Verifies the packaging a profile came from is recognized, since Snap, Flatpak and distribution trees share names
-@pytest.mark.parametrize("path,expected", [("/home/u/.config/chromium/Default", ""), ("/home/u/snap/chromium/common/chromium/Default", "Snap"), ("/home/u/.var/app/com.brave.Browser/config/BraveSoftware/Brave-Browser/Default", "Flatpak"), ("/home/u/.mozilla/firefox/abc.default", "")])
+# Verifies the packaging a profile came from is recognized, since Snap, Flatpak, Microsoft Store and
+# distribution trees share names. A Windows path is classified from any host, so the check never reads os.sep
+@pytest.mark.parametrize("path,expected", [("/home/u/.config/chromium/Default", ""), ("/home/u/snap/chromium/common/chromium/Default", "Snap"), ("/home/u/.var/app/com.brave.Browser/config/BraveSoftware/Brave-Browser/Default", "Flatpak"), ("/home/u/.mozilla/firefox/abc.default", ""), (r"C:\Users\u\AppData\Roaming\Mozilla\Firefox\Profiles\abc.default", ""), (r"C:\Users\u\AppData\Local\Packages\Mozilla.Firefox_n80bbvh6b1yt2\LocalCache\Roaming\Mozilla\Firefox\Profiles\abc.default", "Microsoft Store")])
 def test_the_packaging_of_a_profile_tree_is_recognized(path, expected):
     assert monitor.packaging_label(Path(path)) == expected
+
+
+# Verifies a redirected application-data directory does not hide the home-relative root, and that the two
+# collapse into one entry when they name the same directory
+@pytest.mark.parametrize("appdata,expected_roots", [(None, ["AppData/Roaming/Mozilla/Firefox"]), ("AppData/Roaming", ["AppData/Roaming/Mozilla/Firefox"]), ("Redirected", ["Redirected/Mozilla/Firefox", "AppData/Roaming/Mozilla/Firefox"])])
+def test_the_windows_roaming_root_covers_a_redirection(tmp_path, appdata, expected_roots):
+    environ = {"APPDATA": str(tmp_path / appdata)} if appdata else {}
+
+    roots = monitor._firefox_profile_roots(system_name="Windows", home=tmp_path, environ=environ)
+
+    assert roots == [tmp_path / relative for relative in expected_roots]
+
+
+# Verifies the Microsoft Store package is searched, since its profiles never appear under the roaming root
+def test_the_windows_store_package_is_searched(tmp_path, real_browser_profiles):
+    store_root = tmp_path / "AppData/Local/Packages/Mozilla.Firefox_n80bbvh6b1yt2/LocalCache/Roaming/Mozilla/Firefox"
+    (store_root / "Profiles/store.default-release").mkdir(parents=True)
+    create_firefox_database(store_root / "Profiles/store.default-release/cookies.sqlite", [("spotify.com", "sp_dc", "cookie", 4102444800, 10)])
+
+    profiles = monitor.discover_firefox_profiles(system_name="Windows", home=tmp_path, environ={})
+
+    assert [(profile["dir"], profile["install"]) for profile in profiles] == [("store.default-release", "Microsoft Store")]
+
+
+# Verifies a Store profile is told apart from a regular one, since both installs create a default-release
+def test_a_store_profile_is_told_apart_from_a_regular_one(tmp_path, real_browser_profiles):
+    for root in ("AppData/Roaming/Mozilla/Firefox", "AppData/Local/Packages/Mozilla.Firefox_n80bbvh6b1yt2/LocalCache/Roaming/Mozilla/Firefox"):
+        profile_dir = tmp_path / root / "Profiles/abcd1234.default-release"
+        profile_dir.mkdir(parents=True)
+        create_firefox_database(profile_dir / "cookies.sqlite", [])
+
+    # The listing is ordered by name, directory then cookie file, so the package under AppData/Local sorts first
+    profiles = monitor.discover_firefox_profiles(system_name="Windows", home=tmp_path, environ={})
+    assert [profile["install"] for profile in profiles] == ["Microsoft Store", ""]
+
+    with pytest.raises(monitor.BrowserCookieImportError) as failure:
+        monitor.select_browser_profile(profiles, "firefox", requested_profile="abcd1234.default-release", interactive=False)
+    assert "[Microsoft Store]" in str(failure.value)
 
 
 # Verifies the live-login probe answers on both cookie schemas, neither of which needs a decryption key to read the
