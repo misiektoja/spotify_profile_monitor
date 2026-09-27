@@ -141,13 +141,35 @@ def test_the_loop_reports_a_rename_while_the_count_holds(monkeypatch, tmp_path, 
 # Three people whose display names one Spotify response replaced with their user IDs
 BURST_OLD = [{"name": f"Person {index}", "uri": f"spotify:user:person{index}"} for index in range(3)]
 BURST_NEW = [{"name": f"person{index}", "uri": f"spotify:user:person{index}"} for index in range(3)]
-BURST_HELD = "3 followers changed their display names at once, streak {streak}/3; old names retained"
+BURST_HELD = "3 followers changed their display names at once with no profiles available to confirm them, streak {streak}/3; old names retained"
+BURST_CONTRADICTED = "3 followers changed their display names at once but their profiles show other names; old names retained"
+BURST_VERIFIED = "3 followers changed their display names at once and their profiles show the new names; reporting them"
 
 
-# Makes three renames in one check a burst that needs three matching checks to be reported
+# Makes three renames in one check a burst that needs three matching checks when the profiles cannot be read
 def small_burst(monkeypatch, counter=3):
     monkeypatch.setattr(monitor, "FOLLOWERS_FOLLOWINGS_RENAME_BURST", 2)
     monkeypatch.setattr(monitor, "FOLLOWERS_FOLLOWINGS_RENAME_COUNTER", counter)
+
+
+# Answers profile lookups from a URI to name mapping, failing for other URIs, and returns the URIs read
+def profiles_showing(monkeypatch, names):
+    looked_up = []
+
+    # Stands in for the real profile request
+    def lookup(_access_token, user_uri):
+        looked_up.append(user_uri)
+        if user_uri not in names:
+            raise RuntimeError("profile unavailable")
+        return names[user_uri]
+
+    monkeypatch.setattr(monitor, "spotify_get_profile_name", lookup)
+    return looked_up
+
+
+# Maps each profile in a list to the name it carries
+def names_of(profiles):
+    return {profile["uri"]: profile["name"] for profile in profiles}
 
 
 # Returns how many matching checks a held burst has seen, or None when nothing is held
@@ -162,19 +184,70 @@ def saved_followers(monkeypatch, tmp_path, profiles):
     (tmp_path / monitor.build_json_history_paths("burst", "")[0]).write_text(json.dumps([len(profiles), profiles]), encoding="utf-8")
 
 
-# A burst keeps the old names while it repeats and is handed over unchanged once it has repeated enough times
-def test_a_rename_burst_keeps_the_old_names_until_it_repeats(monkeypatch):
+# Returns the new and old lists of every follower report the loop made
+def reported(events):
+    return [(event[1], event[2]) for event in events]
+
+
+# Profiles that show the new names prove the burst real, so it is reported without waiting for more checks
+def test_profiles_showing_the_new_names_report_a_burst_at_once(monkeypatch):
+    small_burst(monkeypatch)
+    profiles_showing(monkeypatch, names_of(BURST_NEW))
+
+    assert monitor.hold_follow_rename_burst(BURST_NEW, BURST_OLD, None, "access-token") == (BURST_NEW, None, "verified", 3)
+
+
+# The user's own case: the lists carried user IDs while the profiles still showed the real names, which outweighs any streak
+def test_profiles_showing_other_names_keep_the_old_ones(monkeypatch):
+    small_burst(monkeypatch)
+    looked_up = profiles_showing(monkeypatch, names_of(BURST_OLD))
+
+    assert monitor.hold_follow_rename_burst(BURST_NEW, BURST_OLD, {"names": names_of(BURST_NEW), "streak": 2}, "access-token") == (BURST_OLD, None, "contradicted", 3)
+    assert looked_up == [BURST_NEW[0]["uri"]]
+
+
+# A profile that cannot be read proves nothing, so the burst waits for repeated checks instead
+def test_an_unreadable_profile_falls_back_to_repeated_checks(monkeypatch):
+    small_burst(monkeypatch)
+    profiles_showing(monkeypatch, names_of(BURST_NEW[:2]))
+
+    held, pending, outcome, _ = monitor.hold_follow_rename_burst(BURST_NEW, BURST_OLD, None, "access-token")
+
+    assert (held, outcome, streak_of(pending)) == (BURST_OLD, "held", 1)
+
+
+# Only a few profiles are read, taken from across the burst so a glitch that hit part of the list is still seen
+def test_the_profile_check_samples_across_the_burst(monkeypatch):
+    small_burst(monkeypatch)
+    old = [{"name": f"Person {index}", "uri": f"spotify:user:person{index}"} for index in range(10)]
+    new = [{**profile, "name": f"person{index}"} for index, profile in enumerate(old)]
+    looked_up = profiles_showing(monkeypatch, names_of(new))
+
+    assert monitor.hold_follow_rename_burst(new, old, None, "access-token")[2] == "verified"
+    assert looked_up == ["spotify:user:person0", "spotify:user:person4", "spotify:user:person9"]
+
+
+# Follower URIs carry percent-encoded IDs, and artists in a followings list have no user profile to read
+def test_the_profile_lookup_decodes_user_ids_and_skips_artists(monkeypatch):
+    requests = []
+    monkeypatch.setattr(monitor, "spotify_get_user_info", lambda *arguments: requests.append(arguments) or {"sp_username": "Music Fan"})
+
+    assert monitor.spotify_get_profile_name("access-token", "spotify:user:%21%21fan%21%21") == "Music Fan"
+    assert monitor.spotify_get_profile_name("access-token", "spotify:artist:0LcJLqbBmaGUft1e9Mm8HV") is None
+    assert requests == [("access-token", "!!fan!!", False, 0)]
+
+
+# Without readable profiles a burst keeps the old names while it repeats and is handed over once it has repeated enough times
+def test_an_unchecked_burst_keeps_the_old_names_until_it_repeats(monkeypatch):
     small_burst(monkeypatch)
 
-    held, pending, burst = monitor.hold_follow_rename_burst(BURST_NEW + [ANIA], BURST_OLD + [ANIA], None)
-    assert held == BURST_OLD + [ANIA]
-    assert (streak_of(pending), burst) == (1, 3)
+    held, pending, outcome, burst = monitor.hold_follow_rename_burst(BURST_NEW + [ANIA], BURST_OLD + [ANIA], None)
+    assert (held, outcome, burst, streak_of(pending)) == (BURST_OLD + [ANIA], "held", 3, 1)
 
-    held, pending, burst = monitor.hold_follow_rename_burst(BURST_NEW + [ANIA], held, pending)
-    assert held == BURST_OLD + [ANIA]
-    assert streak_of(pending) == 2
+    held, pending, outcome, _ = monitor.hold_follow_rename_burst(BURST_NEW + [ANIA], held, pending)
+    assert (held, outcome, streak_of(pending)) == (BURST_OLD + [ANIA], "held", 2)
 
-    assert monitor.hold_follow_rename_burst(BURST_NEW + [ANIA], held, pending) == (BURST_NEW + [ANIA], None, 3)
+    assert monitor.hold_follow_rename_burst(BURST_NEW + [ANIA], held, pending) == (BURST_NEW + [ANIA], None, "repeated", 3)
 
 
 # Spotify can swap user IDs for Facebook names between checks, which is a different burst and starts counting again
@@ -182,18 +255,20 @@ def test_a_burst_with_different_names_restarts_the_streak(monkeypatch):
     small_burst(monkeypatch)
     facebook_names = [{**profile, "name": f"Full Name {index}"} for index, profile in enumerate(BURST_OLD)]
 
-    _, pending, _ = monitor.hold_follow_rename_burst(BURST_NEW, BURST_OLD, None)
-    _, pending, _ = monitor.hold_follow_rename_burst(facebook_names, BURST_OLD, pending)
+    _, pending, _, _ = monitor.hold_follow_rename_burst(BURST_NEW, BURST_OLD, None)
+    _, pending, _, _ = monitor.hold_follow_rename_burst(facebook_names, BURST_OLD, pending)
 
     assert streak_of(pending) == 1
 
 
-# Renames up to the burst size are reported at once and a counter of 0 or 1 turns the hold off
+# Renames up to the burst size are reported at once and a counter of 0 or 1 turns the protection off
 @pytest.mark.parametrize("counter,current", [(3, BURST_NEW[:2] + BURST_OLD[2:]), (0, BURST_NEW), (1, BURST_NEW)])
 def test_small_rename_sets_and_a_disabled_hold_pass_through(monkeypatch, counter, current):
     small_burst(monkeypatch, counter=counter)
+    looked_up = profiles_showing(monkeypatch, {})
 
-    assert monitor.hold_follow_rename_burst(current, BURST_OLD, None) == (current, None, 0)
+    assert monitor.hold_follow_rename_burst(current, BURST_OLD, None, "access-token") == (current, None, "", 0)
+    assert looked_up == []
 
 
 # An entry that had no name before gets none back, so the held list still compares equal to the baseline
@@ -201,42 +276,68 @@ def test_a_held_entry_without_an_earlier_name_stays_nameless(monkeypatch):
     small_burst(monkeypatch)
     nameless = [{"uri": profile["uri"]} for profile in BURST_OLD]
 
-    held, pending, _ = monitor.hold_follow_rename_burst(BURST_NEW, nameless, None)
+    held, pending, _, _ = monitor.hold_follow_rename_burst(BURST_NEW, nameless, None)
 
     assert held == nameless
     assert streak_of(pending) == 1
 
 
-# The user's own case: one bad response renamed a large part of the list and the next one had the real names back
+# Tonight's case end to end: one bad response that the profiles contradict and a next check with the real names
 def test_the_loop_stays_silent_about_a_rename_burst_that_clears(monkeypatch, tmp_path, capsys):
     small_burst(monkeypatch)
+    profiles_showing(monkeypatch, names_of(BURST_OLD))
     events = []
 
     error_alerts_for(monkeypatch, tmp_path, [], 3, follower_answers=[{"sp_user_followers": BURST_NEW}, {"sp_user_followers": BURST_OLD}], initial_followers=BURST_OLD, collection_events=events)
 
     assert events == []
-    assert BURST_HELD.format(streak=1) in capsys.readouterr().out
+    assert BURST_CONTRADICTED in capsys.readouterr().out
 
 
-# Followings are held on their own, since the same bad response can rename both lists
+# A glitch the profiles keep contradicting is never reported, however many checks it lasts
+def test_the_loop_never_reports_a_burst_its_profiles_contradict(monkeypatch, tmp_path):
+    small_burst(monkeypatch)
+    profiles_showing(monkeypatch, names_of(BURST_OLD))
+    events = []
+
+    error_alerts_for(monkeypatch, tmp_path, [], 5, follower_answers=[{"sp_user_followers": BURST_NEW}] * 4, initial_followers=BURST_OLD, collection_events=events)
+
+    assert events == []
+
+
+# A burst the profiles confirm is reported on the check that found it
+def test_the_loop_reports_a_burst_its_profiles_confirm(monkeypatch, tmp_path, capsys):
+    small_burst(monkeypatch)
+    profiles_showing(monkeypatch, names_of(BURST_NEW))
+    events = []
+
+    error_alerts_for(monkeypatch, tmp_path, [], 2, follower_answers=[{"sp_user_followers": BURST_NEW}], initial_followers=BURST_OLD, collection_events=events)
+
+    assert reported(events) == [(BURST_NEW, BURST_OLD)]
+    assert BURST_VERIFIED in capsys.readouterr().out
+
+
+# Followings are checked on their own, since the same bad response can rename both lists
 def test_the_loop_stays_silent_about_a_following_burst_that_clears(monkeypatch, tmp_path, capsys):
     small_burst(monkeypatch)
+    profiles_showing(monkeypatch, names_of(BURST_OLD))
     events = []
 
     error_alerts_for(monkeypatch, tmp_path, [], 3, following_answers=[{"sp_user_followings": profiles} for profiles in (BURST_OLD, BURST_NEW, BURST_OLD)], collection_events=events)
 
     assert events == []
-    assert "3 followings changed their display names at once, streak 1/3; old names retained" in capsys.readouterr().out
+    assert "3 followings changed their display names at once but their profiles show other names; old names retained" in capsys.readouterr().out
 
 
-# A burst that survives the confirmation checks is reported once, against the names it replaced
-def test_the_loop_reports_a_rename_burst_that_persists(monkeypatch, tmp_path, capsys):
+# Without readable profiles a burst that survives the confirmation checks is reported once, against the names it replaced
+def test_the_loop_reports_an_unchecked_burst_that_persists(monkeypatch, tmp_path, capsys):
     small_burst(monkeypatch)
+    profiles_showing(monkeypatch, {})
     events = []
 
     error_alerts_for(monkeypatch, tmp_path, [], 4, follower_answers=[{"sp_user_followers": BURST_NEW}] * 3, initial_followers=BURST_OLD, collection_events=events)
 
-    assert [(event[1], event[2]) for event in events] == [(BURST_NEW, BURST_OLD)]
+    assert reported(events) == [(BURST_NEW, BURST_OLD)]
     output = capsys.readouterr().out
     assert BURST_HELD.format(streak=2) in output
     assert "The same 3 renames among followers were seen in 3 checks in a row; reporting them" in output
@@ -245,23 +346,38 @@ def test_the_loop_reports_a_rename_burst_that_persists(monkeypatch, tmp_path, ca
 # Someone who arrives while a burst is held is still reported, next to the old names
 def test_an_arrival_during_a_held_burst_is_reported(monkeypatch, tmp_path):
     small_burst(monkeypatch)
+    profiles_showing(monkeypatch, names_of(BURST_OLD))
     events = []
 
     error_alerts_for(monkeypatch, tmp_path, [], 2, follower_answers=[{"sp_user_followers": BURST_NEW + [NEWCOMER]}], initial_followers=BURST_OLD, collection_events=events)
 
-    assert [(event[1], event[2]) for event in events] == [(BURST_OLD + [NEWCOMER], BURST_OLD)]
+    assert reported(events) == [(BURST_OLD + [NEWCOMER], BURST_OLD)]
 
 
-# Startup compares against saved history once, so a burst found there is held and its streak carries into the loop
+# History saved during a glitch holds the wrong names, and the profiles confirm the real ones as soon as the monitor starts
+def test_startup_reports_a_correction_the_profiles_confirm(monkeypatch, tmp_path):
+    small_burst(monkeypatch)
+    saved_followers(monkeypatch, tmp_path, BURST_NEW)
+    profiles_showing(monkeypatch, names_of(BURST_OLD))
+    events = []
+
+    # The run stops before its first loop check, so the report can only come from startup
+    error_alerts_for(monkeypatch, tmp_path, [], 1, initial_followers=BURST_OLD, collection_events=events)
+
+    assert reported(events) == [(BURST_OLD, BURST_NEW)]
+
+
+# Startup compares against saved history once, so an unchecked burst found there is held and its streak carries into the loop
 @pytest.mark.parametrize("answers,expected", [([BURST_OLD], []), ([BURST_NEW, BURST_NEW], [(BURST_NEW, BURST_OLD)])])
-def test_a_burst_against_saved_history_is_held_at_startup(monkeypatch, tmp_path, capsys, answers, expected):
+def test_an_unchecked_burst_against_saved_history_is_held_at_startup(monkeypatch, tmp_path, capsys, answers, expected):
     small_burst(monkeypatch)
     saved_followers(monkeypatch, tmp_path, BURST_OLD)
+    profiles_showing(monkeypatch, {})
     events = []
 
     error_alerts_for(monkeypatch, tmp_path, [], len(answers) + 1, follower_answers=[{"sp_user_followers": answer} for answer in answers], initial_followers=BURST_NEW, collection_events=events)
 
-    assert [(event[1], event[2]) for event in events] == expected
+    assert reported(events) == expected
     assert BURST_HELD.format(streak=1) in capsys.readouterr().out
 
 
