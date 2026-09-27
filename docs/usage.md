@@ -496,6 +496,14 @@ A check that could not finish does not wait out the full interval. It comes back
 
 Rate limiting is the exception. Spotify clears it on a timer of its own and it is easy to hit while sweeping a profile with many playlists, so a rate limited check is retried after 1 minute, then 2, 4, 8, 16 and 30 minutes while the limit lasts, never waiting longer than the polling interval. A complete check returns the tool to the polling interval. A failure the tool cannot retry away, such as a target that no longer exists, keeps the polling interval, since asking again sooner would only repeat it.
 
+Reading playlists at startup, with `-i` or with `--export-all-playlists` happens once, with no later check to catch up. When Spotify rate limits one of those reads, the tool waits 1, then 2, then 4 minutes and reads the playlist again:
+
+```
+* Spotify is rate limiting requests; retrying playlist Road Trip [ https://open.spotify.com/playlist/... ] in 1 minute (retry 1/3)
+```
+
+If the limit outlasts all three waits, that playlist is reported as failed and the rest of the read continues without waiting again.
+
 The `Check interval:` line under a reported change names the window that change was observed in, measured from the previous successful check:
 
 ```
