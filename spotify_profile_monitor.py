@@ -1056,8 +1056,16 @@ ERROR_ALERT_RETRY_MAX_SECONDS = 3600  # 1 hour
 RATE_LIMIT_RETRY_SECONDS = 60  # 1 minute
 RATE_LIMIT_RETRY_MAX_SECONDS = 1800  # 30 minutes
 
+# Startup, -i and playlist exports read playlists once with no later check to fall back on, so a rate-limited read
+# there waits on the same doubling schedule and is tried again up to this many times before it is reported as failed
+PLAYLIST_RATE_LIMIT_RETRIES = 3
+
 
 stdout_bck = None
+
+# Whether a progress bar occupies the current terminal line without a line break after it
+PROGRESS_LINE_OPEN = False
+
 csvfieldnames = ['Date', 'Type', 'Name', 'Old', 'New']
 csvfieldnames_export = ['Date', 'Playlist Name', 'Artist', 'Track']
 
@@ -7318,6 +7326,7 @@ def _build_restricted_playlist_data(playlist: Dict[str, Any], cached_entry: Dict
 
 # Displays a progress bar with percentage and current playlist name
 def _display_progress(current, total, playlist_name: str = "", bar_length: int = 40, is_final: bool = False, prefix: str = "Playlists") -> None:
+    global PROGRESS_LINE_OPEN
     if total == 0:
         return
 
@@ -7420,6 +7429,19 @@ def _display_progress(current, total, playlist_name: str = "", bar_length: int =
         terminal_out.write("\r\033[K" + progress_str)
         terminal_out.flush()
 
+    PROGRESS_LINE_OPEN = True
+
+
+# Ends the line the progress bar occupies so the next message starts on a line of its own
+def _close_progress_line() -> None:
+    global PROGRESS_LINE_OPEN
+    if not PROGRESS_LINE_OPEN:
+        return
+    terminal_out = _progress_terminal_stream()
+    terminal_out.write("\n")
+    terminal_out.flush()
+    PROGRESS_LINE_OPEN = False
+
 
 # Returns the stream the transient progress bars draw on, which is the real terminal even while logging is active
 def _progress_terminal_stream():
@@ -7437,17 +7459,49 @@ def _display_export_progress(current, total, playlist_name: str = "") -> None:
 
 # Clears the export progress bar so the line it occupied is free for the next permanent message
 def _clear_export_progress() -> None:
+    global PROGRESS_LINE_OPEN
     terminal_out = _progress_terminal_stream()
     if CLEAN_OUTPUT or not terminal_out.isatty():
         return
 
     terminal_out.write("\r\033[K")
     terminal_out.flush()
+    PROGRESS_LINE_OPEN = False
+
+
+# Waits out a Spotify rate limit during a playlist sweep, and stops waiting for the rest of the sweep once a limit outlasted every wait
+class RateLimitPatience:
+    # Starts a sweep that may wait out a rate limit up to retries times for each read
+    def __init__(self, retries: int, show_progress: bool) -> None:
+        self.retries = retries
+        self.show_progress = show_progress
+        self.gave_up = False
+
+    # Runs one Spotify read for a playlist, waiting and running it again while Spotify rate limits it
+    def call(self, playlist_uri: str, function: Callable[..., Any], *arguments: Any) -> Any:
+        attempt = 0
+        while True:
+            try:
+                return function(*arguments)
+            except Exception as error:
+                advice = classify_recovery_error(error, "runtime")
+                if advice.code != "spotify.rate_limited":
+                    raise
+                if self.gave_up or attempt >= self.retries:
+                    self.gave_up = True
+                    raise
+                attempt += 1
+                wait = failure_retry_seconds(advice, attempt)
+                if self.show_progress:
+                    _close_progress_line()
+                print(f"* Spotify is rate limiting requests; retrying playlist {spotify_format_playlist_reference(playlist_uri)} in {display_time(wait)} (retry {attempt}/{self.retries})")
+                print_cur_ts("Timestamp:\t\t\t")
+                time.sleep(wait)
 
 
 # Processes items from all the provided playlists and returns a list of dictionaries
 def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, playlists_to_skip=None, show_progress=True, errors=None):
-    global PLAYLIST_INFO_CACHE
+    global PLAYLIST_INFO_CACHE, PROGRESS_LINE_OPEN
     list_of_playlists = []
     error_while_processing = False
     added_at_dt: Optional[datetime] = None
@@ -7462,11 +7516,16 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
 
         if show_progress:
             print()
+            PROGRESS_LINE_OPEN = False
 
         # Track current playlist name to keep it visible
         current_playlist_name = ""
 
         failure_count = 0
+        # The monitoring loop passes errors and retries a rate-limited check as a whole on its own backoff
+        rate_limit = RateLimitPatience(PLAYLIST_RATE_LIMIT_RETRIES if errors is None else 0, show_progress)
+        # A profile usually adds the tracks to most of its playlists, so each adder is looked up once per sweep
+        added_by_names = {}
         for idx, playlist in enumerate(playlists, 1):
             user_id_name_mapping = {}
             unknown_added_by_tracks = 0
@@ -7519,7 +7578,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                         })
                     else:
                         try:
-                            sp_playlist_data = spotify_get_playlist_info(sp_accessToken, p_uri, effective_get_tracks)
+                            sp_playlist_data = rate_limit.call(p_uri, spotify_get_playlist_info, sp_accessToken, p_uri, effective_get_tracks)
                             PLAYLIST_INFO_CACHE[p_uri] = {
                                 "status": "ok",
                                 "timestamp": time.time(),
@@ -7557,6 +7616,8 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                             failure_count += 1
                             error_while_processing = True
                             if errors is None and (failure_count == 1 or not HIDE_DUPLICATE_NETWORK_ERRORS):
+                                if show_progress:
+                                    _close_progress_line()
                                 print_operation_error(f"Playlist {spotify_format_playlist_reference(p_uri)} could not be processed and will be retried", e)
                                 if not HIDE_DUPLICATE_NETWORK_ERRORS:
                                     print_cur_ts("Timestamp:\t\t\t")
@@ -7630,9 +7691,12 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                         added_by_name = "Spotify"
                                     elif added_by_id == "unknown":
                                         added_by_name = "Unknown"
+                                    elif added_by_id in added_by_names:
+                                        added_by_name = added_by_names[added_by_id]
                                     else:
-                                        sp_user_data = spotify_get_user_info(sp_accessToken, added_by_id, False, 0)
+                                        sp_user_data = rate_limit.call(p_uri, spotify_get_user_info, sp_accessToken, added_by_id, False, 0)
                                         added_by_name = sp_user_data.get("sp_username", added_by_id)
+                                        added_by_names[added_by_id] = added_by_name
 
                                     # Exclude unknown from collaborator mapping to keep collaborator counts stable
                                     if added_by_id != "unknown":
@@ -7665,6 +7729,8 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     failure_count += 1
                     error_while_processing = True
                     if errors is None and (failure_count == 1 or not HIDE_DUPLICATE_NETWORK_ERRORS):
+                        if show_progress:
+                            _close_progress_line()
                         print_operation_error(f"Playlist data for {spotify_format_playlist_reference(p_uri)} could not be built", e)
                         if not HIDE_DUPLICATE_NETWORK_ERRORS:
                             print_cur_ts("Timestamp:\t\t\t")
