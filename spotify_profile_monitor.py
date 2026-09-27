@@ -320,9 +320,10 @@ FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER = 3
 
 # Occasionally, the Spotify API glitches and returns user IDs or Facebook names instead of display names
 # for many followers / followings at once, which would be reported as a burst of renames
-# To avoid false alarms, a check that renames more than FOLLOWERS_FOLLOWINGS_RENAME_BURST of them at once keeps
-# the old names until the same renames are seen FOLLOWERS_FOLLOWINGS_RENAME_COUNTER times in a row
-# (set the counter to 0 to disable this protection)
+# When a check renames more than FOLLOWERS_FOLLOWINGS_RENAME_BURST of them at once, the profiles of a few renamed
+# users are read: if they show the new names the renames are reported, otherwise the old names are kept
+# If the profiles cannot be read, the renames are reported once the same names are seen
+# FOLLOWERS_FOLLOWINGS_RENAME_COUNTER times in a row (set the counter to 0 to disable this protection)
 FOLLOWERS_FOLLOWINGS_RENAME_BURST = 5
 FOLLOWERS_FOLLOWINGS_RENAME_COUNTER = 3
 
@@ -7136,45 +7137,97 @@ def follow_membership_changed(current, previous, count):
     return bool(removed or added or renamed)
 
 
-# Keeps the old names for a burst of renames until the same burst repeats, returning the list to compare, the pending burst and the burst size
-def hold_follow_rename_burst(current, previous, pending):
-    if FOLLOWERS_FOLLOWINGS_RENAME_COUNTER <= 1 or not isinstance(current, list) or not isinstance(previous, list):
-        return current, None, 0
-    _, _, renamed = split_profile_changes(current, previous)
-    if len(renamed) <= FOLLOWERS_FOLLOWINGS_RENAME_BURST:
-        return current, None, 0
+# Number of renamed users whose own profiles are read to confirm a burst of renames
+FOLLOW_RENAME_PROFILE_CHECKS = 3
 
-    # Spotify has returned user IDs or Facebook names in place of display names for a whole list at once,
-    # so only a burst that repeats unchanged across checks is accepted as real
-    new_names = {profile["uri"]: profile["name"] for profile in renamed}
-    streak = pending["streak"] + 1 if pending and pending["names"] == new_names else 1
-    if streak >= FOLLOWERS_FOLLOWINGS_RENAME_COUNTER:
-        return current, None, len(renamed)
 
+# Reads the display name a Spotify user shows on their own profile, returning None for a reference that is not a user
+def spotify_get_profile_name(access_token, user_uri):
+    parts = user_uri.split(":") if isinstance(user_uri, str) else []
+    if len(parts) != 3 or parts[0] != "spotify" or parts[1] != "user" or not parts[2]:
+        return None
+    return spotify_get_user_info(access_token, unquote(parts[2]), False, 0)["sp_username"]
+
+
+# Compares the new names in a burst with the profiles of a few renamed users, returning "verified", "contradicted" or "" when not every profile could be read
+def verify_follow_rename_burst(renamed, access_token):
+    if not access_token:
+        return ""
+    count = min(FOLLOW_RENAME_PROFILE_CHECKS, len(renamed))
+    # Entries are taken from across the burst rather than its start, so a glitch that hit only part of the list is still seen
+    sample = [renamed[index * (len(renamed) - 1) // (count - 1)] for index in range(count)] if count > 1 else renamed[:count]
+    all_read = True
+    for profile in sample:
+        try:
+            name = spotify_get_profile_name(access_token, profile["uri"])
+        except Exception as error:
+            debug_print("Rename burst profile check", uri=profile["uri"], outcome="failed", error=sanitize_error_text(error))
+            all_read = False
+            continue
+        if not name:
+            all_read = False
+            continue
+        if name != profile["name"]:
+            debug_print("Rename burst profile check", uri=profile["uri"], outcome="contradicted")
+            return "contradicted"
+    return "verified" if all_read else ""
+
+
+# Returns the current list with the earlier names put back for the given URIs
+def restore_follow_names(current, previous, uris):
     previous_by_uri, _ = index_profiles_by_uri(previous)
-    held = []
+    restored = []
     for profile in current:
         uri = profile.get("uri") if isinstance(profile, dict) else None
-        if uri in new_names:
+        if uri in uris:
             earlier = previous_by_uri[uri]
             profile = dict(profile)
             if "name" in earlier:
                 profile["name"] = earlier["name"]
             else:
                 profile.pop("name", None)
-        held.append(profile)
-    return held, {"names": new_names, "streak": streak}, len(renamed)
+        restored.append(profile)
+    return restored
 
 
-# Prints why a burst of renames is held or finally reported, closing the held notice as its own check report when asked
-def print_follow_rename_hold(kind, pending, burst, own_report):
-    if pending:
-        print(f"* Spotify API: {burst} {kind} changed their display names at once, streak {pending['streak']}/{FOLLOWERS_FOLLOWINGS_RENAME_COUNTER}; old names retained")
+# Decides whether a burst of renames is reported, returning the list to compare, the pending burst, the outcome and the burst size
+def hold_follow_rename_burst(current, previous, pending, access_token=None):
+    if FOLLOWERS_FOLLOWINGS_RENAME_COUNTER <= 1 or not isinstance(current, list) or not isinstance(previous, list):
+        return current, None, "", 0
+    _, _, renamed = split_profile_changes(current, previous)
+    if len(renamed) <= FOLLOWERS_FOLLOWINGS_RENAME_BURST:
+        return current, None, "", 0
+
+    # Spotify has returned user IDs or Facebook names in place of display names for a whole list at once
+    # while each user's own profile still showed the right name, so the profiles decide when they can be read
+    burst = len(renamed)
+    verdict = verify_follow_rename_burst(renamed, access_token)
+    if verdict == "verified":
+        return current, None, verdict, burst
+    new_names = {profile["uri"]: profile["name"] for profile in renamed}
+    if verdict == "contradicted":
+        return restore_follow_names(current, previous, new_names), None, verdict, burst
+
+    streak = pending["streak"] + 1 if pending and pending["names"] == new_names else 1
+    if streak >= FOLLOWERS_FOLLOWINGS_RENAME_COUNTER:
+        return current, None, "repeated", burst
+    return restore_follow_names(current, previous, new_names), {"names": new_names, "streak": streak}, "held", burst
+
+
+# Prints why a burst of renames is held or reported, closing a held notice as its own check report when asked
+def print_follow_rename_hold(kind, pending, outcome, burst, own_report):
+    if outcome == "verified":
+        print(f"* Spotify API: {burst} {kind} changed their display names at once and their profiles show the new names; reporting them")
+    elif outcome == "repeated":
+        print(f"* Spotify API: The same {burst} renames among {kind} were seen in {FOLLOWERS_FOLLOWINGS_RENAME_COUNTER} checks in a row; reporting them")
+    elif outcome in {"contradicted", "held"}:
+        if outcome == "contradicted":
+            print(f"* Spotify API: {burst} {kind} changed their display names at once but their profiles show other names; old names retained")
+        else:
+            print(f"* Spotify API: {burst} {kind} changed their display names at once with no profiles available to confirm them, streak {pending['streak']}/{FOLLOWERS_FOLLOWINGS_RENAME_COUNTER}; old names retained")
         if own_report:
             print(f"Check interval:\t\t\t{check_window_text()}")
             print_cur_ts("Timestamp:\t\t\t")
-    elif burst:
-        print(f"* Spotify API: The same {burst} renames among {kind} were seen in {FOLLOWERS_FOLLOWINGS_RENAME_COUNTER} checks in a row; reporting them")
 
 
 # Searches for Spotify users (-s flag)
@@ -12937,8 +12990,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         followers_count, followers = followers_old_count, followers_old
     elif followers is None:
         followers = followers_old
-    followers, followers_rename_pending, followers_rename_burst = hold_follow_rename_burst(followers, followers_old, followers_rename_pending)
-    print_follow_rename_hold("followers", followers_rename_pending, followers_rename_burst, False)
+    followers, followers_rename_pending, followers_rename_outcome, followers_rename_burst = hold_follow_rename_burst(followers, followers_old, followers_rename_pending, sp_accessToken)
+    print_follow_rename_hold("followers", followers_rename_pending, followers_rename_outcome, followers_rename_burst, False)
     if followers_count is not None and followers_old_count is not None and (followers_count != followers_old_count or follow_membership_changed(followers, followers_old, followers_count)):
         spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, False, False)
 
@@ -12971,8 +13024,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         followings_count, followings = followings_old_count, followings_old
     elif followings is None:
         followings = followings_old
-    followings, followings_rename_pending, followings_rename_burst = hold_follow_rename_burst(followings, followings_old, followings_rename_pending)
-    print_follow_rename_hold("followings", followings_rename_pending, followings_rename_burst, False)
+    followings, followings_rename_pending, followings_rename_outcome, followings_rename_burst = hold_follow_rename_burst(followings, followings_old, followings_rename_pending, sp_accessToken)
+    print_follow_rename_hold("followings", followings_rename_pending, followings_rename_outcome, followings_rename_burst, False)
     if followings_count is not None and followings_old_count is not None and (followings_count != followings_old_count or follow_membership_changed(followings, followings_old, followings_count)):
         spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, False, False)
 
@@ -13196,8 +13249,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         elif followers is None:
             followers = followers_old
 
-        followers, followers_rename_pending, followers_rename_burst = hold_follow_rename_burst(followers, followers_old, followers_rename_pending)
-        print_follow_rename_hold("followers", followers_rename_pending, followers_rename_burst, True)
+        followers, followers_rename_pending, followers_rename_outcome, followers_rename_burst = hold_follow_rename_burst(followers, followers_old, followers_rename_pending, sp_accessToken)
+        print_follow_rename_hold("followers", followers_rename_pending, followers_rename_outcome, followers_rename_burst, True)
 
         if followers_count != followers_old_count:
             if followers_count == 0:
@@ -13250,8 +13303,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         elif followings is None:
             followings = followings_old
 
-        followings, followings_rename_pending, followings_rename_burst = hold_follow_rename_burst(followings, followings_old, followings_rename_pending)
-        print_follow_rename_hold("followings", followings_rename_pending, followings_rename_burst, True)
+        followings, followings_rename_pending, followings_rename_outcome, followings_rename_burst = hold_follow_rename_burst(followings, followings_old, followings_rename_pending, sp_accessToken)
+        print_follow_rename_hold("followings", followings_rename_pending, followings_rename_outcome, followings_rename_burst, True)
 
         if followings_count != followings_old_count:
             if followings_count == 0:
