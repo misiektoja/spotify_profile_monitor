@@ -8,7 +8,7 @@ Version **4.1.1** stops a Spotify glitch from reporting dozens of follower and f
 
 **Features and improvements**:
 
-- **IMPROVE:** **Bursts of follower renames wait for confirmation** - Spotify sometimes returns user IDs or Facebook names instead of display names for many followers or followings at once, which was reported as a long list of renames. When one check finds more than **`FOLLOWERS_FOLLOWINGS_RENAME_BURST`** renames (default: 5), the old names are kept until the same new names come back in **`FOLLOWERS_FOLLOWINGS_RENAME_COUNTER`** checks in a row (default: 3). People who follow or unfollow meanwhile are still reported right away. Set the counter to `0` to report every rename immediately
+- **IMPROVE:** **Bursts of follower renames are checked against profiles** - Spotify sometimes returns user IDs or Facebook names instead of display names for many followers or followings at once, which was reported as a long list of renames. When one check finds more than **`FOLLOWERS_FOLLOWINGS_RENAME_BURST`** renames (default: 5), the tool reads the profiles of up to three renamed people. The renames are reported at once if the profiles show the new names and the old names are kept if they do not. When the profiles cannot be read, the renames are reported after the same new names come back in **`FOLLOWERS_FOLLOWINGS_RENAME_COUNTER`** checks in a row (default: 3). People who follow or unfollow meanwhile are still reported right away. Set the counter to `0` to report every rename immediately
 
 **Bug fixes**:
 
