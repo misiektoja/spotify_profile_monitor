@@ -362,13 +362,18 @@ The CSV export records that as a single `Renamed Follower` or `Renamed Following
 
 A change that leaves the total untouched, such as a rename or one person leaving while another arrives in the same check, is reported as `Followers changed for user <name> while the total remained <count>`.
 
-Spotify sometimes returns user IDs or Facebook names instead of display names for many people at once. When one check finds more than `FOLLOWERS_FOLLOWINGS_RENAME_BURST` renames (default `5`) in the followers or followings list, the tool keeps the old names and prints:
+Spotify sometimes returns user IDs or Facebook names instead of display names for many people at once, while each person's own profile still shows the right name. When one check finds more than `FOLLOWERS_FOLLOWINGS_RENAME_BURST` renames (default `5`) in the followers or followings list, the tool reads the profiles of up to three of the renamed people:
 
-```
-* Spotify API: 30 followers changed their display names at once, streak 1/3; old names retained
-```
+- If the profiles show the new names, the renames are reported in that check.
+- If a profile shows any other name, the tool keeps the old names and prints:
 
-The renames are reported only if the same new names come back in `FOLLOWERS_FOLLOWINGS_RENAME_COUNTER` checks in a row (default `3`). A check that returns the old names, different new names or no list starts the count again. People who follow or unfollow during that time are still reported right away. Set `FOLLOWERS_FOLLOWINGS_RENAME_COUNTER` to `0` to report every rename immediately.
+  ```
+  * Spotify API: 30 followers changed their display names at once but their profiles show other names; old names retained
+  ```
+
+- If the profiles cannot be read, the renames are reported once the same new names come back in `FOLLOWERS_FOLLOWINGS_RENAME_COUNTER` checks in a row (default `3`). A check that returns the old names, different new names or no list starts the count again.
+
+People who follow or unfollow while a burst is held are still reported right away. Set `FOLLOWERS_FOLLOWINGS_RENAME_COUNTER` to `0` to report every rename immediately.
 
 <a id="unavailable-followers-and-followings"></a>
 ## Unavailable Followers and Followings
