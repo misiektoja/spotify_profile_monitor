@@ -4,7 +4,11 @@ This is a high-level summary of the most important changes.
 
 # Changes in 4.1.1 (TBD)
 
-Version **4.1.1** fixes webhook alerts that were dropped when a custom header used a placeholder such as `{title}` and the alert text held emoji or non-Latin letters.
+Version **4.1.1** stops a Spotify glitch from reporting dozens of follower and following **renames** at once. It also fixes webhook alerts that were dropped when a custom header used a placeholder such as `{title}` and the alert text held emoji or non-Latin letters.
+
+**Features and improvements**:
+
+- **IMPROVE:** **Bursts of follower renames wait for confirmation** - Spotify sometimes returns user IDs or Facebook names instead of display names for many followers or followings at once, which was reported as a long list of renames. When one check finds more than **`FOLLOWERS_FOLLOWINGS_RENAME_BURST`** renames (default: 5), the old names are kept until the same new names come back in **`FOLLOWERS_FOLLOWINGS_RENAME_COUNTER`** checks in a row (default: 3). People who follow or unfollow meanwhile are still reported right away. Set the counter to `0` to report every rename immediately
 
 **Bug fixes**:
 
