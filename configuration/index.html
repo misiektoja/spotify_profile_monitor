@@ -1465,6 +1465,7 @@ again rather than ending the import. Answer <code>0</code> to cancel.</p>
 <a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a><span class="na">}</span>
 </code></pre></div>
 <p>Header values support the same placeholders as the Discord template (<code>{title}</code>, <code>{description}</code>, <code>{version}</code>, <code>{image_url}</code>, <code>{color}</code>, <code>{timestamp}</code> and so on) and work with both providers. Headers are validated before and after placeholder expansion so formatted values cannot add invalid names, non-string values or line breaks.</p>
+<p>A header value that contains emoji or other non-ASCII text after placeholder expansion is sent in RFC 2047 encoded form (<code>=?UTF-8?B?...?=</code>), since a plain HTTP header cannot carry it. ntfy decodes it back to the original text. Other receivers see the encoded form unless they decode RFC 2047. ASCII values are sent exactly as written, including values you already encoded yourself, such as an emoji tag from the ntfy documentation.</p>
 <p><a id="discord"></a></p>
 <h3 id="discord">Discord<a class="headerlink" href="#discord" title="Permanent link">&para;</a></h3>
 <p>To create a private Discord webhook URL:</p>
