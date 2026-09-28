@@ -465,6 +465,8 @@ WEBHOOK_HEADERS = {
 
 Header values support the same placeholders as the Discord template (`{title}`, `{description}`, `{version}`, `{image_url}`, `{color}`, `{timestamp}` and so on) and work with both providers. Headers are validated before and after placeholder expansion so formatted values cannot add invalid names, non-string values or line breaks.
 
+A header value that contains emoji or other non-ASCII text after placeholder expansion is sent in RFC 2047 encoded form (`=?UTF-8?B?...?=`), since a plain HTTP header cannot carry it. ntfy decodes it back to the original text. Other receivers see the encoded form unless they decode RFC 2047. ASCII values are sent exactly as written, including values you already encoded yourself, such as an emoji tag from the ntfy documentation.
+
 <a id="discord"></a>
 ### Discord
 

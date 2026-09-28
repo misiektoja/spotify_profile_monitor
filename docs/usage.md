@@ -362,6 +362,19 @@ The CSV export records that as a single `Renamed Follower` or `Renamed Following
 
 A change that leaves the total untouched, such as a rename or one person leaving while another arrives in the same check, is reported as `Followers changed for user <name> while the total remained <count>`.
 
+Spotify sometimes returns user IDs or Facebook names instead of display names for many people at once, while each person's own profile still shows the right name. When one check finds more than `FOLLOWERS_FOLLOWINGS_RENAME_BURST` renames (default `5`) in the followers or followings list, the tool reads the profiles of up to three of the renamed people:
+
+- If the profiles show the new names, the renames are reported in that check.
+- If a profile shows any other name, the tool keeps the old names and prints:
+
+  ```
+  * Spotify API: 30 followers changed their display names at once but their profiles show other names; old names retained
+  ```
+
+- If the profiles cannot be read, the renames are reported once the same new names come back in `FOLLOWERS_FOLLOWINGS_RENAME_COUNTER` checks in a row (default `3`). A check that returns the old names, different new names or no list starts the count again.
+
+People who follow or unfollow while a burst is held are still reported right away. Set `FOLLOWERS_FOLLOWINGS_RENAME_COUNTER` to `0` to report every rename immediately.
+
 <a id="unavailable-followers-and-followings"></a>
 ## Unavailable Followers and Followings
 
@@ -482,6 +495,14 @@ An interval below 30 seconds invites the Spotify rate limiter, which stops the t
 A check that could not finish does not wait out the full interval. It comes back after the error interval instead, set with the `-m` flag or the `SPOTIFY_ERROR_INTERVAL` configuration option (default: 300, i.e. 5 minutes), so a long polling interval does not leave the tool blind for hours over a failure that clears in minutes.
 
 Rate limiting is the exception. Spotify clears it on a timer of its own and it is easy to hit while sweeping a profile with many playlists, so a rate limited check is retried after 1 minute, then 2, 4, 8, 16 and 30 minutes while the limit lasts, never waiting longer than the polling interval. A complete check returns the tool to the polling interval. A failure the tool cannot retry away, such as a target that no longer exists, keeps the polling interval, since asking again sooner would only repeat it.
+
+Reading playlists at startup, with `-i` or with `--export-all-playlists` happens once, with no later check to catch up. When Spotify rate limits one of those reads, the tool waits 1, then 2, then 4 minutes and reads the playlist again:
+
+```
+* Spotify is rate limiting requests; retrying playlist Road Trip [ https://open.spotify.com/playlist/... ] in 1 minute (retry 1/3)
+```
+
+If the limit outlasts all three waits, that playlist is reported as failed and the rest of the read continues without waiting again.
 
 The `Check interval:` line under a reported change names the window that change was observed in, measured from the previous successful check:
 

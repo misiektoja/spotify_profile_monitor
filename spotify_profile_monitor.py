@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v4.1
+v4.1.1
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -22,7 +22,7 @@ pathvalidate (optional, needed by --export-all-playlists)
 Pillow (needed for email and ntfy artwork attachments)
 """
 
-VERSION = "4.1"
+VERSION = "4.1.1"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -317,6 +317,15 @@ PLAYLISTS_EMPTY_RETRY_SLEEP = 3
 # Occasionally, the Spotify API glitches and returns an empty list of user followers / followings
 # To avoid false alarms, we delay notifications until this happens FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER times in a row
 FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER = 3
+
+# Occasionally, the Spotify API glitches and returns user IDs or Facebook names instead of display names
+# for many followers / followings at once, which would be reported as a burst of renames
+# When a check renames more than FOLLOWERS_FOLLOWINGS_RENAME_BURST of them at once, the profiles of a few renamed
+# users are read: if they show the new names the renames are reported, otherwise the old names are kept
+# If the profiles cannot be read, the renames are reported once the same names are seen
+# FOLLOWERS_FOLLOWINGS_RENAME_COUNTER times in a row (set the counter to 0 to disable this protection)
+FOLLOWERS_FOLLOWINGS_RENAME_BURST = 5
+FOLLOWERS_FOLLOWINGS_RENAME_COUNTER = 3
 
 # Occasionally, the Spotify API glitches and returns inconsistent collaborator data for playlists
 # (e.g. missing or transient `added_by` fields on tracks can cause collaborator sets to flicker)
@@ -777,6 +786,8 @@ PLAYLISTS_CHANGE_COUNTER = 0
 PLAYLISTS_EMPTY_RETRIES = 0
 PLAYLISTS_EMPTY_RETRY_SLEEP = 0
 FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER = 0
+FOLLOWERS_FOLLOWINGS_RENAME_BURST = 0
+FOLLOWERS_FOLLOWINGS_RENAME_COUNTER = 0
 COLLABORATORS_CHANGE_COUNTER = 0
 HIDE_DUPLICATE_NETWORK_ERRORS = False
 USER_AGENT = ""
@@ -1045,8 +1056,16 @@ ERROR_ALERT_RETRY_MAX_SECONDS = 3600  # 1 hour
 RATE_LIMIT_RETRY_SECONDS = 60  # 1 minute
 RATE_LIMIT_RETRY_MAX_SECONDS = 1800  # 30 minutes
 
+# Startup, -i and playlist exports read playlists once with no later check to fall back on, so a rate-limited read
+# there waits on the same doubling schedule and is tried again up to this many times before it is reported as failed
+PLAYLIST_RATE_LIMIT_RETRIES = 3
+
 
 stdout_bck = None
+
+# Whether a progress bar occupies the current terminal line without a line break after it
+PROGRESS_LINE_OPEN = False
+
 csvfieldnames = ['Date', 'Type', 'Name', 'Old', 'New']
 csvfieldnames_export = ['Date', 'Playlist Name', 'Artist', 'Track']
 
@@ -3432,6 +3451,18 @@ def validate_webhook_headers(provider: Any = None) -> Optional[str]:
     return None
 
 
+# Returns one text value as a base64 RFC 2047 UTF-8 encoded word
+def rfc2047_encoded_word(text: str) -> str:
+    return "=?UTF-8?B?" + base64.b64encode(text.encode("utf-8")).decode("ascii") + "?="
+
+
+# Encodes one HTTP header value as an RFC 2047 UTF-8 word when it contains non-ASCII text
+def encode_non_ascii_header_value(value: str) -> str:
+    text = str(value)
+    # HTTP clients send header values as Latin-1 or ASCII, which cannot carry emoji or most non-Latin letters
+    return text if text.isascii() else rfc2047_encoded_word(text)
+
+
 # Builds provider-specific headers while formatting placeholders and applying private ntfy authentication
 def build_webhook_headers(provider: str, payload: dict) -> dict:
     validation_error = validate_webhook_headers(provider)
@@ -3454,7 +3485,9 @@ def build_webhook_headers(provider: str, payload: dict) -> dict:
         if token:
             headers = {name: value for name, value in headers.items() if name.casefold() != "authorization"}
             headers["Authorization"] = f"Bearer {token}"
-    return headers
+    # Placeholders can expand to emoji or letters a raw header cannot carry. ASCII values stay as written,
+    # so a value already encoded as RFC 2047, as ntfy documents for emoji tags, is not encoded a second time
+    return {name: encode_non_ascii_header_value(value) for name, value in headers.items()}
 
 
 # Returns True when a URL is a complete HTTPS URL whose host matches one of the allowed suffixes
@@ -7112,6 +7145,99 @@ def follow_membership_changed(current, previous, count):
     return bool(removed or added or renamed)
 
 
+# Number of renamed users whose own profiles are read to confirm a burst of renames
+FOLLOW_RENAME_PROFILE_CHECKS = 3
+
+
+# Reads the display name a Spotify user shows on their own profile, returning None for a reference that is not a user
+def spotify_get_profile_name(access_token, user_uri):
+    parts = user_uri.split(":") if isinstance(user_uri, str) else []
+    if len(parts) != 3 or parts[0] != "spotify" or parts[1] != "user" or not parts[2]:
+        return None
+    return spotify_get_user_info(access_token, unquote(parts[2]), False, 0)["sp_username"]
+
+
+# Compares the new names in a burst with the profiles of a few renamed users, returning "verified", "contradicted" or "" when not every profile could be read
+def verify_follow_rename_burst(renamed, access_token):
+    if not access_token:
+        return ""
+    count = min(FOLLOW_RENAME_PROFILE_CHECKS, len(renamed))
+    # Entries are taken from across the burst rather than its start, so a glitch that hit only part of the list is still seen
+    sample = [renamed[index * (len(renamed) - 1) // (count - 1)] for index in range(count)] if count > 1 else renamed[:count]
+    all_read = True
+    for profile in sample:
+        try:
+            name = spotify_get_profile_name(access_token, profile["uri"])
+        except Exception as error:
+            debug_print("Rename burst profile check", uri=profile["uri"], outcome="failed", error=sanitize_error_text(error))
+            all_read = False
+            continue
+        if not name:
+            all_read = False
+            continue
+        if name != profile["name"]:
+            debug_print("Rename burst profile check", uri=profile["uri"], outcome="contradicted")
+            return "contradicted"
+    return "verified" if all_read else ""
+
+
+# Returns the current list with the earlier names put back for the given URIs
+def restore_follow_names(current, previous, uris):
+    previous_by_uri, _ = index_profiles_by_uri(previous)
+    restored = []
+    for profile in current:
+        uri = profile.get("uri") if isinstance(profile, dict) else None
+        if uri in uris:
+            earlier = previous_by_uri[uri]
+            profile = dict(profile)
+            if "name" in earlier:
+                profile["name"] = earlier["name"]
+            else:
+                profile.pop("name", None)
+        restored.append(profile)
+    return restored
+
+
+# Decides whether a burst of renames is reported, returning the list to compare, the pending burst, the outcome and the burst size
+def hold_follow_rename_burst(current, previous, pending, access_token=None):
+    if FOLLOWERS_FOLLOWINGS_RENAME_COUNTER <= 1 or not isinstance(current, list) or not isinstance(previous, list):
+        return current, None, "", 0
+    _, _, renamed = split_profile_changes(current, previous)
+    if len(renamed) <= FOLLOWERS_FOLLOWINGS_RENAME_BURST:
+        return current, None, "", 0
+
+    # Spotify has returned user IDs or Facebook names in place of display names for a whole list at once
+    # while each user's own profile still showed the right name, so the profiles decide when they can be read
+    burst = len(renamed)
+    verdict = verify_follow_rename_burst(renamed, access_token)
+    if verdict == "verified":
+        return current, None, verdict, burst
+    new_names = {profile["uri"]: profile["name"] for profile in renamed}
+    if verdict == "contradicted":
+        return restore_follow_names(current, previous, new_names), None, verdict, burst
+
+    streak = pending["streak"] + 1 if pending and pending["names"] == new_names else 1
+    if streak >= FOLLOWERS_FOLLOWINGS_RENAME_COUNTER:
+        return current, None, "repeated", burst
+    return restore_follow_names(current, previous, new_names), {"names": new_names, "streak": streak}, "held", burst
+
+
+# Prints why a burst of renames is held or reported, closing a held notice as its own check report when asked
+def print_follow_rename_hold(kind, pending, outcome, burst, own_report):
+    if outcome == "verified":
+        print(f"* Spotify API: {burst} {kind} changed their display names at once and their profiles show the new names; reporting them")
+    elif outcome == "repeated":
+        print(f"* Spotify API: The same {burst} renames among {kind} were seen in {FOLLOWERS_FOLLOWINGS_RENAME_COUNTER} checks in a row; reporting them")
+    elif outcome in {"contradicted", "held"}:
+        if outcome == "contradicted":
+            print(f"* Spotify API: {burst} {kind} changed their display names at once but their profiles show other names; old names retained")
+        else:
+            print(f"* Spotify API: {burst} {kind} changed their display names at once with no profiles available to confirm them, streak {pending['streak']}/{FOLLOWERS_FOLLOWINGS_RENAME_COUNTER}; old names retained")
+        if own_report:
+            print(f"Check interval:\t\t\t{check_window_text()}")
+            print_cur_ts("Timestamp:\t\t\t")
+
+
 # Searches for Spotify users (-s flag)
 def spotify_search_users(access_token, username):
     url = f"{SPOTIFY_PARTNER_BASE_URL}/pathfinder/v1/query"
@@ -7200,6 +7326,7 @@ def _build_restricted_playlist_data(playlist: Dict[str, Any], cached_entry: Dict
 
 # Displays a progress bar with percentage and current playlist name
 def _display_progress(current, total, playlist_name: str = "", bar_length: int = 40, is_final: bool = False, prefix: str = "Playlists") -> None:
+    global PROGRESS_LINE_OPEN
     if total == 0:
         return
 
@@ -7302,6 +7429,19 @@ def _display_progress(current, total, playlist_name: str = "", bar_length: int =
         terminal_out.write("\r\033[K" + progress_str)
         terminal_out.flush()
 
+    PROGRESS_LINE_OPEN = True
+
+
+# Ends the line the progress bar occupies so the next message starts on a line of its own
+def _close_progress_line() -> None:
+    global PROGRESS_LINE_OPEN
+    if not PROGRESS_LINE_OPEN:
+        return
+    terminal_out = _progress_terminal_stream()
+    terminal_out.write("\n")
+    terminal_out.flush()
+    PROGRESS_LINE_OPEN = False
+
 
 # Returns the stream the transient progress bars draw on, which is the real terminal even while logging is active
 def _progress_terminal_stream():
@@ -7319,17 +7459,49 @@ def _display_export_progress(current, total, playlist_name: str = "") -> None:
 
 # Clears the export progress bar so the line it occupied is free for the next permanent message
 def _clear_export_progress() -> None:
+    global PROGRESS_LINE_OPEN
     terminal_out = _progress_terminal_stream()
     if CLEAN_OUTPUT or not terminal_out.isatty():
         return
 
     terminal_out.write("\r\033[K")
     terminal_out.flush()
+    PROGRESS_LINE_OPEN = False
+
+
+# Waits out a Spotify rate limit during a playlist sweep, and stops waiting for the rest of the sweep once a limit outlasted every wait
+class RateLimitPatience:
+    # Starts a sweep that may wait out a rate limit up to retries times for each read
+    def __init__(self, retries: int, show_progress: bool) -> None:
+        self.retries = retries
+        self.show_progress = show_progress
+        self.gave_up = False
+
+    # Runs one Spotify read for a playlist, waiting and running it again while Spotify rate limits it
+    def call(self, playlist_uri: str, function: Callable[..., Any], *arguments: Any) -> Any:
+        attempt = 0
+        while True:
+            try:
+                return function(*arguments)
+            except Exception as error:
+                advice = classify_recovery_error(error, "runtime")
+                if advice.code != "spotify.rate_limited":
+                    raise
+                if self.gave_up or attempt >= self.retries:
+                    self.gave_up = True
+                    raise
+                attempt += 1
+                wait = failure_retry_seconds(advice, attempt)
+                if self.show_progress:
+                    _close_progress_line()
+                print(f"* Spotify is rate limiting requests; retrying playlist {spotify_format_playlist_reference(playlist_uri)} in {display_time(wait)} (retry {attempt}/{self.retries})")
+                print_cur_ts("Timestamp:\t\t\t")
+                time.sleep(wait)
 
 
 # Processes items from all the provided playlists and returns a list of dictionaries
 def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, playlists_to_skip=None, show_progress=True, errors=None):
-    global PLAYLIST_INFO_CACHE
+    global PLAYLIST_INFO_CACHE, PROGRESS_LINE_OPEN
     list_of_playlists = []
     error_while_processing = False
     added_at_dt: Optional[datetime] = None
@@ -7344,11 +7516,16 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
 
         if show_progress:
             print()
+            PROGRESS_LINE_OPEN = False
 
         # Track current playlist name to keep it visible
         current_playlist_name = ""
 
         failure_count = 0
+        # The monitoring loop passes errors and retries a rate-limited check as a whole on its own backoff
+        rate_limit = RateLimitPatience(PLAYLIST_RATE_LIMIT_RETRIES if errors is None else 0, show_progress)
+        # A profile usually adds the tracks to most of its playlists, so each adder is looked up once per sweep
+        added_by_names = {}
         for idx, playlist in enumerate(playlists, 1):
             user_id_name_mapping = {}
             unknown_added_by_tracks = 0
@@ -7401,7 +7578,7 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                         })
                     else:
                         try:
-                            sp_playlist_data = spotify_get_playlist_info(sp_accessToken, p_uri, effective_get_tracks)
+                            sp_playlist_data = rate_limit.call(p_uri, spotify_get_playlist_info, sp_accessToken, p_uri, effective_get_tracks)
                             PLAYLIST_INFO_CACHE[p_uri] = {
                                 "status": "ok",
                                 "timestamp": time.time(),
@@ -7439,6 +7616,8 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                             failure_count += 1
                             error_while_processing = True
                             if errors is None and (failure_count == 1 or not HIDE_DUPLICATE_NETWORK_ERRORS):
+                                if show_progress:
+                                    _close_progress_line()
                                 print_operation_error(f"Playlist {spotify_format_playlist_reference(p_uri)} could not be processed and will be retried", e)
                                 if not HIDE_DUPLICATE_NETWORK_ERRORS:
                                     print_cur_ts("Timestamp:\t\t\t")
@@ -7512,9 +7691,12 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                                         added_by_name = "Spotify"
                                     elif added_by_id == "unknown":
                                         added_by_name = "Unknown"
+                                    elif added_by_id in added_by_names:
+                                        added_by_name = added_by_names[added_by_id]
                                     else:
-                                        sp_user_data = spotify_get_user_info(sp_accessToken, added_by_id, False, 0)
+                                        sp_user_data = rate_limit.call(p_uri, spotify_get_user_info, sp_accessToken, added_by_id, False, 0)
                                         added_by_name = sp_user_data.get("sp_username", added_by_id)
+                                        added_by_names[added_by_id] = added_by_name
 
                                     # Exclude unknown from collaborator mapping to keep collaborator counts stable
                                     if added_by_id != "unknown":
@@ -7547,6 +7729,8 @@ def spotify_process_public_playlists(sp_accessToken, playlists, get_tracks, play
                     failure_count += 1
                     error_while_processing = True
                     if errors is None and (failure_count == 1 or not HIDE_DUPLICATE_NETWORK_ERRORS):
+                        if show_progress:
+                            _close_progress_line()
                         print_operation_error(f"Playlist data for {spotify_format_playlist_reference(p_uri)} could not be built", e)
                         if not HIDE_DUPLICATE_NETWORK_ERRORS:
                             print_cur_ts("Timestamp:\t\t\t")
@@ -10870,7 +11054,7 @@ def runtime_boolean_errors() -> List[str]:
 
 # Lists numeric settings that cannot be used by monitoring or Doctor
 def runtime_numeric_errors() -> List[str]:
-    numeric_values = (("SPOTIFY_CHECK_INTERVAL", SPOTIFY_CHECK_INTERVAL, 1, None), ("SPOTIFY_ERROR_INTERVAL", SPOTIFY_ERROR_INTERVAL, 0, None), ("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL, 0, None), ("PLAYLISTS_LIMIT", PLAYLISTS_LIMIT, 1, None), ("RECENTLY_PLAYED_ARTISTS_LIMIT", RECENTLY_PLAYED_ARTISTS_LIMIT, 0, None), ("RECENTLY_PLAYED_ARTISTS_LIMIT_INFO", RECENTLY_PLAYED_ARTISTS_LIMIT_INFO, 0, None), ("PLAYLISTS_DISAPPEARED_COUNTER", PLAYLISTS_DISAPPEARED_COUNTER, 1, None), ("FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER", FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER, 1, None), ("COLLABORATORS_CHANGE_COUNTER", COLLABORATORS_CHANGE_COUNTER, 0, None), ("PLAYLISTS_CHANGE_COUNTER", PLAYLISTS_CHANGE_COUNTER, 0, None), ("PLAYLISTS_EMPTY_RETRIES", PLAYLISTS_EMPTY_RETRIES, 0, None), ("PLAYLISTS_EMPTY_RETRY_SLEEP", PLAYLISTS_EMPTY_RETRY_SLEEP, 0, None), ("TRUNCATE_CHARS", TRUNCATE_CHARS, 0, None), ("SMTP_PORT", SMTP_PORT, 1, 65535))
+    numeric_values = (("SPOTIFY_CHECK_INTERVAL", SPOTIFY_CHECK_INTERVAL, 1, None), ("SPOTIFY_ERROR_INTERVAL", SPOTIFY_ERROR_INTERVAL, 0, None), ("LIVENESS_CHECK_INTERVAL", LIVENESS_CHECK_INTERVAL, 0, None), ("PLAYLISTS_LIMIT", PLAYLISTS_LIMIT, 1, None), ("RECENTLY_PLAYED_ARTISTS_LIMIT", RECENTLY_PLAYED_ARTISTS_LIMIT, 0, None), ("RECENTLY_PLAYED_ARTISTS_LIMIT_INFO", RECENTLY_PLAYED_ARTISTS_LIMIT_INFO, 0, None), ("PLAYLISTS_DISAPPEARED_COUNTER", PLAYLISTS_DISAPPEARED_COUNTER, 1, None), ("FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER", FOLLOWERS_FOLLOWINGS_DISAPPEARED_COUNTER, 1, None), ("FOLLOWERS_FOLLOWINGS_RENAME_BURST", FOLLOWERS_FOLLOWINGS_RENAME_BURST, 0, None), ("FOLLOWERS_FOLLOWINGS_RENAME_COUNTER", FOLLOWERS_FOLLOWINGS_RENAME_COUNTER, 0, None), ("COLLABORATORS_CHANGE_COUNTER", COLLABORATORS_CHANGE_COUNTER, 0, None), ("PLAYLISTS_CHANGE_COUNTER", PLAYLISTS_CHANGE_COUNTER, 0, None), ("PLAYLISTS_EMPTY_RETRIES", PLAYLISTS_EMPTY_RETRIES, 0, None), ("PLAYLISTS_EMPTY_RETRY_SLEEP", PLAYLISTS_EMPTY_RETRY_SLEEP, 0, None), ("TRUNCATE_CHARS", TRUNCATE_CHARS, 0, None), ("SMTP_PORT", SMTP_PORT, 1, 65535))
     return [f"{name}={value!r}" for name, value, minimum, maximum in numeric_values if not finite_number(value) or value < minimum or maximum is not None and value > maximum]
 
 
@@ -12670,6 +12854,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
     playlists_zeroed_counter = 0
     followers_zeroed_counter = 0
     followings_zeroed_counter = 0
+    followers_rename_pending = None
+    followings_rename_pending = None
     sp_accessToken = ""
     monitor_recovery_tracker = RecoveryHintTracker()
     follower_recovery_tracker = RecoveryHintTracker()
@@ -12870,6 +13056,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         followers_count, followers = followers_old_count, followers_old
     elif followers is None:
         followers = followers_old
+    followers, followers_rename_pending, followers_rename_outcome, followers_rename_burst = hold_follow_rename_burst(followers, followers_old, followers_rename_pending, sp_accessToken)
+    print_follow_rename_hold("followers", followers_rename_pending, followers_rename_outcome, followers_rename_burst, False)
     if followers_count is not None and followers_old_count is not None and (followers_count != followers_old_count or follow_membership_changed(followers, followers_old, followers_count)):
         spotify_print_changed_followers_followings_playlists(username, followers, followers_old, followers_count, followers_old_count, "Followers", "for", "Added followers", "Added Follower", "Removed followers", "Removed Follower", followers_file, csv_file_name, False, False)
 
@@ -12902,6 +13090,8 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         followings_count, followings = followings_old_count, followings_old
     elif followings is None:
         followings = followings_old
+    followings, followings_rename_pending, followings_rename_outcome, followings_rename_burst = hold_follow_rename_burst(followings, followings_old, followings_rename_pending, sp_accessToken)
+    print_follow_rename_hold("followings", followings_rename_pending, followings_rename_outcome, followings_rename_burst, False)
     if followings_count is not None and followings_old_count is not None and (followings_count != followings_old_count or follow_membership_changed(followings, followings_old, followings_count)):
         spotify_print_changed_followers_followings_playlists(username, followings, followings_old, followings_count, followings_old_count, "Followings", "by", "Added followings", "Added Following", "Removed followings", "Removed Following", followings_file, csv_file_name, False, False)
 
@@ -13125,6 +13315,9 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
         elif followers is None:
             followers = followers_old
 
+        followers, followers_rename_pending, followers_rename_outcome, followers_rename_burst = hold_follow_rename_burst(followers, followers_old, followers_rename_pending, sp_accessToken)
+        print_follow_rename_hold("followers", followers_rename_pending, followers_rename_outcome, followers_rename_burst, True)
+
         if followers_count != followers_old_count:
             if followers_count == 0:
                 followers_zeroed_counter += 1
@@ -13175,6 +13368,9 @@ def spotify_profile_monitor_uri(user_uri_id, csv_file_name, playlists_to_skip):
             spotify_save_follow_baseline(followings_file, followings_count, followings)
         elif followings is None:
             followings = followings_old
+
+        followings, followings_rename_pending, followings_rename_outcome, followings_rename_burst = hold_follow_rename_burst(followings, followings_old, followings_rename_pending, sp_accessToken)
+        print_follow_rename_hold("followings", followings_rename_pending, followings_rename_outcome, followings_rename_burst, True)
 
         if followings_count != followings_old_count:
             if followings_count == 0:

@@ -5,6 +5,8 @@ from test_monitoring_loop import error_alerts_for, failure_alerts, profile_snaps
 
 A = "spotify:playlist:aaaaaaaaaaaaaaaaaaaaaa"
 B = "spotify:playlist:bbbbbbbbbbbbbbbbbbbbbb"
+# Playlist details a successful metadata read returns
+HEALTHY_PLAYLIST = {"sp_playlist_name": "Playlist", "sp_playlist_owner": "Owner", "sp_playlist_owner_uri": "spotify:user:owner", "sp_playlist_description": "", "sp_playlist_tracks": [], "sp_playlist_tracks_count": 0, "sp_playlist_tracks_count_before_filtering": 0, "sp_playlist_followers_count": 1}
 
 
 # Builds a successful profile response with an independently reported playlist collection
@@ -86,7 +88,8 @@ def test_playlist_recovery_resets_alert_delivery(monkeypatch, tmp_path, capsys):
 # interval would leave the run blind for hours over a limit that clears in minutes
 def test_a_rate_limited_sweep_retries_on_the_backoff_not_the_poll_interval(monkeypatch, tmp_path):
     sleeps = []
-    error_alerts_for(monkeypatch, tmp_path, [playlist_profile(A)] * 8, 5, check_interval=10800, playlist_checks=True, playlist_answers=[RuntimeError("429 Too Many Requests")] * 20, sleep_log=sleeps)
+    # The startup snapshot takes the first answer, since a rate limited startup read would wait on its own
+    error_alerts_for(monkeypatch, tmp_path, [playlist_profile(A)] * 8, 5, check_interval=10800, playlist_checks=True, playlist_answers=[HEALTHY_PLAYLIST] + [RuntimeError("429 Too Many Requests")] * 20, sleep_log=sleeps)
 
     assert sleeps == [10800, 60, 120, 240, 480]
 
@@ -120,6 +123,6 @@ def test_a_sweep_that_finishes_returns_to_the_poll_interval(monkeypatch, tmp_pat
 
 # The report of a rate limited sweep names the wait the run actually takes rather than the poll interval
 def test_the_sweep_report_names_the_wait_the_run_takes(monkeypatch, tmp_path, capsys):
-    error_alerts_for(monkeypatch, tmp_path, [playlist_profile(A)] * 8, 2, check_interval=10800, playlist_checks=True, playlist_answers=[RuntimeError("429 Too Many Requests")] * 20)
+    error_alerts_for(monkeypatch, tmp_path, [playlist_profile(A)] * 8, 2, check_interval=10800, playlist_checks=True, playlist_answers=[HEALTHY_PLAYLIST] + [RuntimeError("429 Too Many Requests")] * 20)
 
     assert "* Error while processing playlists: Spotify is rate limiting requests (retrying in 1 minute)" in capsys.readouterr().out

@@ -2,6 +2,19 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 4.1.1 (29 Sep 2026)
+
+Version **4.1.1** stops a Spotify glitch from reporting dozens of follower and following **renames** at once. Playlist reads at startup now **wait out a Spotify rate limit** instead of skipping the playlist. It also fixes webhook alerts that were dropped when a custom header used a placeholder such as `{title}` and the alert text held emoji or non-Latin letters.
+
+**Features and improvements**:
+
+- **IMPROVE:** **Bursts of follower renames are checked against profiles** - Spotify sometimes returns user IDs or Facebook names instead of display names for many followers or followings at once, which was reported as a long list of renames. When one check finds more than **`FOLLOWERS_FOLLOWINGS_RENAME_BURST`** renames (default: 5), the tool reads the profiles of up to three renamed people. The renames are reported at once if the profiles show the new names and the old names are kept if they do not. When the profiles cannot be read, the renames are reported after the same new names come back in **`FOLLOWERS_FOLLOWINGS_RENAME_COUNTER`** checks in a row (default: 3). People who follow or unfollow meanwhile are still reported right away. Set the counter to `0` to report every rename immediately
+- **IMPROVE:** **Rate-limited playlist reads wait and retry** - When Spotify rate limits a playlist read at startup, with `-i` or with `--export-all-playlists`, the tool **waits 1, 2 and then 4 minutes and reads the playlist again** instead of skipping it. If the limit lasts longer, that playlist is reported as failed and the rest of the read continues without waiting. Each person who added tracks is now looked up once per read rather than once per playlist, which makes the limit less likely. Messages printed while the playlist progress bar is shown start on their own line instead of continuing the bar
+
+**Bug fixes**:
+
+- **BUGFIX:** **Custom headers with emoji no longer drop webhook alerts** - A **`WEBHOOK_HEADERS`** value built from a placeholder such as `{title}` failed the whole alert with `'latin-1' codec can't encode character` when the expanded text held emoji or letters outside Latin-1. Such values are now sent RFC 2047 encoded (`=?UTF-8?B?...?=`) and the alert is delivered. ntfy decodes them back to the original text. Other receivers see the encoded form. ASCII values, including ones you already encoded, are sent unchanged
+
 # Changes in 4.1 (22 Sep 2026)
 
 Version **4.1** fixes **browser cookie import**. It reads recently written cookies, finds the signed-in Firefox profile and discovers Firefox from the Microsoft Store plus Chrome, Brave or Chromium from Snap or Flatpak. The profile picker marks current Spotify logins, retries a mistyped choice and reports why an import failed. Selected notification channels show `Unavailable` when local settings prevent delivery. Automatic sends stay quiet until the settings are fixed.
