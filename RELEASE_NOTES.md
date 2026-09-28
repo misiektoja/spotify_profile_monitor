@@ -2,7 +2,7 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 4.1.1 (TBD)
+# Changes in 4.1.1 (29 Sep 2026)
 
 Version **4.1.1** stops a Spotify glitch from reporting dozens of follower and following **renames** at once. Playlist reads at startup now **wait out a Spotify rate limit** instead of skipping the playlist. It also fixes webhook alerts that were dropped when a custom header used a placeholder such as `{title}` and the alert text held emoji or non-Latin letters.
 
