@@ -2,6 +2,14 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 4.1.2 (TBD)
+
+Version **4.1.2** keeps terminal recovery commands usable when their arguments happen to match stored credentials.
+
+**Bug fixes**:
+
+- **BUGFIX:** **Copyable recovery commands** - Doctor, setup and runtime recovery instructions preserve paths, targets and flags even when they contain text identical to a stored credential. Error summaries and technical details still redact credentials
+
 # Changes in 4.1.1 (29 Sep 2026)
 
 Version **4.1.1** stops a Spotify glitch from reporting dozens of follower and following **renames** at once. Playlist reads at startup now **wait out a Spotify rate limit** instead of skipping the playlist. It also fixes webhook alerts that were dropped when a custom header used a placeholder such as `{title}` and the alert text held emoji or non-Latin letters.
