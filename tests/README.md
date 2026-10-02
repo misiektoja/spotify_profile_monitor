@@ -30,6 +30,7 @@ would see.
 
 | File | Area under test |
 | --- | --- |
+| `test_setting_persistence.py` | Setting lifetime in help, Doctor CLI options, disabled switches and private-value placeholders |
 | `test_recovery_command_privacy.py` | Generated commands, credential redaction and output stream handling |
 | `test_codeql_workflow.py` | Source suppression filtering, retained security findings, invalid reports and CodeQL upload ordering |
 | `test_notification_receipts.py` | SMTP acceptance despite cleanup failures, receipt controls and unchanged notification content |
