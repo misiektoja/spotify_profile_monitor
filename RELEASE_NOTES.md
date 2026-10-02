@@ -4,11 +4,11 @@ This is a high-level summary of the most important changes.
 
 # Changes in 4.1.2 (TBD)
 
-Version **4.1.2** keeps terminal recovery commands usable when their arguments happen to match stored credentials.
+Version **4.1.2** keeps generated recovery commands usable when their arguments match stored credentials. Settings advice explains which options need repeating and Doctor keeps them in its monitoring command.
 
 **Bug fixes**:
 
-- **BUGFIX:** **Copyable recovery commands** - Doctor, setup and runtime recovery instructions preserve paths, targets and flags even when they contain text identical to a stored credential. Error summaries and technical details still redact credentials
+- **BUGFIX:** **Recovery commands and saved settings** - Guidance distinguishes saved settings from command-line options needed on each run. Doctor's monitoring command retains the selected options and shows placeholders for private values. Generated commands keep paths, targets and flags intact when they match stored credentials. Error summaries and technical details still redact credentials
 
 # Changes in 4.1.1 (29 Sep 2026)
 
