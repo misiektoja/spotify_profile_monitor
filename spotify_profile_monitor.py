@@ -5191,18 +5191,7 @@ def parse_protobuf_message(data):
 # Parses the Protobuf-encoded login request body file (as dumped for example by Proxyman) and returns a tuple:
 # (device_id, system_id, user_uri_id, refresh_token)
 def parse_login_request_body_file(file_path):
-    """
-    {
-      1: {
-           1: "device_id",
-           2: "system_id"
-         },
-      100: {
-           1: "user_uri_id",
-           2: "refresh_token"
-         }
-    }
-    """
+    """Read the login fields documented by build_spotify_auth_protobuf."""
     with open(file_path, "rb") as f:
         data = f.read()
     parsed = parse_protobuf_message(data)
@@ -5344,26 +5333,7 @@ def ua_to_app_version(user_agent: str) -> str:
 
 # Builds the Protobuf client token request body
 def build_clienttoken_request_protobuf(app_version, device_id, system_id, cpu_arch=10, os_build=19045, platform=2, os_major=9, os_minor=9, client_model=34404):
-    """
-        1: 1 (const)
-        2: {
-          1: "app_version"
-          2: "device_id"
-          3: {
-            1: {
-              4: {
-                1: "cpu_arch"
-                3: "os_build"
-                4: "platform"
-                5: "os_major"
-                6: "os_minor"
-                8: "client_model"
-              }
-            }
-            2: "system_id"
-          }
-        }
-    """
+    """Encode the field layout documented by parse_clienttoken_request_body_file."""
 
     leaf = (
         encode_varint((1 << 3) | 0) + encode_varint(cpu_arch) + encode_varint((3 << 3) | 0) + encode_varint(os_build) + encode_varint((4 << 3) | 0) + encode_varint(platform) + encode_varint((5 << 3) | 0) + encode_varint(os_major) + encode_varint((6 << 3) | 0) + encode_varint(os_minor) + encode_varint((8 << 3) | 0) + encode_varint(client_model))
@@ -10194,13 +10164,7 @@ def argparse_color_kwargs() -> dict[str, Any]:
 
 # Finds an optional config file
 def find_config_file(cli_path=None):
-    """
-    Search for an optional config file in:
-      1) CLI-provided path (must exist if given)
-      2) ./{DEFAULT_CONFIG_FILENAME}
-      3) ~/.{DEFAULT_CONFIG_FILENAME}
-      4) script-directory/{DEFAULT_CONFIG_FILENAME}
-    """
+    """Return the first config file, without fallback for a missing explicit path."""
 
     if cli_path:
         p = Path(os.path.expanduser(cli_path))
