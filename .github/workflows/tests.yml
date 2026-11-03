@@ -56,13 +56,17 @@ jobs:
 
   test:
     name: pytest (Python ${{ matrix.python-version }})
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os || 'ubuntu-latest' }}
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+        include:
+          # setup-python publishes no Python 3.9 build for Ubuntu 26.04, which ubuntu-latest now maps to
+          - python-version: "3.9"
+            os: ubuntu-24.04
 
     steps:
       - name: Check out source
