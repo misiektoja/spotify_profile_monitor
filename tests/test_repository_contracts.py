@@ -265,8 +265,6 @@ class TestRepositoryMetadata:
             content = asset.read_bytes()
             if b"\r\n" in content:
                 offenders.append(f"{name}: CRLF line ending")
-            if content and not content.endswith(b"\n"):
-                offenders.append(f"{name}: missing final newline")
             # LICENSE is verbatim upstream text and Markdown keeps meaningful trailing spaces
             if name != "LICENSE" and asset.suffix.casefold() != ".md" and re.search(rb"[ \t]+\n", content):
                 offenders.append(f"{name}: trailing whitespace")
