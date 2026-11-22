@@ -54,6 +54,9 @@ jobs:
         # import is reported as missing and the run says nothing about the code
         run: python -m pyright --pythonpath $(which python) spotify_profile_monitor.py tests
 
+      - name: Type check against the newest supported standard library
+        run: python -m pyright --pythonpath $(which python) --pythonversion 3.15 spotify_profile_monitor.py tests
+
   test:
     name: pytest (Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os || 'ubuntu-latest' }}
@@ -62,7 +65,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]
         include:
           # setup-python publishes no Python 3.9 build for Ubuntu 26.04, which ubuntu-latest now maps to
           - python-version: "3.9"
