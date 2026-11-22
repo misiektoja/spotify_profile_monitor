@@ -376,3 +376,15 @@ def test_the_minimum_python_version_is_declared_once():
     assert f"Programming Language :: Python :: {monitor.MINIMUM_PYTHON_VERSION_TEXT}" in pyproject
     classifiers = re.findall(r"Programming Language :: Python :: (\d+\.\d+)", pyproject)
     assert min(tuple(int(part) for part in version.split(".")) for version in classifiers) == monitor.MINIMUM_PYTHON_VERSION
+
+
+# Verifies CI tests every declared Python version and type checks against the newest one
+def test_ci_covers_every_declared_python_version():
+    pyproject = read_asset("pyproject.toml")
+    workflow = yaml.safe_load(read_asset(".github/workflows/tests.yml"))
+
+    declared = re.findall(r"Programming Language :: Python :: (\d+\.\d+)", pyproject)
+    newest = max(declared, key=lambda version: tuple(int(part) for part in version.split(".")))
+    assert set(workflow["jobs"]["test"]["strategy"]["matrix"]["python-version"]) == set(declared)
+    pyright_commands = [step["run"] for step in workflow["jobs"]["typecheck"]["steps"] if "pyright" in step.get("run", "")]
+    assert any(f"--pythonversion {newest} " in command for command in pyright_commands)
