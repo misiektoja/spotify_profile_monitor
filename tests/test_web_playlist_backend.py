@@ -42,9 +42,11 @@ class WebPlaylistBackendTests(unittest.TestCase):
 
     # Verifies a configured TOTP override flows through to the generated token
     def test_totp_config_override_is_used(self):
-        with patch.object(monitor, "TOTP_VERSION", 99), patch.object(monitor, "TOTP_SECRET_CIPHER_BYTES", (12, 34, 56, 78)):
+        # pyotp 2.12 rejects secrets shorter than 112 bits, so the cipher must be realistic in length
+        cipher_bytes = (12, 34, 56, 78, 90, 21, 43, 65, 87, 109, 31, 53)
+        with patch.object(monitor, "TOTP_VERSION", 99), patch.object(monitor, "TOTP_SECRET_CIPHER_BYTES", cipher_bytes):
             token = monitor.generate_totp()
-        self.assertEqual(len(token.now()), 6)
+        self.assertEqual(token.at(1700000000), "526084")
 
     # Verifies invalid configured TOTP parameters raise an actionable error
     def test_generate_totp_rejects_invalid_config(self):
