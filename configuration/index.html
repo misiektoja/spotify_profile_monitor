@@ -6,7 +6,7 @@
       <meta charset="utf-8">
       <meta name="viewport" content="width=device-width,initial-scale=1">
       
-        <meta name="description" content="Real-time tracker for Spotify profile, follower and playlist changes with instant alerts">
+        <meta name="description" content="Configure spotify_profile_monitor: target profile, Spotify access token source, time zone, SMTP email, Discord and ntfy webhooks and stored secrets.">
       
       
       
@@ -23,7 +23,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.0">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.2">
     
     
       
@@ -1098,7 +1098,7 @@
 <p>Examples on this page use the PyPI command <code>spotify_profile_monitor</code>. Manual script users should keep the shown options and use the matching prefix under <a href="../usage/#command-format-by-installation-method">Command Format by Installation Method</a>.</p>
 <p><a id="configuration-file"></a></p>
 <h2 id="configuration-file">Configuration File<a class="headerlink" href="#configuration-file" title="Permanent link">&para;</a></h2>
-<p>You can pass most settings as command-line options or save them in a configuration file for later runs.</p>
+<p>Command-line setting options apply to the current run and do not update the configuration file. Include them on every run that needs those settings. To reuse settings without repeating the options, save them through <code>--setup</code> or edit the configuration file. Commands such as <code>--setup</code> and <code>--set-smtp-password</code> save the values they collect.</p>
 <p>The easiest way to create this file is <code>spotify_profile_monitor --setup</code>.</p>
 <p>To edit every available setting yourself, generate a default configuration file:</p>
 <div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># On macOS, Linux or Windows Command Prompt (cmd.exe)</span>
@@ -1725,6 +1725,9 @@ again rather than ending the import. Answer <code>0</code> to cancel.</p>
 
 
 
+  
+  
+
 
 
 
@@ -1780,7 +1783,7 @@ again rather than ending the import. Answer <code>0</code> to cancel.</p>
       <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["navigation.instant", "navigation.tracking", "navigation.top", "navigation.sections", "toc.follow", "search.suggest", "search.highlight", "content.code.copy", "content.action.edit"], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
     
     
-      <script src="../assets/javascripts/bundle.c21346df.min.js"></script>
+      <script src="../assets/javascripts/bundle.a5f9d56c.min.js"></script>
       
     
   </body>
