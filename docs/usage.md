@@ -4,6 +4,8 @@ description: "Use spotify_profile_monitor: profile and playlist monitoring, foll
 
 # Usage
 
+Setting flags in these examples apply to that run. Repeat them on later runs or [save the corresponding settings](configuration.md#configuration-file).
+
 <a id="command-format-by-installation-method"></a>
 ## Command Format by Installation Method
 

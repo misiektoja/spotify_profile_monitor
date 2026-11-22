@@ -2,6 +2,18 @@
 
 This is a high-level summary of the most important changes.
 
+# Changes in 4.1.2 (22 Nov 2026)
+
+Version **4.1.2** adds official support for **Python 3.15**. It also keeps generated recovery commands usable when their arguments match stored credentials. Settings advice explains which options need repeating and Doctor keeps them in its monitoring command.
+
+**Features and improvements**:
+
+- **IMPROVE:** **Python 3.15 support** - Spotify Profile Monitor is now tested on **Python 3.15** and PyPI lists it as a supported version. Python 3.9 is still the minimum
+
+**Bug fixes**:
+
+- **BUGFIX:** **Recovery commands and saved settings** - Guidance distinguishes saved settings from command-line options needed on each run. Doctor's monitoring command retains the selected options and shows placeholders for private values. Generated commands keep paths, targets and flags intact when they match stored credentials. Error summaries and technical details still redact credentials
+
 # Changes in 4.1.1 (29 Sep 2026)
 
 Version **4.1.1** stops a Spotify glitch from reporting dozens of follower and following **renames** at once. Playlist reads at startup now **wait out a Spotify rate limit** instead of skipping the playlist. It also fixes webhook alerts that were dropped when a custom header used a placeholder such as `{title}` and the alert text held emoji or non-Latin letters.

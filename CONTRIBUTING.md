@@ -55,7 +55,7 @@ The default suite is offline. It never contacts Spotify and network functions ar
 
 CodeQL runs the extended security queries. For a verified false positive, put a `codeql[rule-id]` comment immediately above the reported line and explain why it is safe. The workflow filters results with accepted source suppressions before upload. Other findings remain reportable.
 
-CI additionally runs the suite on Python 3.9 through 3.14, a Windows smoke job for the platform-sensitive behaviors and a strict documentation build. The supported Python floor is 3.9, so avoid syntax and standard-library features added after it. The CI job also imports the module and runs `--version` on every supported interpreter, which is where a newer syntax or annotation feature would surface first.
+CI additionally runs the suite on Python 3.9 through 3.15, a Windows smoke job for the platform-sensitive behaviors and a strict documentation build. The supported Python floor is 3.9, so avoid syntax and standard-library features added after it. The CI job also imports the module and runs `--version` on every supported interpreter, which is where a newer syntax or annotation feature would surface first.
 
 A change to token handling, the monitoring loop or playlist retrieval is not verified by the offline suite alone. Exercise it against a real Spotify account and say so in the pull request, without profile URLs or credentials.
 
@@ -70,7 +70,7 @@ Pull requests target `dev`. The pull request template lists the checks to report
 
 ## Code style
 
-The codebase favors complete implementations over minimal patches, explicit validation of anything Spotify supplies and one concise summary comment directly above each shared function. Follow the surrounding code rather than introducing a new style.
+Use complete implementations and validate data supplied by Spotify. Place a concise comment immediately before every function and method, including private helpers. Summarize its purpose or contract. Use additional comments for non-obvious constraints and reasons. Follow the surrounding code.
 
 Optional local hooks run the same linter, the whitespace rules and a private-key check before a commit is written. The lint hook calls the Ruff installed by `.[lint]` above rather than a copy of its own, so it always matches the version CI runs:
 

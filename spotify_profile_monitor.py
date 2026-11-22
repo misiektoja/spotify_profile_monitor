@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Author: Michal Szymanski <misiektoja-github@rm-rf.ninja>
-v4.1.1
+v4.1.2
 
 OSINT tool implementing real-time tracking of Spotify users activities and profile changes including playlists:
 https://github.com/misiektoja/spotify_profile_monitor/
@@ -22,7 +22,7 @@ pathvalidate (optional, needed by --export-all-playlists)
 Pillow (needed for email and ntfy artwork attachments)
 """
 
-VERSION = "4.1.1"
+VERSION = "4.1.2"
 
 # ---------------------------
 # CONFIGURATION SECTION START
@@ -2283,8 +2283,13 @@ def colorize_help_text(text, epilog=None):
 # repaint the finished help with the rules meant for monitoring output
 class ColoredHelpParser(argparse.ArgumentParser):
     # Returns the help screen with the help palette already applied
-    def format_help(self) -> str:
-        return colorize_help_text(super().format_help(), self.epilog)
+    def format_help(self, formatter: Optional[argparse.HelpFormatter] = None) -> str:
+        # From Python 3.15 print_help passes the formatter it built for the output stream
+        if sys.version_info >= (3, 15):
+            text = super().format_help(formatter)
+        else:
+            text = super().format_help()
+        return colorize_help_text(text, self.epilog)
 
     # Writes one parser message straight to the terminal behind any colouring wrapper
     def _print_message(self, message, file=None) -> None:
@@ -2593,11 +2598,12 @@ def recovery_http_status(error: Any) -> Optional[int]:
         return None
 
 
-# Creates one validated secret-safe recovery advice value
+# Builds validated recovery advice with private diagnostics and unchanged generated instructions
 def make_recovery_advice(code: str, summary: str, fix: str, retryable: bool, detail: Any = "") -> RecoveryAdvice:
     if code not in RECOVERY_CODES:
         raise ValueError(f"Unsupported recovery code: {code}")
-    return RecoveryAdvice(code, sanitize_error_text(summary), sanitize_error_text(fix), retryable, sanitize_error_text(detail))
+    # Fixes contain generated instructions and non-secret arguments, so redaction must not rewrite them
+    return RecoveryAdvice(code, sanitize_error_text(summary), fix, retryable, sanitize_error_text(detail))
 
 
 # Adds one directly relevant documentation link to recovery instructions
@@ -2772,7 +2778,7 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
     if context == "secret":
         return make_recovery_advice("secret.missing", safe_detail or "A required secret is missing", recovery_fix_with_guide("Provide the secret through a dotenv file, environment variable or supported private setup command", SECRETS_GUIDE_URL), False, safe_detail)
     if context == "target_missing":
-        return make_recovery_advice("target.invalid", "No Spotify target was provided", recovery_fix_with_guide("Provide a Spotify profile URL, spotify:user URI or user ID or set TARGET_USER_URI_ID", QUICK_START_GUIDE_URL), False)
+        return make_recovery_advice("target.invalid", "No Spotify target was provided", recovery_fix_with_guide("Save TARGET_USER_URI_ID in the configuration file or include a Spotify profile URL, spotify:user URI or user ID on each run", QUICK_START_GUIDE_URL), False)
     if context == "target_invalid":
         return make_recovery_advice("target.invalid", "Invalid Spotify target", recovery_fix_with_guide("Pass a Spotify profile URL, spotify:user:USER_ID URI or user ID", TARGET_GUIDE_URL), False, safe_detail)
     if context == "target" and (status == 403 or "cannot monitor user" in message):
@@ -2825,7 +2831,7 @@ def classify_recovery_error(error: Any = None, context: str = "runtime", detail:
     if isinstance(error, (req.ConnectionError, socket.gaierror)) or transport_code == "network.unavailable" or any(term in message for term in ("name resolution", "failed to resolve", "network is unreachable", "connection refused", "connection aborted", "max retries exceeded")):
         return make_recovery_advice("network.unavailable", "Spotify could not be reached", recovery_fix_with_guide("Usually nothing to do, the tool retries on its own. If it continues, check network access, DNS, firewall and proxy settings", CONNECTION_GUIDE_URL), True, safe_detail)
     if status == 429 or mentions_status_code("429", message) or any(term in message for term in ("too many requests", "rate limit")):
-        return make_recovery_advice("spotify.rate_limited", "Spotify is rate limiting requests", recovery_fix_with_guide("Wait before retrying and increase --check-interval if this repeats", INTERVALS_GUIDE_URL), True, safe_detail)
+        return make_recovery_advice("spotify.rate_limited", "Spotify is rate limiting requests", recovery_fix_with_guide("Wait before retrying. If this repeats, raise SPOTIFY_CHECK_INTERVAL in the configuration file, then restart. To override it without saving, include --check-interval SECONDS on each run", INTERVALS_GUIDE_URL), True, safe_detail)
     if (status is not None and 500 <= status <= 599) or any(term in message for term in ("500 server", "502 server", "503 server", "504 server")):
         return make_recovery_advice("spotify.unavailable", "Spotify is temporarily unavailable", recovery_fix_with_guide("Usually nothing to do, the tool retries on its own. If it continues, wait for Spotify to recover", CONNECTION_GUIDE_URL), True, safe_detail)
     if status == 404 or "not found" in message:
@@ -4771,7 +4777,8 @@ def totp_cipher_bytes_are_valid(cipher_bytes: Any) -> bool:
 
 # Builds a pyotp TOTP object from the configured web-player cipher bytes
 def generate_totp():
-    import pyotp
+    # Typed pyotp releases do not re-export TOTP from the package root for pyright
+    from pyotp.totp import TOTP
 
     cipher_bytes = TOTP_SECRET_CIPHER_BYTES
     if not totp_cipher_bytes_are_valid(cipher_bytes):
@@ -4784,7 +4791,7 @@ def generate_totp():
     hex_str = joined.encode().hex()
     secret = base64.b32encode(bytes.fromhex(hex_str)).decode().rstrip("=")
 
-    return pyotp.TOTP(secret, digits=6, interval=30)
+    return TOTP(secret, digits=6, interval=30)
 
 
 # Refreshes the Spotify access token using the sp_dc cookie, tries first with mode "transport" and if needed with "init"
@@ -5190,18 +5197,7 @@ def parse_protobuf_message(data):
 # Parses the Protobuf-encoded login request body file (as dumped for example by Proxyman) and returns a tuple:
 # (device_id, system_id, user_uri_id, refresh_token)
 def parse_login_request_body_file(file_path):
-    """
-    {
-      1: {
-           1: "device_id",
-           2: "system_id"
-         },
-      100: {
-           1: "user_uri_id",
-           2: "refresh_token"
-         }
-    }
-    """
+    """Read the login fields documented by build_spotify_auth_protobuf."""
     with open(file_path, "rb") as f:
         data = f.read()
     parsed = parse_protobuf_message(data)
@@ -5343,26 +5339,7 @@ def ua_to_app_version(user_agent: str) -> str:
 
 # Builds the Protobuf client token request body
 def build_clienttoken_request_protobuf(app_version, device_id, system_id, cpu_arch=10, os_build=19045, platform=2, os_major=9, os_minor=9, client_model=34404):
-    """
-        1: 1 (const)
-        2: {
-          1: "app_version"
-          2: "device_id"
-          3: {
-            1: {
-              4: {
-                1: "cpu_arch"
-                3: "os_build"
-                4: "platform"
-                5: "os_major"
-                6: "os_minor"
-                8: "client_model"
-              }
-            }
-            2: "system_id"
-          }
-        }
-    """
+    """Encode the field layout documented by parse_clienttoken_request_body_file."""
 
     leaf = (
         encode_varint((1 << 3) | 0) + encode_varint(cpu_arch) + encode_varint((3 << 3) | 0) + encode_varint(os_build) + encode_varint((4 << 3) | 0) + encode_varint(platform) + encode_varint((5 << 3) | 0) + encode_varint(os_major) + encode_varint((6 << 3) | 0) + encode_varint(os_minor) + encode_varint((8 << 3) | 0) + encode_varint(client_model))
@@ -10193,13 +10170,7 @@ def argparse_color_kwargs() -> dict[str, Any]:
 
 # Finds an optional config file
 def find_config_file(cli_path=None):
-    """
-    Search for an optional config file in:
-      1) CLI-provided path (must exist if given)
-      2) ./{DEFAULT_CONFIG_FILENAME}
-      3) ~/.{DEFAULT_CONFIG_FILENAME}
-      4) script-directory/{DEFAULT_CONFIG_FILENAME}
-    """
+    """Return the first config file, without fallback for a missing explicit path."""
 
     if cli_path:
         p = Path(os.path.expanduser(cli_path))
@@ -10509,11 +10480,39 @@ def _wizard_set_sp_dc_cmd(method: str, env_path=None, config_path=None) -> str:
     return _wizard_render_command(parts)
 
 
-# Prints the exact monitoring command after a successful Doctor run
-def _wizard_print_monitor_after_doctor(config_path, env_path, target: Optional[str] = None, saved_target: Optional[str] = None, doctor_exit: int = 0) -> None:
-    command = _wizard_action_command(_wizard_install_method(), "", config_path, env_path, _wizard_command_targets(target, saved_target)[1])
+# Rebuilds explicit monitoring options while replacing private values with named placeholders
+def doctor_monitoring_overrides(args):
+    parts = []
+    value_options = (("token_source", "--token-source"), ("login_request_body_file", "--login-request-body-file"), ("clienttoken_request_body_file", "--clienttoken-request-body-file"), ("webhook_provider", "--webhook-provider"), ("check_interval", "--check-interval"), ("error_interval", "--error-interval"), ("csv_file", "--csv-file"), ("playlists_to_skip", "--playlists-to-skip"), ("user_agent", "--user-agent"), ("file_suffix", "--file-suffix"), ("truncate", "--truncate"))
+    for name, option in value_options:
+        value = getattr(args, name, None)
+        if value is not None:
+            # An equals sign keeps a value beginning with a dash from being parsed as another option
+            if str(value).startswith("-"):
+                parts.append(f"{option}={value}")
+            else:
+                parts.extend((option, str(value)))
+    switches = (("profile_notification", "--notify-profile", True), ("disable_followers_followings_notification", "--no-followers-followings-notify", False), ("error_notification", "--no-error-notify", False), ("webhook_enabled", "--webhook", True), ("webhook_enabled", "--no-webhook", False), ("webhook_profile", "--webhook-profile", True), ("webhook_followers_followings", "--no-webhook-followers-followings-notify", False), ("webhook_errors", "--webhook-errors", True), ("webhook_errors", "--no-webhook-error-notify", False), ("do_not_detect_changed_profile_pic", "--no-profile-pic-detect", False), ("do_not_monitor_playlists", "--no-playlist-monitor", False), ("get_all_playlists", "--get-all-playlists", True), ("disable_logging", "--disable-logging", True), ("no_color", "--no-color", True), ("debug_mode", "--debug", True), ("verbose_mode", "--verbose", True))
+    for name, option, selected in switches:
+        if getattr(args, name, None) is selected:
+            parts.append(option)
+    private_options = (("spotify_dc_cookie", "--spotify-dc-cookie", "SP_DC_COOKIE"), ("oauth_app_creds", "--oauth-app-creds", "SP_APP_CLIENT_ID:SP_APP_CLIENT_SECRET"), ("oauth_user_creds", "--oauth-user-creds", "SP_USER_CLIENT_ID:SP_USER_CLIENT_SECRET"), ("webhook_url", "--webhook-url", "WEBHOOK_URL"))
+    has_private_values = False
+    for name, option, placeholder in private_options:
+        if getattr(args, name, None) is not None:
+            parts.extend((option, placeholder))
+            has_private_values = True
+    return parts, has_private_values
+
+
+# Prints the monitoring command with the settings selected for Doctor
+def _wizard_print_monitor_after_doctor(config_path, env_path, target: Optional[str] = None, saved_target: Optional[str] = None, doctor_exit: int = 0, cli_args=None) -> None:
+    overrides, private_values = doctor_monitoring_overrides(cli_args)
+    command = _wizard_action_command(_wizard_install_method(), shlex.join(overrides), config_path, env_path, _wizard_command_targets(target, saved_target)[1])
     print(colorize('header', "\nNext steps\n"))
     _wizard_print_command("After Doctor passes, start monitoring:" if doctor_exit else "Start monitoring:", command)
+    if private_values:
+        print("Replace the uppercase credential placeholders before running. Doctor does not repeat private command-line values.\n")
     print(f"Guide: {colorize('link', QUICK_START_GUIDE_URL)}")
 
 
@@ -10554,7 +10553,8 @@ def _build_help_epilog() -> str:
             ("Trace what the tool is doing", f"{prefix} <spotify_target> --debug"),
         )),
     )
-    return _render_help_examples(groups, QUICK_START_GUIDE_URL)
+    notice = "Setting options apply to the current run and do not update the configuration file.\nInclude them on each run or save the settings through --setup or in a configuration file.\n\n"
+    return notice + _render_help_examples(groups, QUICK_START_GUIDE_URL)
 
 
 # Prints a short no-argument welcome and optionally launches setup
@@ -11604,14 +11604,14 @@ def render_doctor_sections(report: DoctorReport) -> str:
             continue
         lines.extend(("", colorize("section", section)))
         for check in section_checks:
-            lines.append(f"{render_doctor_marker(check.status)} {check.label}")
+            lines.append(f"{render_doctor_marker(check.status)} {sanitize_error_text(check.label)}")
             if check.detail:
-                lines.append(f"  {colorize_links(check.detail)}")
+                lines.append(f"  {colorize_links(sanitize_error_text(check.detail))}")
             if check.status != "PASS" and check.advice is not None:
                 # The fix carries its own guide line, so each line is indented and styled on its own rather
                 # than leaving one colour sequence open across the newline
                 lines.extend(f"  {colorize_fix_line(fix_line)}" for fix_line in f"To fix: {check.advice.fix}".splitlines())
-    return sanitize_error_text("\n".join(lines))
+    return "\n".join(lines)
 
 
 # Renders the one sentence that says whether the setup is usable and where to read more
@@ -12413,7 +12413,7 @@ def _wizard_collect_target_section(state: WizardSetupState, initial_target: Opti
     state.target = _wizard_target(initial_target or state.target or None)
     # A declined target ends the section, so nothing asks about persisting a target that does not exist
     if not state.target:
-        print("  No target selected. Nothing can be monitored until one is set. Run --setup again or pass the target on the command line.")
+        print("  No target selected. Nothing can be monitored until one is set. Run --setup again to save a target or include the target on each monitoring run.")
         state.config_values["TARGET_USER_URI_ID"] = ""
         return
     state.persist_target = _wizard_ask_yes_no("Persist this target in the generated config?", default=state.persist_target)
@@ -15046,7 +15046,7 @@ def main():
         doctor_exit = run_doctor(doctor_target, cfg_path or CLI_CONFIG_PATH, env_path, doctor_startup_checks, timezone_advice=timezone_advice)
         command_config = "none" if CONFIG_DISCOVERY_DISABLED else cfg_path or CLI_CONFIG_PATH
         command_env = "none" if args.env_file and args.env_file.casefold() == "none" else env_path
-        _wizard_print_monitor_after_doctor(command_config, command_env, args.user_id, TARGET_USER_URI_ID, doctor_exit=doctor_exit)
+        _wizard_print_monitor_after_doctor(command_config, command_env, args.user_id, TARGET_USER_URI_ID, doctor_exit=doctor_exit, cli_args=args)
         sys.exit(doctor_exit)
 
     configuration_errors = runtime_numeric_errors() + runtime_boolean_errors()

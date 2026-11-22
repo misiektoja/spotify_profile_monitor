@@ -30,6 +30,8 @@ would see.
 
 | File | Area under test |
 | --- | --- |
+| `test_setting_persistence.py` | Setting lifetime in help, Doctor CLI options, disabled switches and private-value placeholders |
+| `test_recovery_command_privacy.py` | Generated commands, credential redaction and output stream handling |
 | `test_codeql_workflow.py` | Source suppression filtering, retained security findings, invalid reports and CodeQL upload ordering |
 | `test_notification_receipts.py` | SMTP acceptance despite cleanup failures, receipt controls and unchanged notification content |
 | `test_oauth_validation_boundaries.py` | Fresh OAuth validation and immediate resource failure with real HTTP clients |
@@ -94,6 +96,6 @@ Online tests that authenticate against Spotify are excluded, because automated l
 account protection. A change to token handling, the monitoring loop or playlist retrieval is not
 verified by this suite alone. Exercise it against a real account and say so in the pull request.
 
-CI runs the same suite on Python 3.9 through 3.14, plus a Windows job for the platform-sensitive
+CI runs the same suite on Python 3.9 through 3.15, plus a Windows job for the platform-sensitive
 behaviors: ANSI codepage text writes, reserved characters in artwork filenames, export path handling
 and the POSIX-only watchdog. See [CONTRIBUTING.md](../CONTRIBUTING.md).

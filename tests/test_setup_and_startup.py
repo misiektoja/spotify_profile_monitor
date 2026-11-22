@@ -1522,7 +1522,7 @@ def test_a_declined_target_ends_the_section_without_the_persist_question(monkeyp
 
     assert state.target == ""
     assert state.config_values["TARGET_USER_URI_ID"] == ""
-    assert "No target selected. Nothing can be monitored until one is set. Run --setup again or pass the target on the command line." in capsys.readouterr().out
+    assert "No target selected. Nothing can be monitored until one is set. Run --setup again to save a target or include the target on each monitoring run." in capsys.readouterr().out
 
 
 # Verifies the webhook question defaults to the saved switch, so a rerun over a configured webhook proposes keeping it
