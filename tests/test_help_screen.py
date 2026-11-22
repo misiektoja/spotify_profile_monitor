@@ -1,9 +1,11 @@
 """Tests the --help screen: the shared argument group names, the task-grouped examples and the startup banner."""
 
 from command_expectations import runtime_command
+import argparse
 import re
 import subprocess
 import sys
+from io import StringIO
 from pathlib import Path
 
 import pytest
@@ -176,3 +178,22 @@ def test_every_reported_name_is_an_option_the_parser_accepts(help_screen):
     assert reported
     for name in reported:
         assert name in help_screen, f"{name} is not an option the help screen offers"
+
+
+# Verifies help renders with the formatter print_help builds instead of the TypeError fallback
+@pytest.mark.skipif(sys.version_info < (3, 15), reason="print_help passes a formatter from Python 3.15")
+def test_the_help_screen_uses_the_formatter_from_print_help(monkeypatch):
+    received = []
+    base_format_help = argparse.ArgumentParser.format_help
+
+    # Records the formatter the base parser renders with
+    def recording_format_help(self, *args, **kwargs):
+        received.append(kwargs.get("formatter", args[0] if args else None))
+        return base_format_help(self, *args, **kwargs)
+
+    monkeypatch.setattr(argparse.ArgumentParser, "format_help", recording_format_help)
+    parser = monitor.ColoredHelpParser(prog="spotify_profile_monitor")
+    parser.print_help(StringIO())
+
+    assert len(received) == 1
+    assert isinstance(received[0], argparse.HelpFormatter)
