@@ -1,3 +1,7 @@
+---
+description: "Fix spotify_profile_monitor problems with the Doctor preflight check, connection errors, too many open files, logging levels and saved settings."
+---
+
 # Troubleshooting
 
 Examples on this page use the PyPI command `spotify_profile_monitor`. If you installed the manual script, replace that command with the matching [command prefix](usage.md#command-format-by-installation-method).

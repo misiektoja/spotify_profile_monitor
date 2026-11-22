@@ -1,3 +1,7 @@
+---
+description: "Install spotify_profile_monitor from PyPI or as a single Python script. Covers requirements for Windows, macOS and Linux and how to upgrade."
+---
+
 # Installation
 
 Choose one installation method.

@@ -1,3 +1,7 @@
+---
+description: "Use spotify_profile_monitor: profile and playlist monitoring, follower changes, profile picture detection, playlist blacklisting and CSV export."
+---
+
 # Usage
 
 Setting flags in these examples apply to that run. Repeat them on later runs or [save the corresponding settings](configuration.md#configuration-file).
