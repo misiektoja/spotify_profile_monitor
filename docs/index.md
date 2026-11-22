@@ -1,3 +1,8 @@
+---
+title: "Spotify profile, follower and playlist change tracker"
+description: "Track Spotify profile changes, follower and following updates and playlist edits with spotify_profile_monitor and get alerts by email or webhook."
+---
+
 # spotify_profile_monitor
 
 [![GitHub Release](https://img.shields.io/github/v/release/misiektoja/spotify_profile_monitor?style=flat-square&color=blue)](https://github.com/misiektoja/spotify_profile_monitor/releases)

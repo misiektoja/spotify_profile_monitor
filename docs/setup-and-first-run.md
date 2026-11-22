@@ -1,3 +1,7 @@
+---
+description: "Run the spotify_profile_monitor setup wizard, import or save a Spotify login and notification credentials and start monitoring a profile."
+---
+
 # Setup & First Run
 
 <a id="run-the-setup-wizard"></a>

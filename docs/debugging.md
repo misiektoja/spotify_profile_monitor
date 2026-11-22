@@ -1,3 +1,7 @@
+---
+description: "Debug Spotify token retrieval with the sp_dc cookie and TOTP, extract secret keys from Web Player bundles and use CLI output modes in spotify_profile_monitor."
+---
+
 # Debugging Tools
 
 The [debug directory](https://github.com/misiektoja/spotify_monitor/tree/main/debug) of the related [spotify_monitor](https://github.com/misiektoja/spotify_monitor) project contains two utilities for testing Spotify token retrieval and reading current TOTP values. Both work with Spotify Profile Monitor because the two tools share the same web-player token flow. Most users do not need these tools.

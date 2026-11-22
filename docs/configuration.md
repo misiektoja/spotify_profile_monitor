@@ -1,3 +1,7 @@
+---
+description: "Configure spotify_profile_monitor: target profile, Spotify access token source, time zone, SMTP email, Discord and ntfy webhooks and stored secrets."
+---
+
 # Configuration
 
 Examples on this page use the PyPI command `spotify_profile_monitor`. Manual script users should keep the shown options and use the matching prefix under [Command Format by Installation Method](usage.md#command-format-by-installation-method).

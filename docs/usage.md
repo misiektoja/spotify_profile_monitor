@@ -1,3 +1,7 @@
+---
+description: "Use spotify_profile_monitor: profile and playlist monitoring, follower changes, profile picture detection, playlist blacklisting and CSV export."
+---
+
 # Usage
 
 <a id="command-format-by-installation-method"></a>

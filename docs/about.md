@@ -1,3 +1,7 @@
+---
+description: "About spotify_profile_monitor: change log, how to contribute, security policy, maintainers, license and ways to support the project."
+---
+
 # About
 
 Powerful Spotify tool for real-time tracking of profile changes, playlist updates, follower growth, collaborators and more.
