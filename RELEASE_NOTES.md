@@ -2,9 +2,13 @@
 
 This is a high-level summary of the most important changes.
 
-# Changes in 4.1.2 (TBD)
+# Changes in 4.1.2 (22 Nov 2026)
 
-Version **4.1.2** keeps generated recovery commands usable when their arguments match stored credentials. Settings advice explains which options need repeating and Doctor keeps them in its monitoring command.
+Version **4.1.2** adds official support for **Python 3.15**. It also keeps generated recovery commands usable when their arguments match stored credentials. Settings advice explains which options need repeating and Doctor keeps them in its monitoring command.
+
+**Features and improvements**:
+
+- **IMPROVE:** **Python 3.15 support** - Spotify Profile Monitor is now tested on **Python 3.15** and PyPI lists it as a supported version. Python 3.9 is still the minimum
 
 **Bug fixes**:
 
